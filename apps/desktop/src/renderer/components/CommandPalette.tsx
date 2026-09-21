@@ -49,6 +49,24 @@ export function CommandPalette(): JSX.Element | null {
         },
       },
       {
+        id: "panel.terminal",
+        label: "Open terminal",
+        group: "Workspace",
+        run: () => state.setWorkspaceTab("terminal"),
+      },
+      {
+        id: "panel.files",
+        label: "Open files",
+        group: "Workspace",
+        run: () => state.setWorkspaceTab("files"),
+      },
+      {
+        id: "panel.changes",
+        label: "Open changes",
+        group: "Workspace",
+        run: () => state.setWorkspaceTab("changes"),
+      },
+      {
         id: "view.providers",
         label: "Open providers",
         group: "Go to",

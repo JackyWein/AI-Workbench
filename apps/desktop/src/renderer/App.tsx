@@ -13,6 +13,7 @@ import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
 import { Sidebar } from "./components/Sidebar.js";
+import { WorkspacePanel } from "./components/WorkspacePanel.js";
 
 type AppInfo = { version: string; platform: string; userDataPath: string };
 
@@ -43,9 +44,16 @@ export function App(): JSX.Element {
   // Ctrl+K / Cmd+K anywhere in the app (spec §81).
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      const store = useWorkbench.getState();
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
-        useWorkbench.getState().setPaletteOpen(!useWorkbench.getState().paletteOpen);
+        store.setPaletteOpen(!store.paletteOpen);
+        return;
+      }
+      // Ctrl+` opens the terminal, the way a developer tool is expected to.
+      if ((event.ctrlKey || event.metaKey) && event.key === "`") {
+        event.preventDefault();
+        store.toggleWorkspacePanel("terminal");
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -113,6 +121,7 @@ export function App(): JSX.Element {
                 onSend={(text) => void state.sendMessage(text)}
                 onCancel={() => void state.cancel()}
               />
+              {state.workspacePanelOpen ? <WorkspacePanel sessionId={session.id} /> : null}
             </div>
           </>
         ) : null}

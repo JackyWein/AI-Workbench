@@ -19,6 +19,8 @@ The foundation and the first vertical slice work end to end:
 - provider usage in a compact indicator with an aggregated popover that opens on
   hover, keyboard focus or click
 - command palette (Ctrl+K / Cmd+K), settings and a providers overview
+- a real shell per session (Ctrl+`), a workspace file browser and the git
+  branch and changes, all bounded to the session's working directory
 
 Providers are pluggable and the core never names one:
 

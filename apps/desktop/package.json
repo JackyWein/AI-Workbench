@@ -1,6 +1,6 @@
 {
   "name": "@ai-workbench/desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
@@ -32,6 +32,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
     "electron": "44.4.3",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",

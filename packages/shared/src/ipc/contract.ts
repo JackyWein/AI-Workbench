@@ -146,6 +146,18 @@ export const ipcContract = {
     }),
     output: terminalInfoSchema,
   },
+  /** Reuses the session's terminal and returns what it printed so far. */
+  "terminal.attach": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      cols: z.number().int().positive().max(1000).optional(),
+      rows: z.number().int().positive().max(1000).optional(),
+    }),
+    output: z.object({
+      info: terminalInfoSchema,
+      scrollback: z.string(),
+    }),
+  },
   "terminal.write": {
     input: z.object({
       terminalId: z.string().min(1),

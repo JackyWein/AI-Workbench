@@ -114,6 +114,15 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
         ...(input.rows === undefined ? {} : { rows: input.rows }),
       });
     },
+    "terminal.attach": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      return services.terminals.attach({
+        sessionId: session.id,
+        cwd: session.workingDirectory,
+        ...(input.cols === undefined ? {} : { cols: input.cols }),
+        ...(input.rows === undefined ? {} : { rows: input.rows }),
+      });
+    },
     "terminal.write": (input) => {
       services.terminals.write(input.terminalId, input.data);
       return { written: true };

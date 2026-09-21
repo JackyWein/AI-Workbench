@@ -13,19 +13,19 @@ Weighted contribution = weight x completion.
 | G0 | Repository / Foundation | 5% | 12 | 12 | 100% | 5.00 |
 | G1 | Functional desktop vertical slice | 15% | 20 | 19 | 95% | 14.25 |
 | G2 | Provider platform | 15% | 20 | 18 | 90% | 13.50 |
-| G3 | Workspace / developer tooling | 10% | 14 | 0 | 0% | 0.00 |
+| G3 | Workspace / developer tooling | 10% | 14 | 14 | 100% | 10.00 |
 | G4 | Skills, plugins & MCP | 10% | 15 | 0 | 0% | 0.00 |
 | G5 | Autonomous team system | 20% | 28 | 0 | 0% | 0.00 |
 | G6 | Status Island & background runtime | 10% | 22 | 0 | 0% | 0.00 |
 | G7 | UX, security, reliability & performance | 10% | 19 | 11 | 58% | 5.79 |
 | G8 | Extensibility, SDK & packaging | 5% | 10 | 1 | 10% | 0.50 |
-| **TOTAL** | | **100%** | **160** | **61** | | **39.04%** |
+| **TOTAL** | | **100%** | **160** | **75** | | **49.04%** |
 
 ## Current focus
 
-**G3 — Workspace and developer tooling.** G0 and the G1 slice are done, and the
-provider platform now runs a real command line provider end to end. What remains
-in G2 is verifying the Codex and Gemini profiles against those tools.
+**G4 — Skills, plugins and MCP.** The foundation, the vertical slice, the
+provider platform and the developer tooling are done. What remains in G2 is
+verifying the Codex and Gemini profiles against those tools.
 
 ## How this file is verified
 
@@ -33,12 +33,15 @@ Everything ticked below is proven by `pnpm verify`, which runs:
 
 - `pnpm lint` — ESLint over the workspace
 - `pnpm typecheck` — strict TypeScript over Node and web projects
-- `pnpm test` — 94 unit and integration tests (2 more are skipped by default
+- `pnpm test` — 126 unit and integration tests (2 more are skipped by default
   because they spend real provider quota; see below)
 - `pnpm build` — electron-vite production build
-- `pnpm verify:app` — starts the built application headlessly (Xvfb), drives the
-  real renderer through the preload bridge, and runs a second time against the
-  same database to prove a conversation survives a restart
+- `pnpm verify:app` — starts the built application headlessly (Xvfb) and drives
+  the real renderer through the preload bridge: a streamed answer, a collapsed
+  tool call, a real shell echoing back, the file browser, the git branch and
+  changes, the command palette, the usage popover and the settings and
+  providers views. It then runs a second time against the same database to
+  prove a conversation and its provider session survive a restart.
 
 Additionally, and deliberately outside the default run:
 
@@ -139,20 +142,20 @@ Last full run: all checks passed.
 
 ## G3 — Workspace / developer tooling — 10%
 
-- [ ] safe filesystem layer
-- [ ] working-directory boundaries
-- [ ] integrated terminal
-- [ ] terminal resize/input/output
-- [ ] terminal cleanup
-- [ ] file browser
-- [ ] file change representation
-- [ ] Git status
-- [ ] Git branch display
-- [ ] tool call collapsible UI
-- [ ] session runtime independent from visible tab
-- [ ] multiple sessions can remain active
-- [ ] context sidebar works
-- [ ] useful keyboard navigation exists
+- [x] safe filesystem layer
+- [x] working-directory boundaries
+- [x] integrated terminal
+- [x] terminal resize/input/output
+- [x] terminal cleanup
+- [x] file browser
+- [x] file change representation
+- [x] Git status
+- [x] Git branch display
+- [x] tool call collapsible UI
+- [x] session runtime independent from visible tab
+- [x] multiple sessions can remain active
+- [x] context sidebar works
+- [x] useful keyboard navigation exists
 
 ## G4 — Skills, plugins & MCP — 10%
 

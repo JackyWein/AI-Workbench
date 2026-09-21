@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import { Square } from "lucide-react";
+import { PanelBottom, Square } from "lucide-react";
 import type {
   AggregatedUsage,
   ProviderSummary,
@@ -10,6 +10,7 @@ import type {
 import { formatPath } from "../lib/format.js";
 import { UsageIndicator } from "./UsageIndicator.js";
 import { ModelPicker } from "./ModelPicker.js";
+import { useWorkbench } from "../store/workbench.js";
 
 interface SessionHeaderProps {
   readonly session: Session;
@@ -34,6 +35,9 @@ export function SessionHeader({
   busy,
   onCancel,
 }: SessionHeaderProps): JSX.Element {
+  const toggleWorkspacePanel = useWorkbench((state) => state.toggleWorkspacePanel);
+  const panelOpen = useWorkbench((state) => state.workspacePanelOpen);
+
   const provider = providers.find(
     (entry) => entry.metadata.id === session.providerId,
   );
@@ -58,6 +62,17 @@ export function SessionHeader({
             Stop
           </button>
         ) : null}
+
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => toggleWorkspacePanel()}
+          aria-pressed={panelOpen}
+          title="Terminal, files and changes (Ctrl+`)"
+          aria-label="Toggle workspace tools"
+        >
+          <PanelBottom size={14} strokeWidth={1.75} aria-hidden="true" />
+        </button>
 
         <ModelPicker session={session} providers={providers} />
 

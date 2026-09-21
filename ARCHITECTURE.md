@@ -97,6 +97,29 @@ re-initializing the adapter, so a corrected path takes effect without a restart.
 Secrets are deliberately not part of that table: a credential belongs in
 OS-backed storage behind a reference (spec §57).
 
+## Workspace tooling
+
+```text
+Session (working directory)
+   ├── WorkspaceFileSystem   read-only, bounded to that directory
+   ├── GitService            porcelain v2 through the CLI transport
+   └── TerminalManager       node-pty shells, one per session
+```
+
+Every path is resolved inside the session's working directory, and the check
+follows symbolic links: a link inside the workspace that points outside it is
+refused, not read.
+
+Terminals live in the main process with a bounded scrollback. A view attaches to
+the session's shell and receives what it already printed, so closing the panel,
+switching tabs or changing session never kills a running command — the runtime
+is independent of what is on screen (spec §26, §91).
+
+Terminal bytes travel on their own IPC channel. They are high frequency and
+interesting only to the view showing that terminal, so keeping them off the
+domain event bus stops a busy shell from drowning the events the rest of the
+application depends on.
+
 ## Persistence
 
 SQLite through `@libsql/client`, with Drizzle for the schema and queries. The
@@ -123,7 +146,6 @@ same bus without any subsystem knowing about them.
 | Area | Goal | Planned attachment point |
 |---|---|---|
 | Codex and Gemini profiles verified against the tools | G2 | `packages/providers/cli` |
-| Terminal, files, Git | G3 | new packages plus IPC domains |
 | Skills, plugins, MCP, credentials | G4 | new managers in `AppServices` |
 | Team system | G5 | `packages/team/*`, Team MCP + Orchestrator |
 | Status Island, tray | G6 | second BrowserWindow + `StatusAttentionService` |

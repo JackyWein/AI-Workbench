@@ -15,6 +15,7 @@ import { defaultAppSettings } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
 
 export type MainView = "chat" | "providers" | "settings";
+export type WorkspaceTab = "terminal" | "files" | "changes";
 
 interface WorkbenchState {
   ready: boolean;
@@ -31,6 +32,8 @@ interface WorkbenchState {
   activeSessionId: string | null;
   view: MainView;
   paletteOpen: boolean;
+  workspacePanelOpen: boolean;
+  workspaceTab: WorkspaceTab;
 
   messages: Record<string, ChatMessage[]>;
   status: Record<string, SessionStatus>;
@@ -40,6 +43,9 @@ interface WorkbenchState {
   setError(error: string | null): void;
   setView(view: MainView): void;
   setPaletteOpen(open: boolean): void;
+  setWorkspacePanelOpen(open: boolean): void;
+  toggleWorkspacePanel(tab?: WorkspaceTab): void;
+  setWorkspaceTab(tab: WorkspaceTab): void;
 
   selectWorkspace(id: string | null): Promise<void>;
   selectSession(id: string | null): Promise<void>;
@@ -90,6 +96,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   activeSessionId: null,
   view: "chat",
   paletteOpen: false,
+  workspacePanelOpen: false,
+  workspaceTab: "terminal",
 
   messages: {},
   status: {},
@@ -126,6 +134,13 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   setError: (error) => set({ error }),
   setView: (view) => set({ view }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+  setWorkspacePanelOpen: (workspacePanelOpen) => set({ workspacePanelOpen }),
+  setWorkspaceTab: (workspaceTab) => set({ workspaceTab, workspacePanelOpen: true }),
+  toggleWorkspacePanel: (tab) =>
+    set((state) => ({
+      workspacePanelOpen: tab && !state.workspacePanelOpen ? true : !state.workspacePanelOpen,
+      ...(tab ? { workspaceTab: tab } : {}),
+    })),
 
   async selectWorkspace(id) {
     set({ activeWorkspaceId: id, activeSessionId: null, sessions: [] });

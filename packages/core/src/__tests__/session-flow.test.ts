@@ -283,6 +283,60 @@ describe("session vertical slice", () => {
     expect(await app.sessions.listMessages(session.id)).toHaveLength(4);
   });
 
+  it("runs several sessions at the same time", async () => {
+    const workspace = await app.workspaces.create({ name: "Demo", path: directory });
+    const first = await app.sessions.create({
+      workspaceId: workspace.id,
+      name: "First",
+      type: "solo",
+    });
+    const second = await app.sessions.create({
+      workspaceId: workspace.id,
+      name: "Second",
+      type: "solo",
+    });
+
+    // Both turns are started before either has finished.
+    const firstSend = await app.sessions.sendMessage(first.id, "question one");
+    const secondSend = await app.sessions.sendMessage(second.id, "question two");
+
+    const [firstAnswer, secondAnswer] = await Promise.all([
+      waitForMessage(app.events, firstSend.messageId),
+      waitForMessage(app.events, secondSend.messageId),
+    ]);
+
+    expect(firstAnswer.status).toBe("complete");
+    expect(secondAnswer.status).toBe("complete");
+    expect(firstAnswer.content).toContain("question one");
+    expect(secondAnswer.content).toContain("question two");
+
+    // Each conversation kept its own history.
+    expect(await app.sessions.listMessages(first.id)).toHaveLength(2);
+    expect(await app.sessions.listMessages(second.id)).toHaveLength(2);
+  });
+
+  it("records a tool call as part of the answer", async () => {
+    const workspace = await app.workspaces.create({ name: "Demo", path: directory });
+    const session = await app.sessions.create({
+      workspaceId: workspace.id,
+      name: "Tools",
+      type: "solo",
+    });
+
+    const { messageId } = await app.sessions.sendMessage(session.id, "please /tool");
+    const answer = await waitForMessage(app.events, messageId);
+
+    expect(answer.toolCalls).toHaveLength(1);
+    expect(answer.toolCalls[0]).toMatchObject({
+      name: "filesystem",
+      state: "completed",
+    });
+
+    // The tool call survives a reload, so the UI can collapse it later.
+    const stored = await app.sessions.listMessages(session.id);
+    expect(stored.at(-1)?.toolCalls).toHaveLength(1);
+  });
+
   it("deletes a workspace together with its sessions and messages", async () => {
     const workspace = await app.workspaces.create({ name: "Demo", path: directory });
     const session = await app.sessions.create({

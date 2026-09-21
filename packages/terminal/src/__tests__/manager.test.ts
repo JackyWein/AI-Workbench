@@ -164,6 +164,48 @@ describe("TerminalManager", () => {
     ).toThrow(TerminalLimitError);
   });
 
+  it("keeps recent output so a view can reattach to a running shell", async () => {
+    const info = manager.create({ sessionId: "s1", cwd: directory, shell });
+
+    manager.write(info.id, echoCommand);
+    await waitFor(
+      () => manager.scrollback(info.id),
+      (value) => value.includes("terminal-works"),
+    );
+
+    // Attaching again returns the same shell together with what it printed.
+    const attached = manager.attach({ sessionId: "s1", cwd: directory, shell });
+    expect(attached.info.id).toBe(info.id);
+    expect(attached.scrollback).toContain("terminal-works");
+    expect(manager.list()).toHaveLength(1);
+  });
+
+  it("starts a shell when attaching to a session without one", () => {
+    const attached = manager.attach({ sessionId: "fresh", cwd: directory, shell });
+    expect(attached.scrollback).toBe("");
+    expect(manager.has(attached.info.id)).toBe(true);
+  });
+
+  it("bounds the scrollback it keeps", async () => {
+    const small = new TerminalManager({
+      logger: nullLogger,
+      onData: () => {},
+      onExit: () => {},
+      scrollbackLimit: 64,
+    });
+    try {
+      const info = small.create({ sessionId: "s1", cwd: directory, shell });
+      small.write(info.id, isWindows ? "echo aaaaaaaaaa\r\n" : "echo aaaaaaaaaa\n");
+      await waitFor(
+        () => small.scrollback(info.id),
+        (value) => value.length > 0,
+      );
+      expect(small.scrollback(info.id).length).toBeLessThanOrEqual(64);
+    } finally {
+      small.closeAll();
+    }
+  });
+
   it("rejects operations on an unknown terminal", () => {
     expect(() => manager.write("nope", "x")).toThrow(TerminalNotFoundError);
     expect(() => manager.resize("nope", 10, 10)).toThrow(TerminalNotFoundError);

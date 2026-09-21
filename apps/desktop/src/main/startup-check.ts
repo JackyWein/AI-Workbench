@@ -1,5 +1,7 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { BrowserWindow } from "electron";
+import { execCli } from "@ai-workbench/transport-cli";
 import type { Logger } from "@ai-workbench/shared";
 
 export interface CheckOutcome {
@@ -30,6 +32,7 @@ export async function runStartupCheck(
   options: { workspaceDirectory: string; mode: StartupCheckMode },
 ): Promise<StartupCheckResult> {
   const { workspaceDirectory, mode } = options;
+  const repository = await seedWorkspace(workspaceDirectory);
   const rendererErrors: string[] = [];
   window.webContents.on("console-message", (event) => {
     if (event.level === "error") {
@@ -137,18 +140,144 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // --- workspace tooling -------------------------------------------------
+
+  // The checks above ended on another view; the workspace tools belong to a
+  // session, so the session is reopened first.
+  await check(
+    "returns to the session from another view",
+    `(async () => {
+       [...document.querySelectorAll('.sidebar__scroll .row')]
+         .find(node => node.textContent?.includes('Check session'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       return Boolean(document.querySelector('.composer'));
+     })()`,
+  );
+
+  await check(
+    "terminal starts a real shell and streams its output back",
+    `(async () => {
+       // Ctrl+\` is the documented shortcut, so the check uses it.
+       window.dispatchEvent(new KeyboardEvent('keydown', { key: '\`', ctrlKey: true, bubbles: true }));
+       await new Promise(resolve => setTimeout(resolve, 800));
+       if (!document.querySelector('.xterm')) return false;
+
+       const sessionId = window.__checkSessionId;
+       const terminals = await window.workbench.invoke('terminal.list', { sessionId });
+       if (terminals.length !== 1) return false;
+       const terminalId = terminals[0].id;
+
+       // The output is asserted on the stream the view itself consumes, which
+       // does not depend on how xterm happens to render.
+       const seen = await new Promise(resolve => {
+         let buffer = '';
+         const off = window.workbench.onTerminalEvent(event => {
+           if (event.terminalId !== terminalId || event.type !== 'data') return;
+           buffer += event.chunk;
+           if (buffer.includes('check-terminal-works')) { off(); resolve(true); }
+         });
+         window.workbench.invoke('terminal.write', {
+           terminalId,
+           data: 'echo check-terminal-works\\n',
+         });
+         setTimeout(() => { off(); resolve(false); }, 8000);
+       });
+       if (!seen) return false;
+
+       // Reattaching must return the shell that is already running, with what
+       // it printed, rather than starting a second one.
+       const attached = await window.workbench.invoke('terminal.attach', { sessionId });
+       return attached.info.id === terminalId
+         && attached.scrollback.includes('check-terminal-works');
+     })()`,
+  );
+
+  await check(
+    "tool calls are collapsed and can be opened",
+    `(async () => {
+       const sessionId = window.__checkSessionId;
+       const done = new Promise(resolve => {
+         const off = window.workbench.onEvent(event => {
+           if (event.type === 'message.updated' && event.message.sessionId === sessionId) {
+             off();
+             resolve(event.message);
+           }
+         });
+       });
+       await window.workbench.invoke('session.sendMessage', {
+         sessionId,
+         text: 'please /tool',
+       });
+       await done;
+       await new Promise(resolve => setTimeout(resolve, 300));
+
+       const summary = document.querySelector('.tool-call__summary');
+       if (!summary) return false;
+       // Collapsed by default (spec §79).
+       if (document.querySelector('.tool-call__body')) return false;
+
+       summary.click();
+       await new Promise(resolve => setTimeout(resolve, 200));
+       return Boolean(document.querySelector('.tool-call__body'));
+     })()`,
+  );
+
+  await check(
+    "files view lists the workspace",
+    `(async () => {
+       [...document.querySelectorAll('.panel__tab')]
+         .find(node => node.textContent === 'Files')?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       const entries = [...document.querySelectorAll('.files__entry')];
+       if (entries.length === 0) return false;
+
+       // Opening a file must show its contents.
+       entries.find(node => node.textContent?.includes('notes.md'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       return (document.querySelector('.files__code')?.textContent ?? '')
+         .includes('workspace file');
+     })()`,
+  );
+
+  await check(
+    repository
+      ? "changes view shows the branch and a change"
+      : "changes view reports a directory without git",
+    repository
+      ? `(async () => {
+           [...document.querySelectorAll('.panel__tab')]
+             .find(node => node.textContent === 'Changes')?.click();
+           await new Promise(resolve => setTimeout(resolve, 600));
+           const branch = document.querySelector('.changes__branch')?.textContent ?? '';
+           const items = [...document.querySelectorAll('.changes__item')]
+             .map(node => node.textContent ?? '');
+           return branch.includes('main') && items.some(text => text.includes('untracked.txt'));
+         })()`
+      : `(async () => {
+           [...document.querySelectorAll('.panel__tab')]
+             .find(node => node.textContent === 'Changes')?.click();
+           await new Promise(resolve => setTimeout(resolve, 600));
+           return (document.querySelector('.changes')?.textContent ?? '')
+             .includes('not a git repository');
+         })()`,
+  );
+
   // An optional screenshot makes the rendered result reviewable by a human
   // instead of only asserted by selectors.
   const screenshotPath = process.env["AI_WORKBENCH_CHECK_SCREENSHOT"];
   if (screenshotPath) {
     await window.webContents.executeJavaScript(
-      `(() => {
+      `(async () => {
          const rows = [...document.querySelectorAll('.sidebar__scroll .row')];
          rows.find(node => node.textContent?.includes('Check workspace'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 300));
+         // Show the workspace tools, since that is what changed most recently.
+         [...document.querySelectorAll('.panel__tab')]
+           .find(node => node.textContent === 'Terminal')?.click();
          return true;
        })()`,
     );
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await new Promise((resolve) => setTimeout(resolve, 600));
     await writeFile(screenshotPath, (await window.webContents.capturePage()).toPNG());
 
     // The providers screen is captured too, since it is where a user fixes a
@@ -186,6 +315,41 @@ export async function runStartupCheck(
   }
 
   return { healthy, outcomes };
+}
+
+/**
+ * Gives the check workspace something to show: files to browse and, when git is
+ * available, a repository with a branch and a change.
+ */
+async function seedWorkspace(directory: string): Promise<boolean> {
+  await mkdir(join(directory, "src"), { recursive: true });
+  await writeFile(join(directory, "notes.md"), "# Notes\n\nA workspace file.\n");
+  await writeFile(join(directory, "src/app.ts"), "export const answer = 42;\n");
+
+  try {
+    const run = async (...args: string[]): Promise<number | null> => {
+      const { exit } = await execCli({
+        executablePath: "git",
+        args,
+        cwd: directory,
+        timeoutMs: 15_000,
+      });
+      return exit.code;
+    };
+
+    if ((await run("init", "--initial-branch", "main")) !== 0) {
+      return false;
+    }
+    await run("config", "user.email", "check@example.com");
+    await run("config", "user.name", "Startup check");
+    await run("add", "notes.md");
+    await run("commit", "-m", "initial");
+    await writeFile(join(directory, "untracked.txt"), "new file\n");
+    return true;
+  } catch {
+    // git is optional; the check adapts to its absence.
+    return false;
+  }
 }
 
 /**
@@ -227,6 +391,9 @@ function createScenario(workspaceDirectory: string): string {
     await api.invoke('session.sendMessage', { sessionId: session.id, text: 'hello' });
     const answer = await done;
 
+    // Later checks address this session directly.
+    window.__checkSessionId = session.id;
+
     const stored = await api.invoke('message.list', { sessionId: session.id });
     const usage = await api.invoke('provider.getUsage', undefined);
     const reported = usage.snapshots.find(entry => entry.providerId === provider.metadata.id);
@@ -256,9 +423,12 @@ function resumeScenario(): string {
     const sessions = await api.invoke('session.list', { workspaceId: workspace.id });
     const session = sessions.find(entry => entry.name === 'Check session');
     if (!session || !session.providerSessionId) return false;
+    window.__checkSessionId = session.id;
 
+    // The first phase may have exchanged several turns; what matters is that
+    // the conversation is still there and grows from where it left off.
     const before = await api.invoke('message.list', { sessionId: session.id });
-    if (before.length !== 2) return false;
+    if (before.length < 2) return false;
 
     const done = new Promise(resolve => {
       const off = api.onEvent(event => {
@@ -281,7 +451,7 @@ function resumeScenario(): string {
 
     return (
       answer.status === 'complete' &&
-      after.length === 4 &&
+      after.length === before.length + 2 &&
       reloaded.providerSessionId === session.providerSessionId
     );
   })()`;

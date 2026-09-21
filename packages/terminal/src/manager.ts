@@ -27,6 +27,8 @@ export interface TerminalManagerOptions {
   readonly onExit: (terminalId: string, exitCode: number) => void;
   /** Maximum number of live terminals, to bound resource use. */
   readonly maxTerminals?: number;
+  /** Characters of output kept per terminal for reattachment. */
+  readonly scrollbackLimit?: number;
 }
 
 interface TerminalState {
@@ -34,6 +36,11 @@ interface TerminalState {
   readonly pty: IPty;
   cols: number;
   rows: number;
+  /**
+   * Recent output, so a view that was closed and reopened can rejoin an
+   * already running shell instead of showing an empty screen.
+   */
+  scrollback: string;
 }
 
 export class TerminalLimitError extends Error {
@@ -60,11 +67,13 @@ export class TerminalManager {
   readonly #options: TerminalManagerOptions;
   readonly #logger: Logger;
   readonly #maxTerminals: number;
+  readonly #scrollbackLimit: number;
 
   constructor(options: TerminalManagerOptions) {
     this.#options = options;
     this.#logger = options.logger.child("TERMINAL");
     this.#maxTerminals = options.maxTerminals ?? 12;
+    this.#scrollbackLimit = options.scrollbackLimit ?? 200_000;
   }
 
   create(options: CreateTerminalOptions): TerminalInfo {
@@ -97,9 +106,16 @@ export class TerminalManager {
       cols,
       rows,
     };
-    this.#terminals.set(id, { info, pty, cols, rows });
+    const state: TerminalState = { info, pty, cols, rows, scrollback: "" };
+    this.#terminals.set(id, state);
 
-    pty.onData((chunk) => this.#options.onData(id, chunk));
+    pty.onData((chunk) => {
+      state.scrollback = trimScrollback(
+        state.scrollback + chunk,
+        this.#scrollbackLimit,
+      );
+      this.#options.onData(id, chunk);
+    });
     pty.onExit(({ exitCode }) => {
       this.#terminals.delete(id);
       this.#logger.debug("Terminal exited", { terminalId: id, exitCode });
@@ -112,6 +128,20 @@ export class TerminalManager {
       shell,
     });
     return info;
+  }
+
+  /** Output kept for a terminal, used when a view reattaches to it. */
+  scrollback(id: string): string {
+    return this.#terminals.get(id)?.scrollback ?? "";
+  }
+
+  /** Returns the session's terminal, starting one when there is none yet. */
+  attach(options: CreateTerminalOptions): { info: TerminalInfo; scrollback: string } {
+    const existing = this.list(options.sessionId)[0];
+    if (existing) {
+      return { info: existing, scrollback: this.scrollback(existing.id) };
+    }
+    return { info: this.create(options), scrollback: "" };
   }
 
   write(id: string, data: string): void {
@@ -171,6 +201,11 @@ export class TerminalManager {
     }
     return state;
   }
+}
+
+/** Keeps the buffer bounded, cutting at the front so the newest output stays. */
+function trimScrollback(value: string, limit: number): string {
+  return value.length <= limit ? value : value.slice(value.length - limit);
 }
 
 function defaultShell(): string {
