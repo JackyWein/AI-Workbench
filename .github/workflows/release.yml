@@ -25,6 +25,9 @@ jobs:
 
     runs-on: ${{ matrix.os }}
 
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +39,13 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          version=$(node -p "require('./apps/desktop/package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -73,7 +83,6 @@ jobs:
 
   release:
     needs: package
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
 
     steps:
@@ -89,6 +98,10 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
+          # A manual run tags the current commit with the application version,
+          # so a release can be produced without pushing a tag by hand.
+          tag_name: v${{ needs.package.outputs.version }}
+          name: AI Workbench v${{ needs.package.outputs.version }}
           files: release-files/*
           generate_release_notes: true
           body: |
