@@ -29,7 +29,8 @@ export interface MockProviderOptions {
 
 interface MockSessionState {
   readonly sessionId: string;
-  readonly modelId: string;
+  /** Follows the model currently selected for the session. */
+  modelId: string;
   turns: number;
   abort: AbortController | null;
 }
@@ -63,6 +64,9 @@ const MOCK_MODELS: ModelInfo[] = [
  * A fully local provider used to build and test the application end to end
  * (spec §20). It simulates streaming, delays, status changes, tool calls,
  * errors, usage, session resume, model selection and context information.
+ *
+ * Live context reporting is deliberately absent from its capabilities until it
+ * is actually implemented, so the UI hides the feature instead of faking it.
  *
  * Magic words in a prompt drive the simulations, so failure paths are testable:
  *   /error    -> normalized provider error
@@ -130,7 +134,6 @@ export class MockProviderAdapter implements AIProviderAdapter {
         "modelSelection",
         "toolCalls",
         "usage",
-        "contextInformation",
       ],
     };
   }
@@ -161,7 +164,9 @@ export class MockProviderAdapter implements AIProviderAdapter {
     const existing = this.#sessions.get(providerSessionId);
     if (existing) {
       existing.abort = null;
-      return { providerSessionId, resumable: true, modelId: existing.modelId };
+      // A resumed session follows the currently selected model.
+      existing.modelId = modelId;
+      return { providerSessionId, resumable: true, modelId };
     }
     // A restarted app resumes a session this process has never seen; the mock
     // provider accepts it and continues, mirroring a CLI with durable sessions.

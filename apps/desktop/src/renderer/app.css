@@ -456,7 +456,7 @@ select {
 /* The user turn is separated by a quiet surface, the assistant turn reads as a
    document rather than a bubble (spec §79). */
 .message[data-role="user"] .message__body {
-  background: var(--surface-raised);
+  background: var(--surface-message);
   border-radius: var(--radius-lg);
   padding: var(--space-4) var(--space-5);
 }

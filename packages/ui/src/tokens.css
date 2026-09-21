@@ -13,6 +13,8 @@
   --surface-raised: #141619;
   --surface-overlay: #1b1e22;
   --surface-sunken: #0a0b0d;
+  /* Backing for a quoted user turn; must stay legible in both themes. */
+  --surface-message: #17191d;
   --surface-hover: rgba(255, 255, 255, 0.04);
   --surface-active: rgba(255, 255, 255, 0.07);
   --surface-selected: rgba(255, 255, 255, 0.09);
@@ -97,6 +99,7 @@
   --surface-raised: #ffffff;
   --surface-overlay: #ffffff;
   --surface-sunken: #f1f2f4;
+  --surface-message: #eef0f3;
   --surface-hover: rgba(15, 18, 22, 0.04);
   --surface-active: rgba(15, 18, 22, 0.07);
   --surface-selected: rgba(15, 18, 22, 0.08);

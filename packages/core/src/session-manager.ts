@@ -189,6 +189,7 @@ export class SessionManager {
       return false;
     }
     await this.cancel(id);
+    await this.#destroyProviderSession(existing);
     await this.#db.delete(sessions).where(eq(sessions.id, id));
     this.#events.publish({ type: "session.deleted", sessionId: id });
     return true;
@@ -283,6 +284,32 @@ export class SessionManager {
   /** Stops every active run; used on application shutdown (spec §132). */
   async shutdown(): Promise<void> {
     await Promise.all([...this.#runs.keys()].map((id) => this.cancel(id)));
+  }
+
+  /**
+   * Releases the provider-side session. A provider that cannot do it, or is no
+   * longer registered, must not block deleting the local session.
+   */
+  async #destroyProviderSession(session: Session): Promise<void> {
+    if (!session.providerId || !session.providerSessionId) {
+      return;
+    }
+    const adapter = this.#providers.get(session.providerId);
+    if (!adapter) {
+      return;
+    }
+    try {
+      await adapter.destroySession({
+        sessionId: session.id,
+        providerSessionId: session.providerSessionId,
+        ...(session.modelId ? { modelId: session.modelId } : {}),
+      });
+    } catch (error) {
+      this.#logger.warn("Provider session cleanup failed", {
+        sessionId: session.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   async #stream(
@@ -396,6 +423,11 @@ export class SessionManager {
       .where(eq(chatMessages.id, message.id));
 
     await this.#touchSession(sessionId);
+
+    // The run is retired before the terminal events are published, so anything
+    // reacting to the finished answer already sees an idle session and may send
+    // the next message immediately.
+    this.#runs.delete(sessionId);
 
     this.#events.publish({ type: "message.updated", message: finalMessage });
     if (error) {

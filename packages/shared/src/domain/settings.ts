@@ -17,7 +17,7 @@ export const appSettingsSchema = z.object({
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 
 export const defaultAppSettings: AppSettings = {
-  theme: "system",
+  theme: "dark",
   density: "comfortable",
   developerMode: false,
   defaultProviderId: null,

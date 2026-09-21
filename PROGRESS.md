@@ -10,89 +10,120 @@ Weighted contribution = weight x completion.
 
 | Goal | Area | Weight | Criteria | Verified | Completion | Weighted |
 |---|---|---:|---:|---:|---:|---:|
-| G0 | Repository / Foundation | 5% | 12 | 0 | 0% | 0.00 |
-| G1 | Functional desktop vertical slice | 15% | 20 | 0 | 0% | 0.00 |
-| G2 | Provider platform | 15% | 20 | 0 | 0% | 0.00 |
+| G0 | Repository / Foundation | 5% | 12 | 12 | 100% | 5.00 |
+| G1 | Functional desktop vertical slice | 15% | 20 | 19 | 95% | 14.25 |
+| G2 | Provider platform | 15% | 20 | 10 | 50% | 7.50 |
 | G3 | Workspace / developer tooling | 10% | 14 | 0 | 0% | 0.00 |
 | G4 | Skills, plugins & MCP | 10% | 15 | 0 | 0% | 0.00 |
 | G5 | Autonomous team system | 20% | 28 | 0 | 0% | 0.00 |
 | G6 | Status Island & background runtime | 10% | 22 | 0 | 0% | 0.00 |
-| G7 | UX, security, reliability & performance | 10% | 19 | 0 | 0% | 0.00 |
-| G8 | Extensibility, SDK & packaging | 5% | 10 | 0 | 0% | 0.00 |
-| **TOTAL** | | **100%** | **160** | **0** | | **0.00%** |
+| G7 | UX, security, reliability & performance | 10% | 19 | 11 | 58% | 5.79 |
+| G8 | Extensibility, SDK & packaging | 5% | 10 | 1 | 10% | 0.50 |
+| **TOTAL** | | **100%** | **160** | **53** | | **33.04%** |
 
 ## Current focus
 
-**G0 — Repository / Foundation**, then the G1 vertical slice.
+**G2 — Provider platform.** G0 is complete and the G1 vertical slice works end
+to end. The next substantial step is the generic CLI transport and the first
+real provider adapter.
 
 ## How this file is verified
 
-- `pnpm typecheck` — TypeScript strict mode over main, preload, renderer and packages
+Everything ticked below is proven by `pnpm verify`, which runs:
+
 - `pnpm lint` — ESLint over the workspace
-- `pnpm test` — Vitest unit tests
+- `pnpm typecheck` — strict TypeScript over Node and web projects
+- `pnpm test` — 48 unit and integration tests
 - `pnpm build` — electron-vite production build
-- Electron launch is smoke-tested headlessly (see `DEVELOPMENT.md`)
+- `pnpm verify:app` — starts the built application headlessly (Xvfb), drives the
+  real renderer through the preload bridge, and runs a second time against the
+  same database to prove a conversation survives a restart
+
+Last full run: all checks passed.
+
+## What is deliberately not ticked
+
+- **choose working directory (G1)** — the code path exists and the surrounding
+  path validation is tested, but the native folder dialog cannot be exercised
+  headlessly. It needs one manual confirmation on a desktop.
+- **main UI uses target design language (G1)** is ticked based on a rendered
+  screenshot checked against the rules in `AI_WORKBENCH.md` §61–§76 (quiet
+  neutral surfaces, thin separators, document-style chat, Lucide icons, no
+  emoji, no card grids, dark first). Final visual sign-off remains the user's.
+- **aggregated usage hover/focus (G1)** is verified with one registered
+  provider; aggregation across several providers is covered by the
+  `UsageService` tests, not yet by a running multi-provider setup.
+- **G2** is at half its criteria because the contract, registry, normalization,
+  cancellation and resume are done, while the substance of the goal — a generic
+  CLI transport, installation discovery, authentication reporting and real
+  provider adapters — is still ahead.
+- **G7** items left open are the judgment and performance ones (polish,
+  virtualized chats and logs, full keyboard pass). They belong to the dedicated
+  hardening pass, not to this stage.
+- **secrets are not stored in plaintext (G7)** stays open because the
+  application stores no credentials at all yet; it is ticked when the
+  `CredentialManager` exists (G4).
 
 ## G0 — Repository / Foundation — 5%
 
-- [ ] pnpm workspace configured
-- [ ] Electron app launches
-- [ ] React + TypeScript renderer launches
-- [ ] TypeScript strict mode enabled
-- [ ] lint/typecheck scripts exist
-- [ ] Vitest configured
-- [ ] SQLite + Drizzle configured
-- [ ] migration system works
-- [ ] typed preload IPC baseline exists
-- [ ] structured logging baseline exists
-- [ ] design token baseline exists
-- [ ] CI/basic automated verification exists if practical
+- [x] pnpm workspace configured
+- [x] Electron app launches
+- [x] React + TypeScript renderer launches
+- [x] TypeScript strict mode enabled
+- [x] lint/typecheck scripts exist
+- [x] Vitest configured
+- [x] SQLite + Drizzle configured
+- [x] migration system works
+- [x] typed preload IPC baseline exists
+- [x] structured logging baseline exists
+- [x] design token baseline exists
+- [x] CI/basic automated verification exists if practical
 
 ## G1 — Functional desktop vertical slice — 15%
 
-- [ ] create workspace
-- [ ] persist workspace
+- [x] create workspace
+- [x] persist workspace
 - [ ] choose working directory
-- [ ] create session
-- [ ] persist session
-- [ ] select MockProvider
-- [ ] select mock model
-- [ ] send message
-- [ ] stream response
-- [ ] cancel response
-- [ ] persist conversation
-- [ ] restart app
-- [ ] reopen workspace/session
-- [ ] conversation still exists
-- [ ] provider/session state restores safely
-- [ ] usage mock appears
-- [ ] aggregated usage hover/focus works
-- [ ] command palette works
-- [ ] settings open
-- [ ] main UI uses target design language
+- [x] create session
+- [x] persist session
+- [x] select MockProvider
+- [x] select mock model
+- [x] send message
+- [x] stream response
+- [x] cancel response
+- [x] persist conversation
+- [x] restart app
+- [x] reopen workspace/session
+- [x] conversation still exists
+- [x] provider/session state restores safely
+- [x] usage mock appears
+- [x] aggregated usage hover/focus works
+- [x] command palette works
+- [x] settings open
+- [x] main UI uses target design language
 
 ## G2 — Provider platform — 15%
 
 - [ ] provider adapter contract stable
 - [ ] transport abstraction stable
-- [ ] provider registry works
-- [ ] capability model works
+- [x] provider registry works
+- [x] capability model works
 - [ ] MockProvider complete
 - [ ] generic CLI transport works
 - [ ] provider installation discovery works
 - [ ] authentication state reporting works
-- [ ] normalized provider streaming works
-- [ ] provider errors normalize correctly
-- [ ] provider cancellation works
-- [ ] session cleanup works
-- [ ] model listing works
-- [ ] session resume supported where provider supports it
+- [x] normalized provider streaming works
+- [x] provider errors normalize correctly
+- [x] provider cancellation works
+- [x] session cleanup works
+- [x] model listing works
+- [x] session resume supported where provider supports it
 - [ ] first real provider works end-to-end
 - [ ] Claude adapter implemented if supported
 - [ ] Codex adapter implemented if supported
 - [ ] Gemini adapter implemented if supported
-- [ ] missing provider does not break app
-- [ ] API/custom provider config architecture exists
+- [x] missing provider does not break app
+- [x] API/custom provider config architecture exists
 
 ## G3 — Workspace / developer tooling — 10%
 
@@ -187,29 +218,29 @@ Weighted contribution = weight x completion.
 
 ## G7 — UX, security, reliability & performance — 10%
 
-- [ ] renderer has no direct Node integration
-- [ ] IPC inputs validated
+- [x] renderer has no direct Node integration
+- [x] IPC inputs validated
 - [ ] secrets are not stored in plaintext
-- [ ] secrets do not appear in logs
-- [ ] provider crashes are isolated
+- [x] secrets do not appear in logs
+- [x] provider crashes are isolated
 - [ ] MCP crashes are isolated
-- [ ] malformed provider output does not crash app
+- [x] malformed provider output does not crash app
 - [ ] long chats are performant
 - [ ] long logs are performant
 - [ ] keyboard navigation usable
-- [ ] hover information has focus/click alternative
+- [x] hover information has focus/click alternative
 - [ ] dark mode polished
 - [ ] visual hierarchy follows Quiet UI principles
 - [ ] no excessive card UI
-- [ ] no emoji UI icons
-- [ ] command palette usable throughout app
-- [ ] important background work is always controllable
-- [ ] graceful shutdown cleans processes
-- [ ] tests cover critical failure paths
+- [x] no emoji UI icons
+- [x] command palette usable throughout app
+- [x] important background work is always controllable
+- [x] graceful shutdown cleans processes
+- [x] tests cover critical failure paths
 
 ## G8 — Extensibility, SDK & packaging — 5%
 
-- [ ] provider package contract documented
+- [x] provider package contract documented
 - [ ] plugin package contract documented
 - [ ] manifest schema versions exist
 - [ ] custom provider UI works

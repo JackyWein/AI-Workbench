@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import type { BrowserWindow } from "electron";
 import type { Logger } from "@ai-workbench/shared";
 
@@ -136,6 +137,23 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // An optional screenshot makes the rendered result reviewable by a human
+  // instead of only asserted by selectors.
+  const screenshotPath = process.env["AI_WORKBENCH_CHECK_SCREENSHOT"];
+  if (screenshotPath) {
+    await window.webContents.executeJavaScript(
+      `(() => {
+         const rows = [...document.querySelectorAll('.sidebar__scroll .row')];
+         rows.find(node => node.textContent?.includes('Check workspace'))?.click();
+         return true;
+       })()`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const image = await window.webContents.capturePage();
+    await writeFile(screenshotPath, image.toPNG());
+    logger.info("Startup check screenshot written", { path: screenshotPath });
+  }
+
   const noRendererErrors = rendererErrors.length === 0;
   outcomes.push({
     name: "renderer reported no errors",
@@ -199,7 +217,7 @@ function createScenario(workspaceDirectory: string): string {
 
     return (
       answer.status === 'complete' &&
-      answer.content.length > 0 &&
+      answer.content.includes(model.id) &&
       stored.length === 2 &&
       reported?.state === 'available' &&
       reported.limits.length > 0
