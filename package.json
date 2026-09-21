@@ -16,10 +16,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "pnpm --filter @ai-workbench/database generate",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:app",
+    "verify": "pnpm verify:lockfile && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:app",
     "lint": "eslint .",
     "verify:app": "bash scripts/verify-app.sh",
-    "package": "pnpm --filter @ai-workbench/desktop package"
+    "package": "pnpm --filter @ai-workbench/desktop package",
+    "verify:lockfile": "pnpm install --lockfile-only --frozen-lockfile"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

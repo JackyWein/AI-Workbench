@@ -25,7 +25,8 @@ restrictive install policy, run `node node_modules/electron/install.js` once.
 | `pnpm lint` | ESLint across the workspace |
 | `pnpm test` | Vitest unit and integration tests |
 | `pnpm verify:app` | Starts the built app headlessly and checks it really works |
-| `pnpm verify` | lint + typecheck + test + build + verify:app |
+| `pnpm verify:lockfile` | Fails if the lockfile and any `package.json` disagree |
+| `pnpm verify` | lockfile + lint + typecheck + test + build + verify:app |
 | `pnpm db:generate` | Regenerates SQL migrations from the Drizzle schema |
 
 Run `pnpm verify` before considering a change finished. `PROGRESS.md` may only

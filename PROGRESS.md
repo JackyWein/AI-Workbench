@@ -33,6 +33,8 @@ the Codex and Antigravity profiles against those tools.
 
 Everything ticked below is proven by `pnpm verify`, which runs:
 
+- `pnpm verify:lockfile` — the lockfile matches every `package.json`, so a
+  frozen install cannot fail only on a build machine
 - `pnpm lint` — ESLint over the workspace
 - `pnpm typecheck` — strict TypeScript over Node and web projects
 - `pnpm test` — 179 unit and integration tests (2 more are skipped by default

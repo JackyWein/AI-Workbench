@@ -54,9 +54,18 @@ importers:
       '@ai-workbench/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@ai-workbench/credentials':
+        specifier: workspace:*
+        version: link:../../packages/credentials
       '@ai-workbench/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@ai-workbench/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
+      '@ai-workbench/plugins':
+        specifier: workspace:*
+        version: link:../../packages/plugins
       '@ai-workbench/provider-base':
         specifier: workspace:*
         version: link:../../packages/providers/base
@@ -69,6 +78,9 @@ importers:
       '@ai-workbench/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@ai-workbench/skills':
+        specifier: workspace:*
+        version: link:../../packages/skills
       '@ai-workbench/terminal':
         specifier: workspace:*
         version: link:../../packages/terminal
