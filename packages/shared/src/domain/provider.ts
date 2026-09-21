@@ -78,6 +78,12 @@ export const providerMetadataSchema = z.object({
   authMethods: z.array(authMethodSchema),
   transportTypes: z.array(providerTransportTypeSchema),
   /**
+   * Reasoning effort levels the tool accepts (like low|medium|high). Absent
+   * or empty means the tool takes none and no picker appears — the UI never
+   * offers levels the tool did not declare.
+   */
+  effortOptions: z.array(z.string().min(1)).optional(),
+  /**
    * The provider this entry belongs to. Every account of one tool shares a
    * family, so the UI can group them; for a single-account provider it is the
    * provider id itself.
@@ -197,6 +203,8 @@ export const providerSummarySchema = z.object({
   /** When the model list was last read from the tool itself, if ever. */
   modelsUpdatedAt: z.date().nullable().default(null),
   usage: providerUsageSnapshotSchema.nullable(),
+  /** False when the user hid the provider; hidden ones offer nothing new. */
+  enabled: z.boolean().default(true),
 });
 export type ProviderSummary = z.infer<typeof providerSummarySchema>;
 

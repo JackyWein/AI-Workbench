@@ -162,11 +162,15 @@ export const antigravityProfile: CliProviderProfileInput = {
     loginHint: "Run `agy` once and complete the sign-in.",
   },
   capabilities: ["chat", "streaming", "modelSelection", "cliAuthentication"],
-  // The tool has no command that lists its models, so none are assumed. Add
-  // the ones your account can use under Providers.
+  // Asked from the tool itself via `agy models` (`id\tDisplay` per line);
+  // nothing is assumed here.
   models: [],
+  modelsArgs: ["models"],
   args: [],
   modelArgs: ["--model", "{model}"],
+  // Reasoning effort the tool accepts itself (verified against `agy --help`).
+  effortArgs: ["--effort", "{effort}"],
+  effortOptions: ["low", "medium", "high"],
   promptVia: "arg",
   promptArgs: ["--print", "{prompt}"],
   // Plain stdout is the answer; no event format is assumed.
@@ -232,10 +236,14 @@ export const opencodeProfile: CliProviderProfileInput = {
     authenticatedPattern: "stored",
     loginHint: "Run `opencode auth login` once in a terminal.",
   },
-  capabilities: ["chat", "streaming", "sessionResume", "modelSelection", "cliAuthentication"],
+  capabilities: ["chat", "streaming", "sessionResume", "modelSelection", "cliAuthentication", "usage"],
   // Asked from the tool itself via `opencode models`; nothing is assumed here.
   models: [],
   modelsArgs: ["models"],
+  // Lifetime tokens and cost via `opencode stats --json`; no quota exists to
+  // deplete, so these render as consumed amounts (spec §55, §56).
+  usageArgs: ["stats", "--json"],
+  usageFormat: "opencode-stats",
   args: ["run"],
   modelArgs: ["--model", "{model}"],
   resumeArgs: ["--session", "{providerSessionId}"],

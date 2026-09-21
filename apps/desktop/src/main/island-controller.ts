@@ -215,7 +215,8 @@ export class IslandController {
         detail: status.detail ?? "The server did not start",
       }));
 
-    const busySessions = (await this.#services.sessions.list())
+    const sessions = await this.#services.sessions.list();
+    const busySessions: Array<IslandSources["busySessions"][number]> = sessions
       .filter((session) => this.#services.sessions.isBusy(session.id))
       .map((session) => ({
         sessionId: session.id,
@@ -224,6 +225,56 @@ export class IslandController {
         // answer rather than a percentage (spec §103; §96 "Working").
         status: "working",
       }));
+
+    // Agent tiles and plain shells are live work too: without them the island
+    // sits on usage while the user visibly works in terminals (spec §95).
+    // Tile ptys are excluded from the shell list below so nothing counts twice.
+    const tileTerminalIds = new Set<string>();
+    try {
+      const workspaces = await this.#services.workspaces.list();
+      for (const workspace of workspaces) {
+        const tiles = await this.#services.agentTerminals
+          .list(workspace.id)
+          .catch(() => []);
+        for (const tile of tiles) {
+          if (tile.state !== "running") {
+            continue;
+          }
+          if (tile.terminalId) {
+            tileTerminalIds.add(tile.terminalId);
+          }
+          busySessions.push({
+            sessionId: tile.id,
+            name: tile.label,
+            status: tile.purpose === "login" ? "signing in" : "working",
+            target: { view: "chat" },
+          });
+        }
+      }
+    } catch (error) {
+      this.#services.logger.debug("Island could not list agent terminals", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    try {
+      const names = new Map(sessions.map((session) => [session.id, session.name]));
+      for (const info of this.#services.terminals.list()) {
+        if (tileTerminalIds.has(info.id)) {
+          continue;
+        }
+        busySessions.push({
+          sessionId: info.sessionId,
+          name: names.get(info.sessionId) ?? "Shell",
+          status: "in terminal",
+          target: { view: "chat", sessionId: info.sessionId },
+        });
+      }
+    } catch (error) {
+      this.#services.logger.debug("Island could not list terminals", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     const sortByNewest = <T extends { at: Date }>(entries: T[]): T[] =>
       entries.sort((left, right) => right.at.getTime() - left.at.getTime());

@@ -1,8 +1,7 @@
 import type { ProviderUsageSnapshot, UsageLimit } from "@ai-workbench/shared";
 
 /** Percentage of a limit still available, or null when it cannot be known. */
-export function remainingPercent(limit: UsageLimit): number | null {
-  if (limit.unit === "percent" && limit.remaining !== undefined) {
+export function remainingPercent(limit: UsageLimit): number | null {  if (limit.unit === "percent" && limit.remaining !== undefined) {
     return clampPercent(limit.remaining);
   }
   if (limit.total !== undefined && limit.total > 0) {
@@ -13,6 +12,39 @@ export function remainingPercent(limit: UsageLimit): number | null {
     }
   }
   return null;
+}
+
+/**
+ * What a limit consumed so far reads as when no percentage can be known
+ * (tools like `opencode stats` report totals, not quotas). Null when even
+ * that is unknown — the UI then says "Unknown" instead of inventing one.
+ */
+export function consumedValue(limit: UsageLimit): string | null {
+  if (limit.used === undefined) {
+    return null;
+  }
+  switch (limit.unit) {
+    case "tokens":
+      return `${compactNumber(limit.used)} tokens`;
+    case "credits":
+      return `$${limit.used.toFixed(2)}`;
+    case "requests":
+      return `${compactNumber(limit.used)} requests`;
+    case "time":
+      return `${compactNumber(limit.used)}s`;
+    default:
+      return null;
+  }
+}
+
+function compactNumber(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}m`;
+  }
+  if (value >= 1_000) {
+    return `${(value / 1_000).toFixed(1)}k`;
+  }
+  return `${Math.round(value)}`;
 }
 
 /** The headline number for the compact indicator, or null when unknown. */

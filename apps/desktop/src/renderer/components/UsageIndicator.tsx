@@ -1,6 +1,6 @@
 import { type JSX, useMemo } from "react";
 import type { AggregatedUsage, ProviderSummary } from "@ai-workbench/shared";
-import { formatRelativeTime, headlineUsage, remainingPercent } from "../lib/format.js";
+import { formatRelativeTime, headlineUsage, consumedValue, remainingPercent } from "../lib/format.js";
 import { Popover } from "./Popover.js";
 
 interface UsageIndicatorProps {
@@ -76,13 +76,12 @@ export function UsageIndicator({
               ) : (
                 snapshot.limits.map((limit) => {
                   const percent = remainingPercent(limit);
+                  const consumed = percent === null ? consumedValue(limit) : null;
                   return (
                     <p className="usage-entry__limit" key={limit.id}>
                       <span>{limit.label}</span>
                       <span>
-                        {percent === null
-                          ? "Unknown"
-                          : `${percent}% remaining`}
+                        {percent !== null ? `${percent}% remaining` : (consumed ?? "Unknown")}
                       </span>
                     </p>
                   );

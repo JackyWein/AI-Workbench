@@ -563,8 +563,10 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
   const [saving, setSaving] = useState(false);
 
   // Providers load after the form mounts; agents without a choice inherit the
-  // first available one instead of staying empty.
-  const firstProviderId = providers[0]?.metadata.id ?? "";
+  // first available one instead of staying empty. Hidden providers are never
+  // offered for new agents.
+  const firstProviderId =
+    providers.find((entry) => entry.enabled)?.metadata.id ?? "";
   useEffect(() => {
     if (firstProviderId.length === 0) {
       return;
@@ -730,11 +732,13 @@ function AgentDraftRow({
             value={agent.providerId}
             onChange={(event) => onPatch({ providerId: event.target.value })}
           >
-            {providers.map((entry) => (
-              <option key={entry.metadata.id} value={entry.metadata.id}>
-                {providerLabel(entry)}
-              </option>
-            ))}
+            {providers
+              .filter((entry) => entry.enabled || entry.metadata.id === agent.providerId)
+              .map((entry) => (
+                <option key={entry.metadata.id} value={entry.metadata.id}>
+                  {providerLabel(entry)}
+                </option>
+              ))}
           </select>
         </label>
         {canSelectModel && provider ? (

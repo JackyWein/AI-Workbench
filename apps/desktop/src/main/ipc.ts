@@ -139,6 +139,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
         input.providerId,
         toProviderConfigOverrides(config),
       );
+      services.providers.setProviderEnabled(input.providerId, config.enabled);
       return {
         config,
         summary: await services.providers.describe(input.providerId),

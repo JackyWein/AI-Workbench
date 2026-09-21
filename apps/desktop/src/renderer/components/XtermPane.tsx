@@ -174,6 +174,7 @@ export function XtermPane({
     let disposed = false;
     let pending = "";
     let replayed = false;
+    const timeouts = new Set<ReturnType<typeof setTimeout>>();
     // Live output is coalesced to one write per frame so a fast command
     // cannot schedule a parse per IPC event.
     let live = "";
@@ -243,6 +244,25 @@ export function XtermPane({
           cols: terminal.cols,
           rows: terminal.rows,
         }).catch(() => undefined);
+        // Layout often settles a tick after the pane appears (workspace
+        // switch, panel open): fit once more so the pty matches what xterm
+        // actually renders instead of a mid-animation size.
+        const settle = setTimeout(() => {
+          if (disposed || idRef.current !== terminalId) {
+            return;
+          }
+          try {
+            fitRef.current?.fit();
+          } catch {
+            return;
+          }
+          void invoke("terminal.resize", {
+            terminalId,
+            cols: terminal.cols,
+            rows: terminal.rows,
+          }).catch(() => undefined);
+        }, 300);
+        timeouts.add(settle);
       })
       .catch(() => {
         replayed = true;
@@ -250,6 +270,10 @@ export function XtermPane({
 
     return () => {
       disposed = true;
+      for (const timeout of timeouts) {
+        clearTimeout(timeout);
+      }
+      timeouts.clear();
       if (liveFrame !== null) {
         cancelAnimationFrame(liveFrame);
         liveFrame = null;

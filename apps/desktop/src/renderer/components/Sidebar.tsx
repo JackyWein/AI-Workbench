@@ -83,33 +83,37 @@ export function Sidebar({
           {workspaces.length === 0 ? (
             <p className="row__meta sidebar__empty">No workspaces yet</p>
           ) : (
-            workspaces.map((workspace) => (
-              <Popover
-                key={workspace.id}
-                title="Workspace path"
-                triggerClassName="row"
-                current={workspace.id === activeWorkspaceId}
-                toggleOnClick={false}
-                onTriggerClick={() => void selectWorkspace(workspace.id)}
-                trigger={
-                  <>
-                    <Folder size={14} strokeWidth={1.75} aria-hidden="true" />
-                    <span className="row__text">{workspace.name}</span>
-                  </>
-                }
-              >
-                <p className="popover__detail">{workspace.path}</p>
-                <button
-                  type="button"
-                  className="quiet-button"
-                  onClick={() => void deleteWorkspace(workspace.id)}
-                  aria-label={`Delete workspace ${workspace.name}`}
-                >
-                  <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
-                  Delete workspace
-                </button>
-              </Popover>
-            ))
+            workspaces.map((workspace) => {
+              const current = workspace.id === activeWorkspaceId;
+              return (
+                <div key={workspace.id} className="sidebar__row" data-current={current}>
+                  <Popover
+                    title="Workspace path"
+                    triggerClassName="row"
+                    current={current}
+                    toggleOnClick={false}
+                    onTriggerClick={() => void selectWorkspace(workspace.id)}
+                    trigger={
+                      <>
+                        <Folder size={14} strokeWidth={1.75} aria-hidden="true" />
+                        <span className="row__text">{workspace.name}</span>
+                      </>
+                    }
+                  >
+                    <p className="popover__detail">{workspace.path}</p>
+                  </Popover>
+                  <button
+                    type="button"
+                    className="icon-button sidebar__delete"
+                    onClick={() => void deleteWorkspace(workspace.id)}
+                    aria-label={`Delete workspace ${workspace.name}`}
+                    title={`Delete workspace ${workspace.name}`}
+                  >
+                    <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
 

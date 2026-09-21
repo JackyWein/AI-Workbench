@@ -138,6 +138,30 @@ function ProviderEntry({
         />
         <span className="provider-entry__name">{provider.metadata.displayName}</span>
         <span className="row__meta">{installationLabel(provider)}</span>
+        <span className="agents-bar__spacer" />
+        <button
+          type="button"
+          className="quiet-button"
+          disabled={saving}
+          onClick={() =>
+            void saveProviderConfig({
+              providerId: provider.metadata.id,
+              enabled: !provider.enabled,
+            })
+          }
+          title={
+            provider.enabled
+              ? "Hide this provider from pickers (existing sessions keep working)"
+              : "Show this provider in pickers again"
+          }
+          aria-label={
+            provider.enabled
+              ? `Hide ${provider.metadata.displayName}`
+              : `Show ${provider.metadata.displayName}`
+          }
+        >
+          {provider.enabled ? "Hide" : "Show"}
+        </button>
       </div>
 
       {provider.metadata.description ? (

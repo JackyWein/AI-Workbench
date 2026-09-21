@@ -106,6 +106,8 @@ export class ProviderRegistry {
       models: models ?? [],
       modelsUpdatedAt: this.#modelsUpdatedAt(adapter),
       usage: usage ?? null,
+      // The manager overlays the user's choice; unknown to the registry means on.
+      enabled: true,
     };
   }
 

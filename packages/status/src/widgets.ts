@@ -1,6 +1,7 @@
 import {
   ISLAND_PRIORITY,
   type AggregatedUsage,
+  type IslandTarget,
   type UsageLimit,
   type IslandEntry,
   type IslandWidgetId,
@@ -24,6 +25,11 @@ export interface IslandSources {
     sessionId: string;
     name: string;
     status: string;
+    /**
+     * Where "Open" lands. Defaults to the session's chat; tiles and shells
+     * that belong to no chat point at the chat view instead of a bad id.
+     */
+    target?: IslandTarget;
   }>;
   /** Things waiting on a person, newest first (spec §99). */
   readonly attention: ReadonlyArray<{
@@ -265,9 +271,11 @@ export const activeAgentsWidget: IslandWidget = {
       progress: null,
       action: first
         ? { label: "Open", target: { view: "teams", runId: first.runId } }
-        : busy[0]
-          ? { label: "Open", target: { view: "chat", sessionId: busy[0].sessionId } }
-          : null,
+        : busy[0]?.target
+          ? { label: "Open", target: busy[0].target }
+          : busy[0]
+            ? { label: "Open", target: { view: "chat", sessionId: busy[0].sessionId } }
+            : null,
       key: first ? `task:${first.task.id}` : `session:${busy[0]?.sessionId ?? ""}`,
       at: sources.now,
     };

@@ -177,6 +177,15 @@ async function createServicesInner(
   // no core change is needed to support a new one.
   registerCustomProviders(providers.registry, storedProviderConfigs);
 
+  // Hidden providers stay registered (existing sessions keep working) but
+  // offer nothing new: pickers filter them, and no new session defaults to
+  // one.
+  for (const config of storedProviderConfigs) {
+    if (!config.enabled) {
+      providers.setProviderEnabled(config.providerId, false);
+    }
+  }
+
   // Further accounts of tools that keep several side by side (spec §39).
   const accounts = new ProviderAccountService({
     db: database.db,

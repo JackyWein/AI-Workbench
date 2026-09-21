@@ -29,19 +29,22 @@ export function validModels(input: unknown): ModelInfo[] {
 
 /**
  * Parses a tool's model list: one `provider/model` id per line, as printed by
- * commands like `opencode models`. Blank lines and surrounding whitespace are
- * ignored; anything else becomes a model with its own id as display name.
+ * commands like `opencode models`. A tab separates a display name
+ * (`id\tDisplay`, like `agy models`); blank lines and surrounding whitespace
+ * are ignored; anything else becomes a model with its own id as display name.
  */
 export function parseModelLines(stdout: string): ModelInfo[] {
   const seen = new Set<string>();
   const models: ModelInfo[] = [];
   for (const line of stdout.split("\n")) {
-    const id = line.trim();
+    const [rawId, ...rest] = line.split("\t");
+    const id = (rawId ?? "").trim();
+    const displayName = rest.join("\t").trim();
     if (id.length === 0 || seen.has(id)) {
       continue;
     }
     seen.add(id);
-    models.push({ id, displayName: id });
+    models.push({ id, displayName: displayName.length > 0 ? displayName : id });
   }
   return models;
 }

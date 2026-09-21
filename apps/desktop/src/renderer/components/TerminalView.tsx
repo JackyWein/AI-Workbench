@@ -130,12 +130,21 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
           }
         });
 
-        // Match the pty to the rendered size once it is attached.
+        // Match the pty to the rendered size once it is attached, then once
+        // more after layout settles (workspace switch, panel open) so the
+        // shell never keeps a mid-animation size that wraps lines wrongly.
         await invoke("terminal.resize", {
           terminalId,
           cols: terminal.cols,
           rows: terminal.rows,
         });
+        const settledId = terminalId;
+        setTimeout(() => {
+          if (disposed || terminalId !== settledId) {
+            return;
+          }
+          resize();
+        }, 300);
       } catch (error) {
         onError(describeError(error));
       }

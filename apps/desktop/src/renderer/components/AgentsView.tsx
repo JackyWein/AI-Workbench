@@ -96,8 +96,10 @@ export function ModeToggle(): JSX.Element {
  * interactive terminal interface — never a hard-coded brand list.
  */
 function launchableProviders(providers: readonly ProviderSummary[]): ProviderSummary[] {
-  return providers.filter((provider) =>
-    provider.capabilities.supported.includes("interactiveTerminal"),
+  return providers.filter(
+    (provider) =>
+      provider.enabled &&
+      provider.capabilities.supported.includes("interactiveTerminal"),
   );
 }
 

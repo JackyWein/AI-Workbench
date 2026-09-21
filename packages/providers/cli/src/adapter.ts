@@ -36,7 +36,7 @@ import { buildMcpLaunch, mcpServersFor, NO_MCP, type CliMcpLaunch } from "./mcp.
 import { ModelStore, parseModelLines, validModels } from "./models.js";
 import { classifyError, parseWithRules } from "./parse.js";
 import type { CliProviderProfile } from "./profile.js";
-import { UsageStore } from "./usage.js";
+import { UsageStore, parseOpencodeStatsUsage } from "./usage.js";
 
 /** One account of a tool that keeps several side by side. */
 export interface CliAccount {
@@ -140,7 +140,9 @@ export class CliProviderAdapter implements AIProviderAdapter {
             this.#runExtension("readUsage", HOOK_TIMEOUT_MS.readUsage, (extensions, context) =>
               extensions.readUsage?.(context) ?? Promise.resolve(null),
             )
-        : undefined,
+        : this.#profile.usageArgs.length > 0 && this.#profile.usageFormat === "opencode-stats"
+          ? () => this.#readUsageFromProfile()
+          : undefined,
       onChange: () => this.#notifyChanged(),
     });
 
@@ -157,6 +159,7 @@ export class CliProviderAdapter implements AIProviderAdapter {
       ...(profile.description === undefined ? {} : { description: profile.description }),
       adapterVersion: "1.0.0",
       ...(profile.icon === undefined ? {} : { icon: profile.icon }),
+      ...(profile.effortOptions.length === 0 ? {} : { effortOptions: [...profile.effortOptions] }),
       ...(profile.website === undefined ? {} : { website: profile.website }),
       ...(profile.unverified
         ? {
@@ -635,6 +638,36 @@ export class CliProviderAdapter implements AIProviderAdapter {
     });
   }
 
+  /** Profile-driven usage reading for tools with a stats command. */
+  async #readUsageFromProfile(): Promise<ProviderUsageSnapshot | null> {
+    const transport = this.#transport;
+    if (!transport || this.#profile.usageArgs.length === 0) {
+      return null;
+    }
+    try {
+      const { stdout, exit } = await transport.exec({
+        args: [...this.#profile.usageArgs],
+        timeoutMs: 30_000,
+      });
+      if (exit.code !== 0) {
+        return null;
+      }
+      const limits = parseOpencodeStatsUsage(stdout);
+      if (!limits) {
+        return null;
+      }
+      return {
+        providerId: this.metadata.id,
+        state: "available",
+        limits,
+        updatedAt: new Date(),
+        source: "cli",
+      };
+    } catch {
+      return null;
+    }
+  }
+
   /** Runs a hook against this entry's context; null when not initialized or on failure. */
   async #runExtension<T>(
     hook: string,
@@ -755,6 +788,9 @@ function deriveCapabilities(
   const supported = new Set(profile.capabilities);
   if (profile.effortArgs.length > 0) {
     supported.add("reasoningModes");
+  }
+  if (profile.usageArgs.length > 0) {
+    supported.add("usage");
   }
   if (profile.interactive) {
     supported.add("interactiveTerminal");

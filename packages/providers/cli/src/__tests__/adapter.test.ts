@@ -4,6 +4,7 @@ import type { ProviderEvent } from "@ai-workbench/shared";
 import type { ProviderContext } from "@ai-workbench/provider-base";
 import { CliProviderAdapter, isPendingSessionId } from "../adapter.js";
 import { parseModelLines } from "../models.js";
+import { parseOpencodeStatsUsage } from "../usage.js";
 import { parseProfile, readPath, substitute, type CliProviderProfileInput } from "../profile.js";
 import { builtInCliProfiles, claudeCodeProfile } from "../profiles.js";
 
@@ -422,11 +423,38 @@ describe("profile-driven model discovery", () => {
     expect(parseModelLines("")).toEqual([]);
   });
 
+  it("reads a display name after a tab, like `agy models`", () => {
+    expect(parseModelLines("gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n")).toEqual([
+      { id: "gemini-3.8-flash-high", displayName: "Gemini 3.8 Flash (High)" },
+    ]);
+  });
+
   it("discovers the tool's models without manual entry", async () => {
     const adapter = await adapterFor(modelsProfile, modelsCli);
     const models = await adapter.refreshModels();
     expect(models.map((model) => model.id)).toEqual(["acme/atlas", "acme/bolt"]);
     expect(models.every((model) => model.source === "provider")).toBe(true);
+  });
+});
+
+describe("profile-driven usage reading", () => {
+  it("reads tokens and cost from `opencode stats --json`", () => {
+    const limits = parseOpencodeStatsUsage(
+      JSON.stringify({
+        tokens: { input: 1000, output: 200, reasoning: 50 },
+        cost: 1.5,
+      }),
+    );
+    expect(limits).toEqual([
+      { id: "tokens", label: "Tokens", used: 1250, unit: "tokens" },
+      { id: "cost", label: "Cost", used: 1.5, unit: "credits" },
+    ]);
+  });
+
+  it("returns null when the tool reports nothing usable", () => {
+    expect(parseOpencodeStatsUsage("not json")).toBeNull();
+    expect(parseOpencodeStatsUsage(JSON.stringify({ sessions: 3 }))).toBeNull();
+    expect(parseOpencodeStatsUsage(JSON.stringify({}))).toBeNull();
   });
 });
 

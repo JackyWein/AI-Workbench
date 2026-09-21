@@ -194,6 +194,22 @@ export const cliProviderProfileSchema = z.object({
    */
   modelsArgs: z.array(z.string()).default([]),
   /**
+   * Reads account usage without spending a turn (like `opencode stats
+   * --json`). Empty means the tool has no such command and usage stays
+   * "unavailable" until a turn reports numbers (spec §55, §56, §108).
+   */
+  usageArgs: z.array(z.string()).default([]),
+  /**
+   * How to read the usage command's stdout. Only formats implemented here
+   * count; anything else keeps usage unavailable rather than guessed.
+   */
+  usageFormat: z.enum(["opencode-stats"]).optional(),
+  /**
+   * Reasoning effort levels the tool accepts for `--effort` (like Antigravity's
+   * low|medium|high). Empty means the tool takes none and no picker appears.
+   */
+  effortOptions: z.array(z.string().min(1)).max(12).default([]),
+  /**
    * "append" adds the resume arguments after the base ones; "replace" swaps the
    * base arguments out entirely, for CLIs where resuming is its own subcommand.
    */

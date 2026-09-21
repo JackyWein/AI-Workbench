@@ -46,6 +46,8 @@ export class ProviderManager {
   readonly #configs = new Map<string, Partial<ProviderConfig>>();
   readonly #factories = new Map<string, ProviderFactory>();
   readonly #pendingUpdates = new Map<string, NodeJS.Timeout>();
+  /** Providers the user hid: registered, but offering nothing new. */
+  readonly #disabled = new Set<string>();
 
   constructor(options: ProviderManagerOptions) {
     this.#options = options;
@@ -82,6 +84,20 @@ export class ProviderManager {
 
   factories(): ProviderFactory[] {
     return [...this.#factories.values()];
+  }
+
+  /** Hides a provider (or brings it back): hidden ones offer nothing new,
+   *  but existing sessions keep working until they are deleted. */
+  setProviderEnabled(providerId: string, enabled: boolean): void {
+    if (enabled) {
+      this.#disabled.delete(providerId);
+    } else {
+      this.#disabled.add(providerId);
+    }
+  }
+
+  isProviderEnabled(providerId: string): boolean {
+    return !this.#disabled.has(providerId);
   }
 
   /** Registers the entry of one more account of a family. */
@@ -252,16 +268,24 @@ export class ProviderManager {
   }
 
   async describeAll(): Promise<ProviderSummary[]> {
-    return this.registry.describeAll();
+    const summaries = await this.registry.describeAll();
+    return summaries.map((summary) => ({
+      ...summary,
+      enabled: this.isProviderEnabled(summary.metadata.id),
+    }));
   }
 
   async describe(providerId: string): Promise<ProviderSummary> {
-    return this.registry.describe(this.registry.require(providerId));
+    const summary = await this.registry.describe(this.registry.require(providerId));
+    return { ...summary, enabled: this.isProviderEnabled(providerId) };
   }
 
-  /** First registered provider, used when a session has no explicit choice. */
+  /** First enabled provider, used when a session has no explicit choice. */
   defaultProviderId(): string | null {
-    return this.registry.list()[0]?.metadata.id ?? null;
+    return (
+      this.registry.list().find((adapter) => this.isProviderEnabled(adapter.metadata.id))
+        ?.metadata.id ?? null
+    );
   }
 
   async dispose(): Promise<void> {

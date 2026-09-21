@@ -4,6 +4,7 @@ import {
   type ProviderUsageSnapshot,
   type UsageLimit,
 } from "@ai-workbench/shared";
+import { z } from "zod";
 
 export interface UsageStoreOptions {
   readonly providerId: string;
@@ -25,6 +26,46 @@ export interface UsageStoreOptions {
 const TURN_NOTE = "Usage is reported during a turn; none has run yet.";
 const FAILED_NOTE = "The tool did not report its usage.";
 const PENDING_NOTE = "Usage is still being read from the tool.";
+
+/**
+ * Reads `opencode stats --json`: lifetime token counts and cost. Only what
+ * the tool prints becomes a limit — no quota is assumed, so these render as
+ * consumed amounts, never as remaining percentages (spec §55, §56).
+ */
+export function parseOpencodeStatsUsage(stdout: string): UsageLimit[] | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(stdout);
+  } catch {
+    return null;
+  }
+  const parsed = z
+    .object({
+      tokens: z
+        .object({
+          input: z.number().nonnegative().optional(),
+          output: z.number().nonnegative().optional(),
+          reasoning: z.number().nonnegative().optional(),
+        })
+        .optional(),
+      cost: z.number().nonnegative().optional(),
+    })
+    .safeParse(data);
+  if (!parsed.success) {
+    return null;
+  }
+  const limits: UsageLimit[] = [];
+  const tokens = parsed.data.tokens;
+  if (tokens) {
+    const used =
+      (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0);
+    limits.push({ id: "tokens", label: "Tokens", used, unit: "tokens" });
+  }
+  if (parsed.data.cost !== undefined) {
+    limits.push({ id: "cost", label: "Cost", used: parsed.data.cost, unit: "credits" });
+  }
+  return limits.length > 0 ? limits : null;
+}
 
 /**
  * What is known about one entry's usage limits (spec §55, §56, §108).
