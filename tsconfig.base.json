@@ -29,6 +29,8 @@
       "@ai-workbench/database": ["./packages/database/src/index.ts"],
       "@ai-workbench/provider-base": ["./packages/providers/base/src/index.ts"],
       "@ai-workbench/provider-mock": ["./packages/providers/mock/src/index.ts"],
+      "@ai-workbench/provider-cli": ["./packages/providers/cli/src/index.ts"],
+      "@ai-workbench/transport-cli": ["./packages/providers/transports/cli/src/index.ts"],
       "@ai-workbench/ui": ["./packages/ui/src/index.ts"],
       "@ai-workbench/ui/*": ["./packages/ui/src/*"]
     }

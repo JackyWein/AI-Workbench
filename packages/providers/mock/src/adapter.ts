@@ -32,6 +32,8 @@ interface MockSessionState {
   /** Follows the model currently selected for the session. */
   modelId: string;
   turns: number;
+  /** Cumulative tokens, so context information is real rather than invented. */
+  contextTokens: number;
   abort: AbortController | null;
 }
 
@@ -64,9 +66,6 @@ const MOCK_MODELS: ModelInfo[] = [
  * A fully local provider used to build and test the application end to end
  * (spec §20). It simulates streaming, delays, status changes, tool calls,
  * errors, usage, session resume, model selection and context information.
- *
- * Live context reporting is deliberately absent from its capabilities until it
- * is actually implemented, so the UI hides the feature instead of faking it.
  *
  * Magic words in a prompt drive the simulations, so failure paths are testable:
  *   /error    -> normalized provider error
@@ -134,6 +133,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
         "modelSelection",
         "toolCalls",
         "usage",
+        "contextInformation",
       ],
     };
   }
@@ -150,6 +150,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
       sessionId: config.sessionId,
       modelId,
       turns: 0,
+      contextTokens: 0,
       abort: null,
     });
     return { providerSessionId, resumable: true, modelId };
@@ -174,6 +175,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
       sessionId: config.sessionId,
       modelId,
       turns: 0,
+      contextTokens: 0,
       abort: null,
     });
     return { providerSessionId, resumable: true, modelId };
@@ -261,12 +263,20 @@ export class MockProviderAdapter implements AIProviderAdapter {
         yield { type: "text_delta", text: chunk };
       }
 
+      const inputTokens = estimateTokens(prompt);
+      const outputTokens = estimateTokens(reply);
+      state.contextTokens += inputTokens + outputTokens;
+
       yield {
         type: "usage",
         usage: {
           limits: this.#buildLimits(),
-          inputTokens: estimateTokens(prompt),
-          outputTokens: estimateTokens(reply),
+          inputTokens,
+          outputTokens,
+          contextTokens: state.contextTokens,
+          ...(contextWindowOf(modelId) === undefined
+            ? {}
+            : { contextWindow: contextWindowOf(modelId) }),
         },
       };
       yield { type: "completed", reason: "finished" };
@@ -333,6 +343,10 @@ export class MockProviderAdapter implements AIProviderAdapter {
       throw new ProviderError("provider", "Mock provider is not initialized");
     }
   }
+}
+
+function contextWindowOf(modelId: string): number | undefined {
+  return MOCK_MODELS.find((model) => model.id === modelId)?.contextWindow;
 }
 
 function estimateTokens(text: string): number {

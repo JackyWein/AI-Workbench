@@ -12,20 +12,20 @@ Weighted contribution = weight x completion.
 |---|---|---:|---:|---:|---:|---:|
 | G0 | Repository / Foundation | 5% | 12 | 12 | 100% | 5.00 |
 | G1 | Functional desktop vertical slice | 15% | 20 | 19 | 95% | 14.25 |
-| G2 | Provider platform | 15% | 20 | 10 | 50% | 7.50 |
+| G2 | Provider platform | 15% | 20 | 18 | 90% | 13.50 |
 | G3 | Workspace / developer tooling | 10% | 14 | 0 | 0% | 0.00 |
 | G4 | Skills, plugins & MCP | 10% | 15 | 0 | 0% | 0.00 |
 | G5 | Autonomous team system | 20% | 28 | 0 | 0% | 0.00 |
 | G6 | Status Island & background runtime | 10% | 22 | 0 | 0% | 0.00 |
 | G7 | UX, security, reliability & performance | 10% | 19 | 11 | 58% | 5.79 |
 | G8 | Extensibility, SDK & packaging | 5% | 10 | 1 | 10% | 0.50 |
-| **TOTAL** | | **100%** | **160** | **53** | | **33.04%** |
+| **TOTAL** | | **100%** | **160** | **61** | | **39.04%** |
 
 ## Current focus
 
-**G2 — Provider platform.** G0 is complete and the G1 vertical slice works end
-to end. The next substantial step is the generic CLI transport and the first
-real provider adapter.
+**G3 — Workspace and developer tooling.** G0 and the G1 slice are done, and the
+provider platform now runs a real command line provider end to end. What remains
+in G2 is verifying the Codex and Gemini profiles against those tools.
 
 ## How this file is verified
 
@@ -33,11 +33,19 @@ Everything ticked below is proven by `pnpm verify`, which runs:
 
 - `pnpm lint` — ESLint over the workspace
 - `pnpm typecheck` — strict TypeScript over Node and web projects
-- `pnpm test` — 48 unit and integration tests
+- `pnpm test` — 94 unit and integration tests (2 more are skipped by default
+  because they spend real provider quota; see below)
 - `pnpm build` — electron-vite production build
 - `pnpm verify:app` — starts the built application headlessly (Xvfb), drives the
   real renderer through the preload bridge, and runs a second time against the
   same database to prove a conversation survives a restart
+
+Additionally, and deliberately outside the default run:
+
+- `AI_WORKBENCH_REAL_PROVIDER=1 pnpm test` drives the installed Claude Code CLI
+  through the whole stack. It was run once for this milestone: the tool was
+  detected with its version, an answer streamed back, real account usage was
+  reported by the provider, and a second turn resumed the same conversation.
 
 Last full run: all checks passed.
 
@@ -53,10 +61,14 @@ Last full run: all checks passed.
 - **aggregated usage hover/focus (G1)** is verified with one registered
   provider; aggregation across several providers is covered by the
   `UsageService` tests, not yet by a running multi-provider setup.
-- **G2** is at half its criteria because the contract, registry, normalization,
-  cancellation and resume are done, while the substance of the goal — a generic
-  CLI transport, installation discovery, authentication reporting and real
-  provider adapters — is still ahead.
+- **Codex and Gemini adapters (G2)** ship as profiles built on the same,
+  verified machinery, but their flags and event shapes were not run against
+  those tools here. They are marked unverified in the application itself, and
+  the criteria stay unticked until someone runs them.
+- **authentication state reporting (G2)** is ticked for the mechanism, which is
+  tested across authenticated, sign-in-required and unknown states. The Claude
+  Code profile has no non-interactive auth probe, so for that provider the
+  honest answer is "unknown" with a hint, not a guess.
 - **G7** items left open are the judgment and performance ones (polish,
   virtualized chats and logs, full keyboard pass). They belong to the dedicated
   hardening pass, not to this stage.
@@ -104,22 +116,22 @@ Last full run: all checks passed.
 
 ## G2 — Provider platform — 15%
 
-- [ ] provider adapter contract stable
-- [ ] transport abstraction stable
+- [x] provider adapter contract stable
+- [x] transport abstraction stable
 - [x] provider registry works
 - [x] capability model works
-- [ ] MockProvider complete
-- [ ] generic CLI transport works
-- [ ] provider installation discovery works
-- [ ] authentication state reporting works
+- [x] MockProvider complete
+- [x] generic CLI transport works
+- [x] provider installation discovery works
+- [x] authentication state reporting works
 - [x] normalized provider streaming works
 - [x] provider errors normalize correctly
 - [x] provider cancellation works
 - [x] session cleanup works
 - [x] model listing works
 - [x] session resume supported where provider supports it
-- [ ] first real provider works end-to-end
-- [ ] Claude adapter implemented if supported
+- [x] first real provider works end-to-end
+- [x] Claude adapter implemented if supported
 - [ ] Codex adapter implemented if supported
 - [ ] Gemini adapter implemented if supported
 - [x] missing provider does not break app

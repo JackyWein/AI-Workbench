@@ -28,6 +28,8 @@ export class ProviderManager {
   readonly #logger: Logger;
   readonly #options: ProviderManagerOptions;
   readonly #initialized = new Set<string>();
+  /** Last configuration applied per provider, so it can be re-applied. */
+  readonly #configs = new Map<string, Partial<ProviderConfig>>();
 
   constructor(options: ProviderManagerOptions) {
     this.#options = options;
@@ -45,15 +47,40 @@ export class ProviderManager {
     config?: Partial<ProviderConfig>,
   ): Promise<void> {
     this.registry.register(adapter);
+    this.#configs.set(adapter.metadata.id, config ?? {});
+    await this.#initialize(adapter);
+  }
 
-    const stateDirectory = join(
-      this.#options.stateDirectory,
-      adapter.metadata.id,
-    );
+  /**
+   * Applies changed configuration to a registered adapter by disposing and
+   * initializing it again, so a new executable path or argument list takes
+   * effect without restarting the application.
+   */
+  async reconfigure(
+    providerId: string,
+    config: Partial<ProviderConfig>,
+  ): Promise<void> {
+    const adapter = this.registry.require(providerId);
+    this.#configs.set(providerId, config);
+
+    try {
+      await adapter.dispose();
+    } catch (error) {
+      this.#logger.warn("Provider disposal during reconfigure failed", {
+        providerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    this.#initialized.delete(providerId);
+    await this.#initialize(adapter);
+  }
+
+  async #initialize(adapter: AIProviderAdapter): Promise<void> {
+    const stateDirectory = join(this.#options.stateDirectory, adapter.metadata.id);
     await mkdir(stateDirectory, { recursive: true });
 
     const context: ProviderContext = {
-      config: buildConfig(adapter, config),
+      config: buildConfig(adapter, this.#configs.get(adapter.metadata.id)),
       logger: this.#logger.child("PROVIDER"),
       stateDirectory,
       ...(this.#options.resolveCredential
@@ -65,6 +92,8 @@ export class ProviderManager {
       await adapter.initialize(context);
       this.#initialized.add(adapter.metadata.id);
     } catch (error) {
+      // A provider that cannot initialize is reported as unavailable rather
+      // than breaking startup (spec §18, §60).
       this.#logger.error("Provider initialization failed", {
         providerId: adapter.metadata.id,
         error: error instanceof Error ? error.message : String(error),
@@ -82,6 +111,10 @@ export class ProviderManager {
 
   async describeAll(): Promise<ProviderSummary[]> {
     return this.registry.describeAll();
+  }
+
+  async describe(providerId: string): Promise<ProviderSummary> {
+    return this.registry.describe(this.registry.require(providerId));
   }
 
   /** First registered provider, used when a session has no explicit choice. */

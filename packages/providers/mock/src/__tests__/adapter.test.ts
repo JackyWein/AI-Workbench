@@ -157,6 +157,33 @@ describe("MockProvider", () => {
     expect(events.at(-1)).toEqual({ type: "completed", reason: "finished" });
   });
 
+  it("reports context information that grows with the conversation", async () => {
+    const adapter = await createAdapter();
+    const info = await adapter.createSession({
+      sessionId: "s1",
+      workingDirectory: "/tmp",
+    });
+    const handle = { sessionId: "s1", providerSessionId: info.providerSessionId };
+
+    const first = await collect(adapter.sendMessage(handle, { text: "hello" }));
+    const firstUsage = first.find((event) => event.type === "usage");
+    const firstContext =
+      firstUsage && "usage" in firstUsage ? firstUsage.usage.contextTokens : 0;
+
+    expect(firstContext).toBeGreaterThan(0);
+    expect(
+      firstUsage && "usage" in firstUsage ? firstUsage.usage.contextWindow : 0,
+    ).toBe(200_000);
+
+    const second = await collect(adapter.sendMessage(handle, { text: "and again" }));
+    const secondUsage = second.find((event) => event.type === "usage");
+    const secondContext =
+      secondUsage && "usage" in secondUsage ? secondUsage.usage.contextTokens : 0;
+
+    // Context accumulates across turns rather than being reported per turn.
+    expect(secondContext).toBeGreaterThan(firstContext ?? 0);
+  });
+
   it("counts usage against its own quota", async () => {
     const adapter = await createAdapter();
     const before = await adapter.getUsage();

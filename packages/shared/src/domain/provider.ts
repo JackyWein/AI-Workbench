@@ -65,6 +65,12 @@ export const providerMetadataSchema = z.object({
   providerVersion: z.string().optional(),
   icon: z.string().optional(),
   website: z.string().url().optional(),
+  /**
+   * Something the user must know about this adapter, shown as-is. Used for
+   * honest caveats, such as a configuration that has not been verified against
+   * the real tool.
+   */
+  notice: z.string().optional(),
   authMethods: z.array(authMethodSchema),
   transportTypes: z.array(providerTransportTypeSchema),
 });
@@ -141,3 +147,27 @@ export const providerConfigSchema = z.object({
   settings: z.record(z.unknown()).optional(),
 });
 export type ProviderConfig = z.infer<typeof providerConfigSchema>;
+
+/** The part of a provider configuration the user may edit and we persist. */
+export const storedProviderConfigSchema = z.object({
+  providerId: z.string().min(1),
+  enabled: z.boolean(),
+  executablePath: z.string().nullable(),
+  arguments: z.array(z.string()),
+  defaultModel: z.string().nullable(),
+  /** Free-form adapter settings, e.g. a user-maintained model list. */
+  settings: z.record(z.unknown()),
+  updatedAt: z.date(),
+});
+export type StoredProviderConfig = z.infer<typeof storedProviderConfigSchema>;
+
+export const saveProviderConfigInputSchema = z.object({
+  providerId: z.string().min(1),
+  enabled: z.boolean().optional(),
+  /** Absolute path to the executable; null clears it and returns to PATH. */
+  executablePath: z.string().nullable().optional(),
+  arguments: z.array(z.string()).optional(),
+  defaultModel: z.string().nullable().optional(),
+  models: z.array(modelInfoSchema).optional(),
+});
+export type SaveProviderConfigInput = z.infer<typeof saveProviderConfigInputSchema>;

@@ -46,6 +46,23 @@ directory and drives the actual renderer:
 
 It uses Xvfb when no display is present, so it also runs in CI and containers.
 
+## Using a real provider
+
+The application looks for the provider CLIs on PATH. Open **Providers** to see
+what was found, with version and authentication state. If a tool lives somewhere
+unusual, set its executable path there; the change applies immediately.
+
+The Codex and Gemini profiles are starting points that have not been verified
+against those tools, which the provider screen states plainly. If a turn fails,
+correct the path and arguments there rather than editing code.
+
+To verify an installed provider end to end — this spends real quota, so it is
+never part of the normal test run:
+
+```bash
+AI_WORKBENCH_REAL_PROVIDER=1 pnpm test
+```
+
 ## Repository layout
 
 ```text
@@ -58,6 +75,8 @@ packages/
   database/           Drizzle schema, libsql client, embedded migrations
   providers/base/     Provider adapter contract, registry, error normalization
   providers/mock/     MockProvider used for development and tests
+  providers/cli/      Generic profile-driven adapter for command line providers
+  providers/transports/cli/  Reusable process transport and executable discovery
   ui/                 Design tokens
 scripts/              Verification scripts
 docs/adr/             Architecture decision records

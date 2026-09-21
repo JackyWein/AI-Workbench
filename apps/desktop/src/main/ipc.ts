@@ -6,7 +6,7 @@ import {
   type IpcInput,
   type IpcOutput,
 } from "@ai-workbench/shared";
-import type { AppServices } from "./services.js";
+import { toProviderConfigOverrides, type AppServices } from "./services.js";
 
 type Handler<C extends IpcChannel> = (
   input: IpcInput<C>,
@@ -70,6 +70,21 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       services.sessions.listMessages(input.sessionId, input.limit),
 
     "provider.list": () => services.providers.describeAll(),
+    "provider.refresh": () => services.providers.describeAll(),
+    "provider.getConfigs": () => services.providerConfigs.list(),
+    "provider.saveConfig": async (input) => {
+      const config = await services.providerConfigs.save(input);
+      // Apply it immediately so the user can test a corrected path without
+      // restarting the application.
+      await services.providers.reconfigure(
+        input.providerId,
+        toProviderConfigOverrides(config),
+      );
+      return {
+        config,
+        summary: await services.providers.describe(input.providerId),
+      };
+    },
     "provider.getUsage": () => services.usage.get(),
     "provider.refreshUsage": () => services.usage.refresh(),
 

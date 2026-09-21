@@ -27,14 +27,20 @@ describe("migrations", () => {
 
   it("creates the expected tables", async () => {
     const result = await runMigrations(handle.client);
-    expect(result.applied).toEqual(["0000_init"]);
+    expect(result.applied).toEqual(migrations.map((entry) => entry.id));
 
     const tables = await handle.client.execute(
       "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
     );
     const names = tables.rows.map((row) => String(row["name"]));
     expect(names).toEqual(
-      expect.arrayContaining(["chat_messages", "sessions", "settings", "workspaces"]),
+      expect.arrayContaining([
+        "chat_messages",
+        "provider_configs",
+        "sessions",
+        "settings",
+        "workspaces",
+      ]),
     );
   });
 
@@ -43,7 +49,7 @@ describe("migrations", () => {
     const second = await runMigrations(handle.client);
 
     expect(second.applied).toEqual([]);
-    expect(second.skipped).toEqual(["0000_init"]);
+    expect(second.skipped).toEqual(migrations.map((entry) => entry.id));
   });
 
   it("enforces foreign keys so deletes cascade", async () => {

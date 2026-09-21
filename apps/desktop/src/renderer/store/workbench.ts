@@ -5,8 +5,10 @@ import type {
   AppSettings,
   ChatMessage,
   ProviderSummary,
+  SaveProviderConfigInput,
   Session,
   SessionStatus,
+  StoredProviderConfig,
   Workspace,
 } from "@ai-workbench/shared";
 import { defaultAppSettings } from "@ai-workbench/shared";
@@ -21,6 +23,7 @@ interface WorkbenchState {
   workspaces: Workspace[];
   sessions: Session[];
   providers: ProviderSummary[];
+  providerConfigs: Record<string, StoredProviderConfig>;
   usage: AggregatedUsage | null;
   settings: AppSettings;
 
@@ -58,10 +61,18 @@ interface WorkbenchState {
   cancel(): Promise<void>;
 
   refreshUsage(): Promise<void>;
+  refreshProviders(): Promise<void>;
+  saveProviderConfig(input: SaveProviderConfigInput): Promise<void>;
   updateSettings(input: Partial<AppSettings>): Promise<void>;
 
   applyEvent(event: AppEvent): void;
   appendDeltas(deltas: Map<string, { sessionId: string; text: string }>): void;
+}
+
+function byProviderId(
+  configs: StoredProviderConfig[],
+): Record<string, StoredProviderConfig> {
+  return Object.fromEntries(configs.map((config) => [config.providerId, config]));
 }
 
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
@@ -71,6 +82,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   workspaces: [],
   sessions: [],
   providers: [],
+  providerConfigs: {},
   usage: null,
   settings: defaultAppSettings,
 
@@ -85,14 +97,22 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
   async initialize() {
     try {
-      const [workspaces, providers, settings, usage] = await Promise.all([
+      const [workspaces, providers, settings, usage, configs] = await Promise.all([
         invoke("workspace.list", undefined),
         invoke("provider.list", undefined),
         invoke("settings.get", undefined),
         invoke("provider.getUsage", undefined),
+        invoke("provider.getConfigs", undefined),
       ]);
 
-      set({ workspaces, providers, settings, usage, ready: true });
+      set({
+        workspaces,
+        providers,
+        settings,
+        usage,
+        providerConfigs: byProviderId(configs),
+        ready: true,
+      });
 
       const firstWorkspace = workspaces[0];
       if (firstWorkspace) {
@@ -244,6 +264,29 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       const usage = await invoke("provider.refreshUsage", undefined);
       set({ usage });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async refreshProviders() {
+    try {
+      const providers = await invoke("provider.refresh", undefined);
+      set({ providers });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async saveProviderConfig(input) {
+    try {
+      const { config, summary } = await invoke("provider.saveConfig", input);
+      set((state) => ({
+        providerConfigs: { ...state.providerConfigs, [config.providerId]: config },
+        providers: state.providers.map((provider) =>
+          provider.metadata.id === summary.metadata.id ? summary : provider,
+        ),
+      }));
     } catch (error) {
       set({ error: describeError(error) });
     }

@@ -88,6 +88,30 @@ export const chatMessages = sqliteTable(
   (table) => [index("chat_messages_session_idx").on(table.sessionId, table.createdAt)],
 );
 
+/**
+ * User overrides for a provider adapter (spec §15). Secrets are deliberately
+ * absent: credentials belong in the OS keychain behind a reference, never in
+ * this table (spec §57).
+ */
+export const providerConfigs = sqliteTable("provider_configs", {
+  providerId: text("provider_id").primaryKey(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  executablePath: text("executable_path"),
+  arguments: text("arguments", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  baseUrl: text("base_url"),
+  defaultModel: text("default_model"),
+  credentialReference: text("credential_reference"),
+  settings: text("settings", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'`),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const settings = sqliteTable("settings", {
   key: text("key").primaryKey(),
   value: text("value", { mode: "json" }).$type<unknown>().notNull(),
@@ -101,3 +125,5 @@ export type NewSessionRow = typeof sessions.$inferInsert;
 export type ChatMessageRow = typeof chatMessages.$inferSelect;
 export type NewChatMessageRow = typeof chatMessages.$inferInsert;
 export type SettingRow = typeof settings.$inferSelect;
+export type ProviderConfigRow = typeof providerConfigs.$inferSelect;
+export type NewProviderConfigRow = typeof providerConfigs.$inferInsert;

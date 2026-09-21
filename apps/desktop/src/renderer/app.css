@@ -784,6 +784,38 @@ select {
   font-size: var(--text-sm);
 }
 
+.view__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 2px solid var(--warning);
+  background: var(--surface-raised);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.provider-entry__config {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  align-items: flex-start;
+}
+
+.stacked-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+}
+
 .provider-entry {
   display: flex;
   flex-direction: column;

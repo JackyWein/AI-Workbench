@@ -1,75 +1,175 @@
-import type { JSX } from "react";
-import type { ProviderSummary } from "@ai-workbench/shared";
+import { useState, type JSX } from "react";
+import { RefreshCw } from "lucide-react";
+import type { ProviderSummary, StoredProviderConfig } from "@ai-workbench/shared";
+import { useWorkbench } from "../store/workbench.js";
 
 interface ProvidersViewProps {
   readonly providers: ProviderSummary[];
+  readonly configs: Record<string, StoredProviderConfig>;
 }
 
 /**
- * Central provider screen (spec §19). Everything shown here comes from the
- * adapter itself: installation, authentication, models and capabilities.
+ * Central provider screen (spec §19). Everything shown comes from the adapter
+ * itself — installation, authentication, models, capabilities — and the two
+ * fields a user needs to make a command line provider work are editable here.
  */
-export function ProvidersView({ providers }: ProvidersViewProps): JSX.Element {
+export function ProvidersView({ providers, configs }: ProvidersViewProps): JSX.Element {
+  const refreshProviders = useWorkbench((state) => state.refreshProviders);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const refresh = async (): Promise<void> => {
+    setRefreshing(true);
+    try {
+      await refreshProviders();
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   return (
     <div className="view">
       <div className="view__inner">
-        <h1 className="view__title">Providers</h1>
+        <div className="view__header">
+          <h1 className="view__title">Providers</h1>
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => void refresh()}
+            disabled={refreshing}
+          >
+            <RefreshCw size={13} strokeWidth={1.75} aria-hidden="true" />
+            {refreshing ? "Checking" : "Check again"}
+          </button>
+        </div>
 
         <section>
           {providers.map((provider) => (
-            <article className="provider-entry" key={provider.metadata.id}>
-              <div className="provider-entry__head">
-                <span className="provider-entry__name">
-                  {provider.metadata.displayName}
-                </span>
-                <span className="row__meta">{installationLabel(provider)}</span>
-              </div>
-
-              {provider.metadata.description ? (
-                <p className="field__description">{provider.metadata.description}</p>
-              ) : null}
-
-              <dl className="detail-list">
-                <div className="detail">
-                  <dt className="detail__label">Authentication</dt>
-                  <dd className="detail__value">{authLabel(provider)}</dd>
-                </div>
-                <div className="detail">
-                  <dt className="detail__label">Transport</dt>
-                  <dd className="detail__value">
-                    {provider.metadata.transportTypes.join(", ")}
-                  </dd>
-                </div>
-                <div className="detail">
-                  <dt className="detail__label">Models</dt>
-                  <dd className="detail__value">
-                    {provider.models.length === 0
-                      ? "None reported"
-                      : provider.models.map((model) => model.displayName).join(", ")}
-                  </dd>
-                </div>
-                <div className="detail">
-                  <dt className="detail__label">Usage</dt>
-                  <dd className="detail__value">
-                    {provider.usage
-                      ? usageStateLabel(provider.usage.state)
-                      : "Not reported"}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="tag-list">
-                {provider.capabilities.supported.map((capability) => (
-                  <span className="tag" key={capability}>
-                    {capability}
-                  </span>
-                ))}
-              </div>
-            </article>
+            <ProviderEntry
+              key={provider.metadata.id}
+              provider={provider}
+              config={configs[provider.metadata.id]}
+            />
           ))}
         </section>
       </div>
     </div>
+  );
+}
+
+function ProviderEntry({
+  provider,
+  config,
+}: {
+  readonly provider: ProviderSummary;
+  readonly config: StoredProviderConfig | undefined;
+}): JSX.Element {
+  const saveProviderConfig = useWorkbench((state) => state.saveProviderConfig);
+  const [path, setPath] = useState(config?.executablePath ?? "");
+  const [args, setArgs] = useState((config?.arguments ?? []).join(" "));
+  const [saving, setSaving] = useState(false);
+
+  const configurable = provider.metadata.transportTypes.includes("cli");
+
+  const save = async (): Promise<void> => {
+    setSaving(true);
+    try {
+      await saveProviderConfig({
+        providerId: provider.metadata.id,
+        executablePath: path.trim().length > 0 ? path.trim() : null,
+        arguments: args.trim().length > 0 ? args.trim().split(/\s+/) : [],
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <article className="provider-entry">
+      <div className="provider-entry__head">
+        <span className="provider-entry__name">{provider.metadata.displayName}</span>
+        <span className="row__meta">{installationLabel(provider)}</span>
+      </div>
+
+      {provider.metadata.description ? (
+        <p className="field__description">{provider.metadata.description}</p>
+      ) : null}
+
+      {provider.metadata.notice ? (
+        <p className="notice" role="note">
+          {provider.metadata.notice}
+        </p>
+      ) : null}
+
+      <dl className="detail-list">
+        <div className="detail">
+          <dt className="detail__label">Authentication</dt>
+          <dd className="detail__value">{authLabel(provider)}</dd>
+        </div>
+        <div className="detail">
+          <dt className="detail__label">Transport</dt>
+          <dd className="detail__value">{provider.metadata.transportTypes.join(", ")}</dd>
+        </div>
+        {provider.installation.executablePath ? (
+          <div className="detail">
+            <dt className="detail__label">Executable</dt>
+            <dd className="detail__value">{provider.installation.executablePath}</dd>
+          </div>
+        ) : null}
+        <div className="detail">
+          <dt className="detail__label">Models</dt>
+          <dd className="detail__value">
+            {provider.models.length === 0
+              ? "None configured"
+              : provider.models.map((model) => model.displayName).join(", ")}
+          </dd>
+        </div>
+        <div className="detail">
+          <dt className="detail__label">Usage</dt>
+          <dd className="detail__value">
+            {provider.usage ? usageStateLabel(provider.usage.state) : "Not reported"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="tag-list">
+        {provider.capabilities.supported.map((capability) => (
+          <span className="tag" key={capability}>
+            {capability}
+          </span>
+        ))}
+      </div>
+
+      {configurable ? (
+        <div className="provider-entry__config">
+          <label className="stacked-field">
+            <span className="field__description">Executable path</span>
+            <input
+              className="text-input"
+              value={path}
+              placeholder="Leave empty to search PATH"
+              onChange={(event) => setPath(event.target.value)}
+            />
+          </label>
+          <label className="stacked-field">
+            <span className="field__description">Extra arguments</span>
+            <input
+              className="text-input"
+              value={args}
+              placeholder="Optional, separated by spaces"
+              onChange={(event) => setArgs(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => void save()}
+            disabled={saving}
+          >
+            {saving ? "Saving" : "Save and re-check"}
+          </button>
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -93,7 +193,7 @@ function authLabel(provider: ProviderSummary): string {
     case "authenticated":
       return provider.auth.accountLabel ?? "Connected";
     case "authenticationRequired":
-      return "Sign-in required";
+      return provider.auth.detail ?? "Sign-in required";
     case "authenticationExpired":
       return "Sign-in expired";
     case "notApplicable":
@@ -101,7 +201,7 @@ function authLabel(provider: ProviderSummary): string {
     case "unsupported":
       return "Not supported";
     default:
-      return "Unknown";
+      return provider.auth.detail ?? "Unknown";
   }
 }
 

@@ -374,6 +374,10 @@ export class SessionManager {
             break;
           }
           case "session": {
+            // A CLI provider assigns its session id during the first turn, so
+            // the placeholder stored at session creation is replaced here —
+            // otherwise the next turn could not resume the conversation.
+            await this.#persistProviderSessionId(sessionId, event.providerSessionId);
             break;
           }
           case "completed": {
@@ -439,6 +443,28 @@ export class SessionManager {
       });
     }
     this.#publishStatus(sessionId, status === "failed" ? "error" : "idle");
+  }
+
+  /** Stores a provider-assigned session id and tells the UI about it. */
+  async #persistProviderSessionId(
+    sessionId: string,
+    providerSessionId: string,
+  ): Promise<void> {
+    const current = await this.get(sessionId);
+    if (!current || current.providerSessionId === providerSessionId) {
+      return;
+    }
+
+    const updatedAt = new Date();
+    await this.#db
+      .update(sessions)
+      .set({ providerSessionId, updatedAt })
+      .where(eq(sessions.id, sessionId));
+
+    this.#events.publish({
+      type: "session.updated",
+      session: { ...current, providerSessionId, updatedAt },
+    });
   }
 
   /**

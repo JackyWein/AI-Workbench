@@ -1,5 +1,11 @@
 import type { JSX } from "react";
-import type { ProviderSummary, Session, SessionStatus, Workspace } from "@ai-workbench/shared";
+import type {
+  MessageUsage,
+  ProviderSummary,
+  Session,
+  SessionStatus,
+  Workspace,
+} from "@ai-workbench/shared";
 import { formatPath } from "../lib/format.js";
 
 interface ContextPanelProps {
@@ -8,6 +14,8 @@ interface ContextPanelProps {
   readonly provider: ProviderSummary | undefined;
   readonly status: SessionStatus | undefined;
   readonly messageCount: number;
+  /** Usage of the most recent answer, when the provider reported any. */
+  readonly usage: MessageUsage | null;
 }
 
 /** Optional right-hand context (spec §80). Compact, read-only, no dashboard. */
@@ -17,7 +25,10 @@ export function ContextPanel({
   provider,
   status,
   messageCount,
+  usage,
 }: ContextPanelProps): JSX.Element {
+  const context = describeContext(usage);
+
   return (
     <aside className="context" aria-label="Session context">
       <div className="context__group">
@@ -55,10 +66,40 @@ export function ContextPanel({
         <p className="context__label">Messages</p>
         <p className="context__value">{messageCount}</p>
       </div>
+
+      {context ? (
+        <div className="context__group">
+          <p className="context__label">Context</p>
+          <p className="context__value">{context}</p>
+        </div>
+      ) : null}
     </aside>
   );
 }
 
 function labelFor(status: SessionStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+/** Context is shown only when a provider actually reports it (spec §56). */
+function describeContext(usage: MessageUsage | null): string | null {
+  if (!usage || usage.contextTokens === undefined) {
+    return null;
+  }
+  const used = formatTokens(usage.contextTokens);
+  if (usage.contextWindow === undefined) {
+    return `${used} used`;
+  }
+  const percent = Math.round((usage.contextTokens / usage.contextWindow) * 100);
+  return `${used} of ${formatTokens(usage.contextWindow)} · ${percent}%`;
+}
+
+function formatTokens(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+  if (value >= 1000) {
+    return `${Math.round(value / 1000)}k`;
+  }
+  return String(value);
 }

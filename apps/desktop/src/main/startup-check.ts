@@ -149,9 +149,25 @@ export async function runStartupCheck(
        })()`,
     );
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const image = await window.webContents.capturePage();
-    await writeFile(screenshotPath, image.toPNG());
-    logger.info("Startup check screenshot written", { path: screenshotPath });
+    await writeFile(screenshotPath, (await window.webContents.capturePage()).toPNG());
+
+    // The providers screen is captured too, since it is where a user fixes a
+    // command line provider that does not work.
+    const providersPath = screenshotPath.replace(/\.png$/, "-providers.png");
+    await window.webContents.executeJavaScript(
+      `(() => {
+         const rows = [...document.querySelectorAll('.sidebar__foot .row')];
+         rows.find(node => node.textContent?.includes('Providers'))?.click();
+         return true;
+       })()`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await writeFile(providersPath, (await window.webContents.capturePage()).toPNG());
+
+    logger.info("Startup check screenshots written", {
+      chat: screenshotPath,
+      providers: providersPath,
+    });
   }
 
   const noRendererErrors = rendererErrors.length === 0;

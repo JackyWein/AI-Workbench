@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   EventBus,
+  ProviderConfigService,
   ProviderManager,
   SessionManager,
   SettingsService,
@@ -10,14 +11,24 @@ import {
   createLogger,
 } from "@ai-workbench/core";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
+import {
+  CliProviderAdapter,
+  builtInCliProfiles,
+  parseProfile,
+} from "@ai-workbench/provider-cli";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
-import type { Logger } from "@ai-workbench/shared";
+import type {
+  Logger,
+  ProviderConfig,
+  StoredProviderConfig,
+} from "@ai-workbench/shared";
 
 export interface AppServices {
   readonly logger: Logger;
   readonly events: EventBus;
   readonly database: DatabaseHandle;
   readonly providers: ProviderManager;
+  readonly providerConfigs: ProviderConfigService;
   readonly workspaces: WorkspaceManager;
   readonly sessions: SessionManager;
   readonly usage: UsageService;
@@ -28,6 +39,21 @@ export interface AppServices {
 export interface CreateServicesOptions {
   readonly userDataPath: string;
   readonly isDevelopment: boolean;
+}
+
+/** Maps stored user overrides onto the adapter configuration shape. */
+export function toProviderConfigOverrides(
+  stored: StoredProviderConfig | undefined,
+): Partial<ProviderConfig> {
+  if (!stored) {
+    return {};
+  }
+  return {
+    ...(stored.executablePath === null ? {} : { executablePath: stored.executablePath }),
+    ...(stored.arguments.length === 0 ? {} : { arguments: stored.arguments }),
+    ...(stored.defaultModel === null ? {} : { defaultModel: stored.defaultModel }),
+    settings: stored.settings,
+  };
 }
 
 /**
@@ -60,7 +86,21 @@ export async function createServices(
     logger,
     stateDirectory: join(options.userDataPath, "providers"),
   });
-  await providers.register(new MockProviderAdapter());
+
+  const providerConfigs = new ProviderConfigService({ db: database.db, logger });
+  const storedConfigs = new Map(
+    (await providerConfigs.list()).map((config) => [config.providerId, config]),
+  );
+  const overridesFor = (providerId: string): Partial<ProviderConfig> =>
+    toProviderConfigOverrides(storedConfigs.get(providerId));
+
+  await providers.register(new MockProviderAdapter(), overridesFor("mock"));
+
+  // CLI-backed providers are data: adding one is a profile, not a code change.
+  for (const profile of builtInCliProfiles) {
+    const adapter = new CliProviderAdapter(parseProfile(profile));
+    await providers.register(adapter, overridesFor(adapter.metadata.id));
+  }
 
   const workspaces = new WorkspaceManager({ db: database.db, events, logger });
   const sessions = new SessionManager({
@@ -78,6 +118,7 @@ export async function createServices(
     events,
     database,
     providers,
+    providerConfigs,
     workspaces,
     sessions,
     usage,

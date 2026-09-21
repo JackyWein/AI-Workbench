@@ -10,7 +10,11 @@ import {
   updateSessionInputSchema,
 } from "../domain/session.js";
 import { chatMessageSchema } from "../domain/message.js";
-import { providerSummarySchema } from "../domain/provider.js";
+import {
+  providerSummarySchema,
+  saveProviderConfigInputSchema,
+  storedProviderConfigSchema,
+} from "../domain/provider.js";
 import { aggregatedUsageSchema } from "../domain/usage.js";
 import {
   appSettingsSchema,
@@ -86,6 +90,18 @@ export const ipcContract = {
   },
 
   "provider.list": { input: z.void(), output: z.array(providerSummarySchema) },
+  "provider.refresh": { input: z.void(), output: z.array(providerSummarySchema) },
+  "provider.getConfigs": {
+    input: z.void(),
+    output: z.array(storedProviderConfigSchema),
+  },
+  "provider.saveConfig": {
+    input: saveProviderConfigInputSchema,
+    output: z.object({
+      config: storedProviderConfigSchema,
+      summary: providerSummarySchema,
+    }),
+  },
   "provider.getUsage": { input: z.void(), output: aggregatedUsageSchema },
   "provider.refreshUsage": {
     input: z.void(),

@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useState } from "react";
+import type { ChatMessage, MessageUsage } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
@@ -14,6 +15,17 @@ import { SettingsView } from "./components/SettingsView.js";
 import { Sidebar } from "./components/Sidebar.js";
 
 type AppInfo = { version: string; platform: string; userDataPath: string };
+
+/** Usage of the most recent answer that reported any. */
+function latestUsage(messages: readonly ChatMessage[]): MessageUsage | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const usage = messages[index]?.usage;
+    if (usage) {
+      return usage;
+    }
+  }
+  return null;
+}
 
 export function App(): JSX.Element {
   const state = useWorkbench();
@@ -136,7 +148,9 @@ export function App(): JSX.Element {
           </div>
         ) : null}
 
-        {state.view === "providers" ? <ProvidersView providers={state.providers} /> : null}
+        {state.view === "providers" ? (
+          <ProvidersView providers={state.providers} configs={state.providerConfigs} />
+        ) : null}
         {state.view === "settings" ? (
           <SettingsView settings={state.settings} appInfo={appInfo} />
         ) : null}
@@ -149,6 +163,7 @@ export function App(): JSX.Element {
           provider={provider}
           status={state.status[session.id]}
           messageCount={messages.length}
+          usage={latestUsage(messages)}
         />
       ) : (
         <div />

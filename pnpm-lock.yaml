@@ -140,6 +140,21 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
+  packages/providers/cli:
+    dependencies:
+      '@ai-workbench/provider-base':
+        specifier: workspace:*
+        version: link:../base
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@ai-workbench/transport-cli':
+        specifier: workspace:*
+        version: link:../transports/cli
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+
   packages/providers/mock:
     dependencies:
       '@ai-workbench/provider-base':
@@ -148,6 +163,15 @@ importers:
       '@ai-workbench/shared':
         specifier: workspace:*
         version: link:../../shared
+
+  packages/providers/transports/cli:
+    dependencies:
+      '@ai-workbench/provider-base':
+        specifier: workspace:*
+        version: link:../../base
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../../../shared
 
   packages/shared:
     dependencies:

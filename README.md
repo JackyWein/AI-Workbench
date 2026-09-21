@@ -20,9 +20,18 @@ The foundation and the first vertical slice work end to end:
   hover, keyboard focus or click
 - command palette (Ctrl+K / Cmd+K), settings and a providers overview
 
-The only provider today is **MockProvider**, a full local simulation of
-streaming, delays, status changes, tool calls, errors, usage and session resume.
-Real provider adapters are the next goal.
+Providers are pluggable and the core never names one:
+
+- **MockProvider** — a full local simulation of streaming, delays, status
+  changes, tool calls, errors, usage and session resume, used by the tests
+- **Claude Code** — the real CLI, driven non-interactively. Verified end to end:
+  detection, streaming answers, account usage reported by the tool itself, and
+  conversations resumed across turns and restarts
+- **Codex** and **Gemini** — shipped as profiles built on the same machinery,
+  but not yet verified against those tools, which the app says plainly
+
+A command line provider is described by a profile — executable, flags, output
+shape — so adding or fixing one is configuration, not a code change.
 
 See `PROGRESS.md` for what is verified, measured only from acceptance criteria
 that a run of `pnpm verify` actually proves.
@@ -36,7 +45,10 @@ pnpm dev
 
 Then: add a workspace with the button next to the title, create a session, and
 send a message. Try `/tool`, `/error` or `/slow` in a message to exercise the
-simulated tool calls, failures and delays.
+MockProvider's simulated tool calls, failures and delays.
+
+Open **Providers** to see which command line tools were found on your machine,
+and to correct an executable path if one lives somewhere unusual.
 
 To check a production build the way CI does:
 
