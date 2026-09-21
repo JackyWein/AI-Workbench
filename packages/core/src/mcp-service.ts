@@ -18,7 +18,26 @@ export interface McpServiceOptions {
   readonly db: Database;
   readonly logger: Logger;
   readonly manager: McpManager;
+  /**
+   * Where remote auth secrets come from. Only the credential reference is
+   * ever stored or sent anywhere; the secret is resolved here, in the main
+   * process, at connect time (spec §57).
+   */
+  readonly credentials?: McpCredentialSource;
 }
+
+/** Anything that can turn a credential reference into its secret. */
+export interface McpCredentialSource {
+  resolve(reference: string): Promise<string | null>;
+}
+
+/**
+ * Where a remote server's credential reference lives until the database grows
+ * its own column: remote transports have no process environment, so their
+ * otherwise unused env bag carries the reference under a reserved key. Only
+ * the reference is stored there, never the secret (spec §57).
+ */
+const CREDENTIAL_ENV_KEY = "AI_WORKBENCH_MCP_CREDENTIAL_REFERENCE";
 
 /**
  * Stores MCP server configurations, keeps the connections in step with them and
@@ -33,6 +52,10 @@ export class McpService {
     this.#db = options.db;
     this.#logger = options.logger.child("MCP");
     this.#manager = options.manager;
+    if (options.credentials) {
+      const source = options.credentials;
+      this.#manager.setCredentialResolver((reference) => source.resolve(reference));
+    }
   }
 
   get manager(): McpManager {
@@ -57,13 +80,23 @@ export class McpService {
     const now = new Date();
     const existing = await this.get(config.id);
 
+    // stdio servers really spawn a process, so their env must stay exactly
+    // what the user set; a credential reference is only honored (and only
+    // stored) for remote transports.
+    const env = { ...config.env };
+    if (config.credentialReference && config.transport !== "stdio") {
+      env[CREDENTIAL_ENV_KEY] = config.credentialReference;
+    } else {
+      delete env[CREDENTIAL_ENV_KEY];
+    }
+
     const values = {
       id: config.id,
       name: config.name,
       transport: config.transport,
       command: config.command ?? null,
       args: config.args,
-      env: config.env,
+      env,
       url: config.url ?? null,
       cwd: config.cwd ?? null,
       enabled: config.enabled,
@@ -117,6 +150,19 @@ export class McpService {
     return config ? this.#manager.connect(config) : null;
   }
 
+  /** Retries a known server with backoff. Failures are recorded, never thrown. */
+  async reconnect(id: string): Promise<McpServerStatus | null> {
+    const config = await this.get(id);
+    return config ? this.#manager.reconnect(id) : null;
+  }
+
+  /** Probes a connected server and records its latency. Never throws. */
+  async health(
+    id: string,
+  ): Promise<{ ok: true; latencyMs: number } | { ok: false; error: string }> {
+    return this.#manager.health(id);
+  }
+
   async disconnect(id: string): Promise<boolean> {
     return this.#manager.disconnect(id);
   }
@@ -161,15 +207,21 @@ export class McpService {
 }
 
 function toConfig(row: McpServerRow): McpServerConfig {
+  const env = { ...row.env };
+  const credentialReference = env[CREDENTIAL_ENV_KEY];
+  delete env[CREDENTIAL_ENV_KEY];
   return {
     id: row.id,
     name: row.name,
     transport: row.transport,
     ...(row.command === null ? {} : { command: row.command }),
     args: row.args,
-    env: row.env,
+    env,
     ...(row.url === null ? {} : { url: row.url }),
     ...(row.cwd === null ? {} : { cwd: row.cwd }),
+    ...(typeof credentialReference === "string" && credentialReference.length > 0
+      ? { credentialReference }
+      : {}),
     enabled: row.enabled,
   };
 }

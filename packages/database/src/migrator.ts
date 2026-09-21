@@ -45,6 +45,9 @@ export async function runMigrations(
     }
 
     const statements = splitStatements(migration.sql);
+    // `batch` applies its statements atomically, so a failure cannot leave a
+    // half-migrated database behind: the bookkeeping row below only lands
+    // together with the migration itself.
     await client.batch(
       [
         ...statements,

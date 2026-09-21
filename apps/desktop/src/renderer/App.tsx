@@ -4,6 +4,7 @@ import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
 import { useWorkbench } from "./store/workbench.js";
+import { AgentsView } from "./components/AgentsView.js";
 import { ChatView } from "./components/ChatView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { Composer } from "./components/Composer.js";
@@ -109,7 +110,19 @@ export function App(): JSX.Element {
       />
 
       <main className="main">
-        {state.view === "chat" && session ? (
+        {state.view === "chat" && state.workspaceMode === "terminals" && workspace ? (
+          <AgentsView workspaceId={workspace.id} workspaceName={workspace.name} />
+        ) : null}
+
+        {state.view === "chat" &&
+        state.workspaceMode === "terminals" &&
+        !workspace ? (
+          <div className="main__body">
+            <EmptyState title="No workspaces yet" />
+          </div>
+        ) : null}
+
+        {state.view === "chat" && state.workspaceMode === "chat" && session ? (
           <>
             <SessionHeader
               session={session}
@@ -124,7 +137,10 @@ export function App(): JSX.Element {
               {messages.length === 0 ? (
                 <EmptyState title="No messages yet" />
               ) : (
-                <ChatView messages={messages} />
+                <ChatView
+                  key={`${session.id}:${messages[0]?.id ?? "start"}`}
+                  messages={messages}
+                />
               )}
               <Composer
                 busy={busy}
@@ -137,7 +153,7 @@ export function App(): JSX.Element {
           </>
         ) : null}
 
-        {state.view === "chat" && !session ? (
+        {state.view === "chat" && state.workspaceMode === "chat" && !session ? (
           <div className="main__body">
             <EmptyState
               title={
@@ -180,7 +196,7 @@ export function App(): JSX.Element {
         ) : null}
       </main>
 
-      {state.view === "chat" && session ? (
+      {state.view === "chat" && state.workspaceMode === "chat" && session ? (
         <ContextPanel
           session={session}
           workspace={workspace}

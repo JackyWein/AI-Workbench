@@ -1,30 +1,33 @@
 # Status Island
 
-**Status: not implemented yet (goal G6).** This document records the intended
-architecture. The requirements are in `AI_WORKBENCH.md` §95–§102.
-
-The Status Island is a small floating companion window. Its purpose is that the
-user does not need the main window visible to know what AI Workbench is doing,
-while background work continues.
+**Status: implemented (goal G6).** The requirements are in `AI_WORKBENCH.md`
+§95–§104. What was once a plan now runs: an attention service decides what
+matters, a companion window shows it, and a tray icon keeps background work
+reachable with no window on screen.
 
 ## Architecture
 
 ```text
-Domain Event Bus
-      ↓
+Domain Event Bus / AppServices
+      ↓ collect (no decisions)
+IslandController
+      ↓ decide
 StatusAttentionService
       ├── Priority engine
       ├── Widget registry
-      ├── Attention queue
+      ├── Attention queue (seen-keys, timed override)
       └── Island state
-      ↓
-Status Island window (separate BrowserWindow)
+      ↓ show
+Status Island window + system tray
 ```
 
-Subsystems publish domain events and know nothing about the island. All
-priority decisions live in `StatusAttentionService`, never scattered across UI
-components. The event bus this will subscribe to already exists
-(`packages/core/src/event-bus.ts`).
+`IslandController` (`apps/desktop/src/main/island-controller.ts`) only
+collects what the application currently knows — usage, team run snapshots,
+busy sessions, unread agent questions, failed tasks, finished runs, failed MCP
+connections — and hands it to `StatusAttentionService`
+(`packages/status/src/attention-service.ts`), which owns every priority
+decision. No UI component decides on its own. Refresh runs on every domain
+event plus a 2 s timer, so entries age out even when nothing happens.
 
 ## Priority
 
@@ -41,13 +44,17 @@ components. The event bus this will subscribe to already exists
  10 idle
 ```
 
-Automatic mode follows this order; the user can pin a widget instead.
+Automatic mode follows this order; the user can pin a widget instead, and
+cycling steps through the entries that currently have something to say.
 
 ## Widgets
 
-Provider Usage, Active Agents, Needs Attention, Team Progress, Project
-Activity, Completed Work, Errors, Connection Health — registered through a
-registry so plugins can add their own later.
+Built in (`packages/status/src/widgets.ts`), in tie-break order: Needs
+Attention, Errors, Connection Health, Completed Work, Team Progress, Active
+Agents, Provider Usage — plus Idle, shown when nothing has anything to report.
+Each widget builds at most one entry or stays silent, and a finished run stays
+news for 5 minutes before the island settles back. Plugins can register more
+through `StatusAttentionService.register()`.
 
 ## Honesty
 
@@ -57,7 +64,31 @@ not a percentage. Usage that is unknown is shown as unavailable.
 
 ## Window behaviour
 
-Frameless, compact, optionally always on top, draggable, multi-monitor aware,
-with persisted position and preferences, and a lifecycle independent of the
-main window. It expands briefly for important events and returns to its compact
-state afterwards, and it can be disabled entirely.
+Its own `BrowserWindow` (`StatusIslandWindow`): frameless and compact
+(320×44), expands briefly (380×132, 8 s) for important new events, then
+settles back. Draggable with the position persisted across restarts including
+the display id, so it is multi-monitor aware; it follows the main window
+unless told to stay, its lifecycle is independent of it, and it can be
+disabled entirely. Its preload bridge (`workbenchIsland`) is deliberately
+tiny: state, open, dismiss, cycle — nothing else.
+
+## Tray
+
+`StatusTray` keeps background work reachable and controllable: generated glyph
+(needs no packaged asset), click opens the app, menu shows the island, pauses
+the autonomous runs, stops all work, or quits. Activity counts come from the
+real session and run lists, not from island entries.
+
+## Preferences
+
+Persisted in settings (`statusIsland`): enabled, start-with-app, pinned and
+default widget, enabled widgets, auto-expand, auto-rotate, position. Pinning
+and cycling write back through the settings service.
+
+## Not yet
+
+- **Project activity** — no widget or source feeds project-level activity yet.
+- **Display list** — the monitor follows a drag plus the persisted display id
+  only; there is no display picker.
+- **Provider-disconnect feed** — Connection Health currently reports failed
+  MCP connections; provider disconnects are not fed in.

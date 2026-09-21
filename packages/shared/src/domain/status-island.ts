@@ -29,7 +29,7 @@ export const islandPositionSchema = z.enum([
 export type IslandPosition = z.infer<typeof islandPositionSchema>;
 
 export const islandPreferencesSchema = z.object({
-  enabled: z.boolean().default(false),
+  enabled: z.boolean().default(true),
   startWithApp: z.boolean().default(true),
   stayVisibleWhenHidden: z.boolean().default(true),
   alwaysOnTop: z.boolean().default(true),
@@ -50,6 +50,7 @@ export const islandPreferencesSchema = z.object({
     "providerUsage",
     "completedWork",
     "errors",
+    "connectionHealth",
   ]),
   /** A widget the user chose to keep; null means automatic (spec §100). */
   pinnedWidget: islandWidgetIdSchema.nullable().default(null),

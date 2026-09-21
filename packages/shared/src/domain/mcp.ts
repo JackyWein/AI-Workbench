@@ -19,6 +19,13 @@ export const mcpServerConfigSchema = z
     env: z.record(z.string()).default({}),
     /** http and sse: the endpoint. */
     url: z.string().url().optional(),
+    /**
+     * Reference into the CredentialManager for remote transports. It is
+     * resolved in the main process to an Authorization header at connect
+     * time; the secret itself is never stored, logged or sent to the
+     * renderer (spec §57).
+     */
+    credentialReference: z.string().min(1).max(200).optional(),
     enabled: z.boolean().default(true),
     /** Working directory for a stdio server. */
     cwd: z.string().optional(),
@@ -71,6 +78,8 @@ export const mcpServerStatusSchema = z.object({
   tools: z.array(mcpToolSchema),
   /** Why the server is not connected, when it is not. */
   detail: z.string().optional(),
+  /** Round-trip of the last successful connect or health probe, in ms. */
+  latencyMs: z.number().nonnegative().optional(),
   updatedAt: z.date(),
 });
 export type McpServerStatus = z.infer<typeof mcpServerStatusSchema>;

@@ -24,6 +24,10 @@ export function createDatabase(options: CreateDatabaseOptions): DatabaseHandle {
   const client = createClient({ url });
   const db = drizzle(client, { schema });
 
+  // Cascading deletes need this on every connection; runMigrations() sets it
+  // authoritatively before first use, this is only the best-effort head start.
+  void client.execute("PRAGMA foreign_keys = ON").catch(() => undefined);
+
   return {
     db,
     client,

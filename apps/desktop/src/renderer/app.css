@@ -260,6 +260,13 @@ select {
   animation: pulse 1.6s var(--easing-standard) infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .status-dot[data-state="running"],
+  .caret {
+    animation: none;
+  }
+}
+
 .status-dot[data-state="error"] {
   background: var(--danger);
 }
@@ -314,6 +321,33 @@ select {
   text-transform: uppercase;
   color: var(--text-muted);
   margin-bottom: var(--space-3);
+}
+
+.popover__detail {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* A popover trigger is a plain button; it reads as the text it replaces. */
+.popover > button {
+  text-align: left;
+  min-width: 0;
+}
+
+/* Inside flex rows the popover itself is the flexible item. */
+.changes__item .popover,
+.section .popover {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.changes__item .popover > button,
+.section .popover > button {
+  flex: 1;
+  min-width: 0;
 }
 
 .detail-list {
@@ -492,6 +526,12 @@ select {
   animation: blink 1s steps(2, start) infinite;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .chat {
+    scroll-behavior: auto;
+  }
+}
+
 @keyframes blink {
   50% {
     opacity: 0;
@@ -516,6 +556,15 @@ select {
 
 .tool-call__summary:hover {
   background: var(--surface-hover);
+}
+
+.tool-call__chevron {
+  flex: none;
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+
+.tool-call__chevron[data-open="true"] {
+  transform: rotate(90deg);
 }
 
 .tool-call__body {
@@ -555,7 +604,7 @@ select {
 .composer__input {
   width: 100%;
   min-height: 24px;
-  max-height: 220px;
+  max-height: var(--composer-max-height);
   resize: none;
   border: none;
   outline: none;
@@ -817,6 +866,29 @@ select {
   align-items: flex-start;
 }
 
+.agent-draft {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  padding: var(--space-3) 0 0;
+  margin: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.agent-draft__row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.agent-draft__row .stacked-field {
+  flex: 1 1 160px;
+  width: auto;
+}
+
 .stacked-field {
   display: flex;
   flex-direction: column;
@@ -842,8 +914,75 @@ select {
   gap: var(--space-3);
 }
 
+/*
+ * Collapsible entries (skills, plugins, MCP servers): the head is one quiet
+ * line that opens the detail behind it, like a tool call in the chat.
+ */
+.provider-entry__toggle {
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  border-radius: var(--radius-md);
+}
+
+.provider-entry__chevron {
+  flex: none;
+  align-self: center;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+
+.provider-entry__chevron[data-open="true"] {
+  transform: rotate(90deg);
+}
+
+.provider-entry__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.provider-entry__details[hidden] {
+  display: none;
+}
+
+/* Pushed controls (panel close, list refresh) sit at the far edge. */
+.push-right {
+  margin-left: auto;
+}
+
+/* Empty-section notes align with the rows they replace. */
+.sidebar__empty {
+  padding: 0 var(--space-3);
+}
+
 .provider-entry__name {
   font-size: var(--text-lg);
+}
+
+/*
+ * A tool's mark next to its name (spec §74: small and quiet, never a banner).
+ * Unknown tools get a letter tile from the Logo component instead of an SVG.
+ */
+.logo {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  vertical-align: -3px;
+}
+
+.logo svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.logo--letter {
+  border-radius: var(--radius-sm);
+  background: var(--surface-active);
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .tag-list {
@@ -1197,4 +1336,202 @@ select {
 
 .panel__pane[hidden] {
   display: none;
+}
+
+/* ------------------------------------------------------------ agents view -- */
+
+/*
+ * The workspace's agents side by side: a quiet launch bar and a grid of live
+ * terminal tiles. Surfaces come from the tokens; translucency is reserved for
+ * the tile headers, like other floating surfaces.
+ */
+.agents-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.agents-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.agents-bar__label {
+  width: 160px;
+}
+
+.agents-bar__hint {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.agents-bar__spacer {
+  flex: 1;
+}
+
+.mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.mode-toggle .quiet-button[aria-pressed="true"] {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.agents-grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+@media (min-width: 800px) {
+  .agents-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.agent-tile {
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  cursor: default;
+}
+
+.agent-tile[data-focused="true"] {
+  border-color: var(--border-strong);
+}
+
+.agent-tile__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tile-header-height);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--surface-overlay) 78%, transparent);
+  backdrop-filter: blur(var(--overlay-blur));
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.agent-tile__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.agent-tile__label {
+  font-size: var(--text-sm);
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-tile__model {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-tile__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.agent-tile__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.agent-tile__detail {
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-xs);
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.agent-tile__body {
+  flex: 1;
+  min-height: 240px;
+  display: flex;
+  background: var(--surface-sunken);
+}
+
+.xterm-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow: hidden;
+}
+
+.xterm-pane .xterm {
+  height: 100%;
+}
+
+.activity-trace {
+  display: block;
+  color: var(--text-muted);
+}
+
+.activity-trace rect {
+  fill: currentColor;
+}
+
+.activity-trace rect[data-empty="true"] {
+  opacity: 0.25;
+}
+
+.activity-trace[data-active="true"] rect:not([data-empty="true"]) {
+  fill: var(--live);
+}
+
+.agents-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.agents-empty__title {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--text-secondary);
+}
+
+.agents-empty__hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
 }

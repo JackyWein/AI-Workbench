@@ -20,7 +20,14 @@ const REDACTED_KEYS = [
   "password",
   "secret",
   "credential",
+  "credentialReference",
   "authorization",
+  "env",
+  "headers",
+  "mcpConfig",
+  "mcpServers",
+  "cookie",
+  "sessionToken",
 ];
 
 export function createLogger(options: CreateLoggerOptions = {}): Logger {

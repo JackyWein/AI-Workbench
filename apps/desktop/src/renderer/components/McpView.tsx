@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from "react";
-import { Plug, PlugZap, Trash2 } from "lucide-react";
-import type { McpServerConfig, McpServerStatus } from "@ai-workbench/shared";
+import { ChevronRight, Plug, PlugZap, Trash2 } from "lucide-react";
+import type { McpServerConfig, McpServerStatus, McpTransport } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 
 /**
@@ -58,69 +58,98 @@ function ServerEntry({
   const deleteMcpServer = useWorkbench((state) => state.deleteMcpServer);
   const connected = status?.state === "connected";
 
+  // Quiet by default: one line per server, transport and tools behind it.
+  const [open, setOpen] = useState(false);
+  const detailsId = `mcp-${server.id}-details`;
+
   return (
     <article className="provider-entry">
-      <div className="provider-entry__head">
+      <button
+        type="button"
+        className="provider-entry__head provider-entry__toggle"
+        aria-expanded={open}
+        aria-controls={detailsId}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ChevronRight
+          size={13}
+          strokeWidth={1.75}
+          aria-hidden="true"
+          className="provider-entry__chevron"
+          data-open={open}
+        />
         <span className="provider-entry__name">{server.name}</span>
         <span className="row__meta">{stateLabel(status)}</span>
-      </div>
+      </button>
 
-      <dl className="detail-list">
-        <div className="detail">
-          <dt className="detail__label">Transport</dt>
-          <dd className="detail__value">{server.transport}</dd>
-        </div>
-        <div className="detail">
-          <dt className="detail__label">
-            {server.transport === "stdio" ? "Command" : "URL"}
-          </dt>
-          <dd className="detail__value">
-            {server.transport === "stdio"
-              ? [server.command, ...server.args].filter(Boolean).join(" ")
-              : (server.url ?? "Not set")}
-          </dd>
-        </div>
-      </dl>
-
-      {status?.detail ? (
-        <p className="notice" role="note">
-          {status.detail}
-        </p>
-      ) : null}
-
-      {status && status.tools.length > 0 ? (
-        <div className="tag-list">
-          {status.tools.map((tool) => (
-            <span className="tag" key={tool.name}>
-              {tool.name}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
-      <div className="provider-entry__config">
-        <button
-          type="button"
-          className="quiet-button"
-          onClick={() =>
-            void (connected ? disconnectMcpServer(server.id) : connectMcpServer(server.id))
-          }
-        >
-          {connected ? (
-            <Plug size={13} strokeWidth={1.75} aria-hidden="true" />
-          ) : (
-            <PlugZap size={13} strokeWidth={1.75} aria-hidden="true" />
+      <div className="provider-entry__details" id={detailsId} hidden={!open}>
+        <dl className="detail-list">
+          <div className="detail">
+            <dt className="detail__label">Transport</dt>
+            <dd className="detail__value">{server.transport}</dd>
+          </div>
+          <div className="detail">
+            <dt className="detail__label">
+              {server.transport === "stdio" ? "Command" : "URL"}
+            </dt>
+            <dd className="detail__value">
+              {server.transport === "stdio"
+                ? [server.command, ...server.args].filter(Boolean).join(" ")
+                : (server.url ?? "Not set")}
+            </dd>
+          </div>
+          {server.transport === "stdio" ? null : (
+            <div className="detail">
+              <dt className="detail__label">Auth</dt>
+              <dd className="detail__value">
+                {server.credentialReference
+                  ? `Credential ${server.credentialReference}`
+                  : "None"}
+              </dd>
+            </div>
           )}
-          {connected ? "Disconnect" : "Connect"}
-        </button>
-        <button
-          type="button"
-          className="quiet-button"
-          onClick={() => void deleteMcpServer(server.id)}
-        >
-          <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
-          Remove
-        </button>
+        </dl>
+
+        {status?.detail ? (
+          <p className="notice" role="note">
+            {status.detail}
+          </p>
+        ) : null}
+
+        {status && status.tools.length > 0 ? (
+          <div className="tag-list">
+            {status.tools.map((tool) => (
+              <span className="tag" key={tool.name}>
+                {tool.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="provider-entry__config">
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() =>
+              void (connected ? disconnectMcpServer(server.id) : connectMcpServer(server.id))
+            }
+          >
+            {connected ? (
+              <Plug size={13} strokeWidth={1.75} aria-hidden="true" />
+            ) : (
+              <PlugZap size={13} strokeWidth={1.75} aria-hidden="true" />
+            )}
+            {connected ? "Disconnect" : "Connect"}
+          </button>
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => void deleteMcpServer(server.id)}
+          >
+            <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+            Remove
+          </button>
+        </div>
       </div>
     </article>
   );
@@ -130,31 +159,42 @@ function AddServerForm(): JSX.Element {
   const saveMcpServer = useWorkbench((state) => state.saveMcpServer);
   const [id, setId] = useState("");
   const [name, setName] = useState("");
+  const [transport, setTransport] = useState<McpTransport>("stdio");
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
+  const [url, setUrl] = useState("");
+  const [headerRef, setHeaderRef] = useState("");
   const [saving, setSaving] = useState(false);
 
+  const remote = transport !== "stdio";
+  const ready = id.trim() !== "" && name.trim() !== "" && (remote ? url.trim() !== "" : command.trim() !== "");
+
   const submit = async (): Promise<void> => {
-    if (!id.trim() || !name.trim() || !command.trim()) {
+    if (!ready) {
       return;
     }
     setSaving(true);
     try {
-      await saveMcpServer({
+      // Flat, so it matches McpServerConfig without a spread union.
+      const config: McpServerConfig = {
         id: id.trim(),
         name: name.trim(),
-        // Only stdio is implemented; the other transports say so rather than
-        // pretending to work (spec §37).
-        transport: "stdio",
-        command: command.trim(),
-        args: args.trim().length > 0 ? args.trim().split(/\s+/) : [],
+        transport,
+        command: remote ? undefined : command.trim(),
+        args: remote ? [] : args.trim().length > 0 ? args.trim().split(/\s+/) : [],
+        url: remote ? url.trim() : undefined,
+        credentialReference:
+          remote && headerRef.trim() !== "" ? headerRef.trim() : undefined,
         env: {},
         enabled: true,
-      });
+      };
+      await saveMcpServer(config);
       setId("");
       setName("");
       setCommand("");
       setArgs("");
+      setUrl("");
+      setHeaderRef("");
     } finally {
       setSaving(false);
     }
@@ -164,7 +204,7 @@ function AddServerForm(): JSX.Element {
     <section className="provider-entry">
       <div className="provider-entry__head">
         <span className="provider-entry__name">Add a server</span>
-        <span className="row__meta">stdio</span>
+        <span className="row__meta">{transport}</span>
       </div>
       <div className="provider-entry__config">
         <label className="stacked-field">
@@ -185,28 +225,69 @@ function AddServerForm(): JSX.Element {
           />
         </label>
         <label className="stacked-field">
-          <span className="field__description">Command</span>
-          <input
-            className="text-input"
-            value={command}
-            placeholder="The executable to start"
-            onChange={(event) => setCommand(event.target.value)}
-          />
+          <span className="field__description">Transport</span>
+          <select
+            className="select"
+            aria-label="Transport"
+            value={transport}
+            onChange={(event) => setTransport(event.target.value as McpTransport)}
+          >
+            <option value="stdio">stdio (local command)</option>
+            <option value="http">http (streamable HTTP)</option>
+            <option value="sse">sse (legacy SSE)</option>
+          </select>
         </label>
-        <label className="stacked-field">
-          <span className="field__description">Arguments</span>
-          <input
-            className="text-input"
-            value={args}
-            placeholder="Optional, separated by spaces"
-            onChange={(event) => setArgs(event.target.value)}
-          />
-        </label>
+        {remote ? (
+          <>
+            <label className="stacked-field">
+              <span className="field__description">URL</span>
+              <input
+                className="text-input"
+                value={url}
+                placeholder="https://example.com/mcp"
+                onChange={(event) => setUrl(event.target.value)}
+              />
+            </label>
+            <label className="stacked-field">
+              <span className="field__description">
+                Credential reference for the Authorization header (optional; the
+                secret itself stays in the OS keychain)
+              </span>
+              <input
+                className="text-input"
+                value={headerRef}
+                placeholder="e.g. cred_…"
+                onChange={(event) => setHeaderRef(event.target.value)}
+              />
+            </label>
+          </>
+        ) : (
+          <>
+            <label className="stacked-field">
+              <span className="field__description">Command</span>
+              <input
+                className="text-input"
+                value={command}
+                placeholder="The executable to start"
+                onChange={(event) => setCommand(event.target.value)}
+              />
+            </label>
+            <label className="stacked-field">
+              <span className="field__description">Arguments</span>
+              <input
+                className="text-input"
+                value={args}
+                placeholder="Optional, separated by spaces"
+                onChange={(event) => setArgs(event.target.value)}
+              />
+            </label>
+          </>
+        )}
         <button
           type="button"
           className="ghost-button"
           onClick={() => void submit()}
-          disabled={saving || !id.trim() || !name.trim() || !command.trim()}
+          disabled={saving || !ready}
         >
           {saving ? "Saving" : "Add server"}
         </button>

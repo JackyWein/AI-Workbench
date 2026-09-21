@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ProviderEvent } from "@ai-workbench/shared";
 import type { ProviderContext } from "@ai-workbench/provider-base";
 import { CliProviderAdapter, isPendingSessionId } from "../adapter.js";
+import { parseModelLines } from "../models.js";
 import { parseProfile, readPath, substitute, type CliProviderProfileInput } from "../profile.js";
 import { builtInCliProfiles, claudeCodeProfile } from "../profiles.js";
 
@@ -145,6 +146,8 @@ describe("profile helpers", () => {
     // Not run against the real tools here, so the UI must say so.
     expect(byId.get("codex")?.unverified).toBe(true);
     expect(byId.get("gemini")?.unverified).toBe(true);
+    expect(byId.get("antigravity")?.unverified).toBe(true);
+    expect(byId.get("opencode")?.unverified).toBe(true);
   });
 
   it("rejects a profile that is not valid", () => {
@@ -391,6 +394,39 @@ describe("CliProviderAdapter with a plain text CLI", () => {
 
     expect(textOf(events)).toBe("line 1\nline 2\nline 3\n");
     expect(events.at(-1)).toEqual({ type: "completed", reason: "finished" });
+  });
+});
+
+describe("profile-driven model discovery", () => {
+  const modelsCli = join(fixtures, "models-cli.mjs");
+  const modelsProfile: CliProviderProfileInput = {
+    schemaVersion: 1,
+    id: "fixture-models",
+    displayName: "Fixture models CLI",
+    command: "node",
+    auth: { method: "none" },
+    capabilities: ["chat", "modelSelection"],
+    models: [],
+    modelsArgs: ["--models"],
+    args: [],
+    promptVia: "arg",
+    promptArgs: ["{prompt}"],
+    output: { format: "text" },
+  };
+
+  it("parses one model per line, ignoring blanks and duplicates", () => {
+    expect(parseModelLines("acme/atlas\n  acme/bolt  \n\nacme/atlas\n")).toEqual([
+      { id: "acme/atlas", displayName: "acme/atlas" },
+      { id: "acme/bolt", displayName: "acme/bolt" },
+    ]);
+    expect(parseModelLines("")).toEqual([]);
+  });
+
+  it("discovers the tool's models without manual entry", async () => {
+    const adapter = await adapterFor(modelsProfile, modelsCli);
+    const models = await adapter.refreshModels();
+    expect(models.map((model) => model.id)).toEqual(["acme/atlas", "acme/bolt"]);
+    expect(models.every((model) => model.source === "provider")).toBe(true);
   });
 });
 

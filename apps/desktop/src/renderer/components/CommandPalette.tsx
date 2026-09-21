@@ -44,19 +44,24 @@ export function CommandPalette(): JSX.Element | null {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const commands = useMemo<Command[]>(() => {
-    const state = store.getState();
+    // Every run reads the store when it executes, never when the list is
+    // built, so a command kept open across state changes cannot act stale.
     const list: Command[] = [
       {
         id: "session.new",
         label: "New session",
         group: "Session",
-        run: () => state.createSession({ name: `Session ${sessions.length + 1}` }),
+        run: () => {
+          const state = store.getState();
+          void state.createSession({ name: `Session ${state.sessions.length + 1}` });
+        },
       },
       {
         id: "workspace.new",
         label: "New workspace from folder",
         group: "Workspace",
         run: async () => {
+          const state = store.getState();
           const path = await state.chooseDirectory();
           if (path) {
             const name = path.split(/[\\/]/).filter(Boolean).pop() ?? "Workspace";
@@ -68,46 +73,62 @@ export function CommandPalette(): JSX.Element | null {
         id: "panel.terminal",
         label: "Open terminal",
         group: "Workspace",
-        run: () => state.setWorkspaceTab("terminal"),
+        run: () => store.getState().setWorkspaceTab("terminal"),
       },
       {
         id: "panel.files",
         label: "Open files",
         group: "Workspace",
-        run: () => state.setWorkspaceTab("files"),
+        run: () => store.getState().setWorkspaceTab("files"),
       },
       {
         id: "panel.changes",
         label: "Open changes",
         group: "Workspace",
-        run: () => state.setWorkspaceTab("changes"),
+        run: () => store.getState().setWorkspaceTab("changes"),
+      },
+      {
+        id: "view.agents",
+        label: "Show agents in terminals",
+        group: "Go to",
+        run: () => store.getState().setWorkspaceMode("terminals"),
+      },
+      {
+        id: "view.chat",
+        label: "Show clean conversation",
+        group: "Go to",
+        run: () => store.getState().setWorkspaceMode("chat"),
       },
       {
         id: "view.providers",
         label: "Open providers",
         group: "Go to",
-        run: () => state.setView("providers"),
+        run: () => store.getState().setView("providers"),
       },
       {
         id: "view.settings",
         label: "Open settings",
         group: "Go to",
-        run: () => state.setView("settings"),
+        run: () => store.getState().setView("settings"),
       },
       {
         id: "usage.refresh",
         label: "Refresh provider usage",
         group: "Providers",
-        run: () => state.refreshUsage(),
+        run: () => {
+          void store.getState().refreshUsage();
+        },
       },
       {
         id: "theme.toggle",
         label: `Switch theme to ${settings.theme === "dark" ? "light" : "dark"}`,
         group: "Appearance",
-        run: () =>
-          state.updateSettings({
-            theme: settings.theme === "dark" ? "light" : "dark",
-          }),
+        run: () => {
+          const state = store.getState();
+          void state.updateSettings({
+            theme: state.settings.theme === "dark" ? "light" : "dark",
+          });
+        },
       },
     ];
 
@@ -119,13 +140,18 @@ export function CommandPalette(): JSX.Element | null {
         id: "island.toggle",
         label: island.enabled ? "Hide Status Island" : "Show Status Island",
         group: "Status Island",
-        run: () => state.setIslandPreferences({ enabled: !island.enabled }),
+        run: () => {
+          const state = store.getState();
+          void state.setIslandPreferences({ enabled: !state.settings.statusIsland.enabled });
+        },
       },
       {
         id: "island.cycle",
         label: "Cycle Status Island widget",
         group: "Status Island",
-        run: () => state.cycleIslandWidget(1),
+        run: () => {
+          void store.getState().cycleIslandWidget(1);
+        },
       },
     );
     if (island.pinnedWidget !== null) {
@@ -133,7 +159,9 @@ export function CommandPalette(): JSX.Element | null {
         id: "island.automatic",
         label: "Status Island: automatic",
         group: "Status Island",
-        run: () => state.pinIslandWidget(null),
+        run: () => {
+          void store.getState().pinIslandWidget(null);
+        },
       });
     }
     for (const widget of island.enabledWidgets) {
@@ -144,7 +172,9 @@ export function CommandPalette(): JSX.Element | null {
         id: `island.pin.${widget}`,
         label: `Pin Status Island: ${islandWidgetLabel(widget)}`,
         group: "Status Island",
-        run: () => state.pinIslandWidget(widget),
+        run: () => {
+          void store.getState().pinIslandWidget(widget);
+        },
       });
     }
 
@@ -153,7 +183,9 @@ export function CommandPalette(): JSX.Element | null {
         id: "session.cancel",
         label: "Stop the current response",
         group: "Session",
-        run: () => state.cancel(),
+        run: () => {
+          void store.getState().cancel();
+        },
       });
     }
 
@@ -162,7 +194,9 @@ export function CommandPalette(): JSX.Element | null {
         id: `workspace.${workspace.id}`,
         label: `Switch to workspace: ${workspace.name}`,
         group: "Workspace",
-        run: () => state.selectWorkspace(workspace.id),
+        run: () => {
+          void store.getState().selectWorkspace(workspace.id);
+        },
       });
     }
 
@@ -171,7 +205,9 @@ export function CommandPalette(): JSX.Element | null {
         id: `session.${session.id}`,
         label: `Switch to session: ${session.name}`,
         group: "Session",
-        run: () => state.selectSession(session.id),
+        run: () => {
+          void store.getState().selectSession(session.id);
+        },
       });
     }
 
@@ -181,23 +217,33 @@ export function CommandPalette(): JSX.Element | null {
           id: `provider.${provider.metadata.id}`,
           label: `Use provider: ${provider.metadata.displayName}`,
           group: "Providers",
-          run: () =>
-            state.updateSession({
-              id: activeSessionId,
-              providerId: provider.metadata.id,
-            }),
+          run: () => {
+            const state = store.getState();
+            const id = state.activeSessionId;
+            if (id) {
+              void state.updateSession({
+                id,
+                providerId: provider.metadata.id,
+              });
+            }
+          },
         });
         for (const model of provider.models) {
           list.push({
             id: `model.${provider.metadata.id}.${model.id}`,
             label: `Use model: ${model.displayName}`,
             group: "Models",
-            run: () =>
-              state.updateSession({
-                id: activeSessionId,
-                providerId: provider.metadata.id,
-                modelId: model.id,
-              }),
+            run: () => {
+              const state = store.getState();
+              const id = state.activeSessionId;
+              if (id) {
+                void state.updateSession({
+                  id,
+                  providerId: provider.metadata.id,
+                  modelId: model.id,
+                });
+              }
+            },
           });
         }
       }

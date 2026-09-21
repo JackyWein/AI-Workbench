@@ -103,6 +103,7 @@
   --context-width: 264px;
   --header-height: 46px;
   --tile-header-height: 34px;
+  --composer-max-height: 220px;
 }
 
 :root[data-theme="light"] {

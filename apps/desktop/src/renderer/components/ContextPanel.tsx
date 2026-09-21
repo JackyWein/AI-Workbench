@@ -10,6 +10,7 @@ import type {
 import { formatPath } from "../lib/format.js";
 import { describeError, invoke } from "../lib/client.js";
 import { useWorkbench } from "../store/workbench.js";
+import { Popover } from "./Popover.js";
 
 interface ContextPanelProps {
   readonly session: Session;
@@ -46,9 +47,13 @@ export function ContextPanel({
 
       <div className="context__group">
         <p className="context__label">Working directory</p>
-        <p className="context__value" title={session.workingDirectory}>
-          {formatPath(session.workingDirectory, 34)}
-        </p>
+        <Popover
+          title="Working directory"
+          triggerClassName="context__value"
+          trigger={<>{formatPath(session.workingDirectory, 34)}</>}
+        >
+          <p className="popover__detail">{session.workingDirectory}</p>
+        </Popover>
       </div>
 
       <div className="context__group">
@@ -128,7 +133,15 @@ function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Elemen
   const setError = useWorkbench((state) => state.setError);
 
   useEffect(() => {
-    void refreshMcp();
+    let current = true;
+    void (async () => {
+      if (current) {
+        await refreshMcp();
+      }
+    })();
+    return () => {
+      current = false;
+    };
   }, [sessionId, refreshMcp]);
 
   if (servers.length === 0) {
@@ -172,7 +185,7 @@ function describeContext(usage: MessageUsage | null): string | null {
     return null;
   }
   const used = formatTokens(usage.contextTokens);
-  if (usage.contextWindow === undefined) {
+  if (usage.contextWindow === undefined || usage.contextWindow <= 0) {
     return `${used} used`;
   }
   const percent = Math.round((usage.contextTokens / usage.contextWindow) * 100);

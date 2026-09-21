@@ -19,6 +19,7 @@
     "packages/providers/opencode/src/**/*.ts",
     "packages/providers/codex/src/**/*.ts",
     "packages/providers/claude/src/**/*.ts",
+    "packages/providers/openai-compatible/src/**/*.ts",
     "packages/credentials/src/**/*.ts",
     "packages/mcp/src/**/*.ts",
     "packages/plugins/src/**/*.ts",

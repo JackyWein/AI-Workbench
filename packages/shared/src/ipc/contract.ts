@@ -65,6 +65,7 @@ import {
   teamRunSchema,
   teamRunSnapshotSchema,
 } from "../domain/team.js";
+import { updateStateSchema } from "../domain/updater.js";
 
 /**
  * The single source of truth for privileged main-process operations (spec §105).
@@ -181,10 +182,26 @@ export const ipcContract = {
     }),
     output: fileContentsSchema,
   },
+  "files.write": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      path: z.string().min(1).max(4096),
+      content: z.string().max(512 * 1024),
+    }),
+    output: directoryEntrySchema,
+  },
 
   "git.status": {
     input: z.object({ sessionId: z.string().min(1) }),
     output: gitStatusSchema,
+  },
+  "git.diff": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      path: z.string().min(1).max(4096),
+      staged: z.boolean().default(false),
+    }),
+    output: z.object({ path: z.string(), diff: z.string().max(200 * 1024) }),
   },
 
   "terminal.list": {
@@ -438,12 +455,43 @@ export const ipcContract = {
     input: updateSettingsInputSchema,
     output: appSettingsSchema,
   },
+
+  /**
+   * Updates over GitHub Releases. Checking only asks which version is
+   * current; downloading and installing each wait for their own explicit user
+   * action, so there is no silent fetch and no silent install.
+   */
+  "update.check": {
+    input: z.void(),
+    output: z.object({ started: z.boolean() }),
+  },
+  "update.download": {
+    input: z.void(),
+    output: z.object({ started: z.boolean() }),
+  },
+  "update.install": {
+    input: z.void(),
+    output: z.object({ installing: z.boolean() }),
+  },
+  "update.getStatus": { input: z.void(), output: updateStateSchema },
 } as const;
 
 export type IpcContract = typeof ipcContract;
 export type IpcChannel = keyof IpcContract;
 
-export type IpcInput<C extends IpcChannel> = z.infer<IpcContract[C]["input"]>;
+/**
+ * What a caller may send: schemas with `.default()` accept the field as
+ * optional on the wire, and the main process applies the default when it
+ * parses the payload before any service is touched.
+ */
+export type IpcInput<C extends IpcChannel> = z.input<IpcContract[C]["input"]>;
+/**
+ * What a handler receives after parsing: defaults applied, so fields with
+ * `.default()` are present. This is what `z.infer` describes.
+ */
+export type IpcHandlerInput<C extends IpcChannel> = z.output<
+  IpcContract[C]["input"]
+>;
 export type IpcOutput<C extends IpcChannel> = z.infer<IpcContract[C]["output"]>;
 
 export const ipcChannels = Object.keys(ipcContract) as IpcChannel[];

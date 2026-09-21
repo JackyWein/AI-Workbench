@@ -13,6 +13,7 @@ export const layout = {
   sidebarWidth: 244,
   contextWidth: 264,
   headerHeight: 46,
+  composerMaxHeight: 220,
 } as const;
 
 export type ThemePreference = "system" | "dark" | "light";

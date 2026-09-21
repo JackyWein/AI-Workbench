@@ -46,11 +46,31 @@ body {
   padding: var(--space-4) var(--space-5);
 }
 
+.island:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
 .island__line {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   min-height: 20px;
+  /* A real button now, reset to the plain line look. */
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* Buttons must stay clickable inside a draggable region. */
+  -webkit-app-region: no-drag;
+}
+
+.island__line:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 .island__dot {

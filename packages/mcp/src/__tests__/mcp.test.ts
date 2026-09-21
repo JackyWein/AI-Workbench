@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseMcpServerConfig } from "@ai-workbench/shared";
 import { McpManager } from "../manager.js";
+import { startHttpTestServer, type HttpTestServer } from "./http-test-server.js";
 
 const nullLogger = {
   debug: () => {},
@@ -120,17 +121,20 @@ describe("McpManager against a real server", () => {
     expect(status.state).toBe("failed");
   });
 
-  it("reports a remote transport as configured but not implemented", async () => {
+  it("reports an unreachable remote server as failed instead of throwing", async () => {
     manager = new McpManager({ logger: nullLogger });
-    const status = await manager.connect({
-      id: "remote",
-      name: "Remote",
-      transport: "sse",
-      url: "https://example.com/mcp",
-    });
+    for (const transport of ["http", "sse"] as const) {
+      const status = await manager.connect({
+        id: `remote-${transport}`,
+        name: `Remote ${transport}`,
+        transport,
+        url: "http://127.0.0.1:1/mcp",
+      });
 
-    expect(status.state).toBe("unsupported");
-    expect(status.detail).toContain("not implemented");
+      expect(status.state).toBe("failed");
+      expect(status.detail).toBeTruthy();
+      expect(manager.isConnected(`remote-${transport}`)).toBe(false);
+    }
   });
 
   it("exposes only the tools a session is allowed to use", async () => {
@@ -154,5 +158,165 @@ describe("McpManager against a real server", () => {
     expect(manager.status("echo")?.state).toBe("disconnected");
     expect(manager.toolsForSession(["echo"])).toEqual([]);
     expect(await manager.disconnect("echo")).toBe(false);
+  }, 30_000);
+});
+
+describe("McpManager over streamable HTTP", () => {
+  let manager: McpManager;
+  let servers: HttpTestServer[] = [];
+
+  afterEach(async () => {
+    await manager?.disconnectAll();
+    await Promise.all(servers.splice(0).map((server) => server.close()));
+  });
+
+  function httpConfig(url: string, overrides: Record<string, unknown> = {}) {
+    return {
+      id: "remote",
+      name: "Remote server",
+      transport: "http",
+      url,
+      ...overrides,
+    };
+  }
+
+  it("connects over http, reads the tool list and reports latency", async () => {
+    servers = [await startHttpTestServer()];
+    manager = new McpManager({ logger: nullLogger });
+    const status = await manager.connect(httpConfig(servers[0]?.url ?? ""));
+
+    expect(status.state).toBe("connected");
+    expect(status.tools.map((tool) => tool.name).sort()).toEqual([
+      "add",
+      "echo",
+      "explode",
+    ]);
+    expect(typeof status.latencyMs).toBe("number");
+    expect(status.latencyMs as number).toBeGreaterThanOrEqual(0);
+    expect(manager.isConnected("remote")).toBe(true);
+  }, 30_000);
+
+  it("calls a tool and filters remote tools per session like stdio", async () => {
+    servers = [await startHttpTestServer()];
+    manager = new McpManager({ logger: nullLogger });
+    await manager.connect(httpConfig(servers[0]?.url ?? ""));
+
+    const result = await manager.callTool("remote", "echo", { text: "hello" });
+    expect(result.ok).toBe(true);
+    expect(JSON.stringify(result)).toContain("echo:hello");
+
+    const sum = await manager.callTool("remote", "add", { a: 2, b: 3 });
+    expect(JSON.stringify(sum)).toContain("5");
+
+    expect(manager.toolsForSession(["remote"]).map((tool) => tool.serverId)).toEqual([
+      "remote",
+      "remote",
+      "remote",
+    ]);
+    expect(manager.toolsForSession([])).toEqual([]);
+    expect(manager.toolsForSession(["nope"])).toEqual([]);
+  }, 30_000);
+
+  it("sends the resolved credential as an Authorization header", async () => {
+    servers = [await startHttpTestServer({ expectedAuth: "Bearer test-secret" })];
+    manager = new McpManager({
+      logger: nullLogger,
+      resolveCredential: async (reference) =>
+        reference === "cred_test" ? "test-secret" : null,
+    });
+
+    const status = await manager.connect(
+      httpConfig(servers[0]?.url ?? "", { credentialReference: "cred_test" }),
+    );
+    expect(status.state).toBe("connected");
+
+    // A bare token gains the Bearer scheme; a ready-made value passes through.
+    await manager.disconnect("remote");
+    servers.push(await startHttpTestServer({ expectedAuth: "Basic dXNlcjpwYXNz" }));
+    const basic = await manager.connect(
+      httpConfig(servers[1]?.url ?? "", { credentialReference: "cred_test" }),
+    );
+    expect(basic.state).toBe("failed");
+
+    manager.setCredentialResolver(async () => "Basic dXNlcjpwYXNz");
+    const retry = await manager.connect(
+      httpConfig(servers[1]?.url ?? "", { credentialReference: "cred_other" }),
+    );
+    expect(retry.state).toBe("connected");
+  }, 30_000);
+
+  it("reports an unresolvable credential as failed, never thrown", async () => {
+    servers = [await startHttpTestServer({ expectedAuth: "Bearer test-secret" })];
+    manager = new McpManager({
+      logger: nullLogger,
+      resolveCredential: async () => null,
+    });
+
+    const status = await manager.connect(
+      httpConfig(servers[0]?.url ?? "", { credentialReference: "cred_missing" }),
+    );
+    expect(status.state).toBe("failed");
+    expect(status.detail).toContain("cred_missing");
+    expect(manager.isConnected("remote")).toBe(false);
+
+    const withoutResolver = new McpManager({ logger: nullLogger });
+    const refused = await withoutResolver.connect(
+      httpConfig(servers[0]?.url ?? "", { credentialReference: "cred_missing" }),
+    );
+    expect(refused.state).toBe("failed");
+    expect(refused.detail).toContain("no credential resolver");
+    await withoutResolver.disconnectAll();
+  }, 30_000);
+
+  it("rejects a wrong secret with a failed status", async () => {
+    servers = [await startHttpTestServer({ expectedAuth: "Bearer correct" })];
+    manager = new McpManager({
+      logger: nullLogger,
+      resolveCredential: async () => "wrong",
+    });
+
+    const status = await manager.connect(
+      httpConfig(servers[0]?.url ?? "", { credentialReference: "cred_test" }),
+    );
+    expect(status.state).toBe("failed");
+    expect(status.detail).toBeTruthy();
+  }, 30_000);
+
+  it("probes health and records latency", async () => {
+    servers = [await startHttpTestServer()];
+    manager = new McpManager({ logger: nullLogger });
+    await manager.connect(httpConfig(servers[0]?.url ?? ""));
+
+    const health = await manager.health("remote");
+    expect(health.ok).toBe(true);
+    if (health.ok) {
+      expect(health.latencyMs).toBeGreaterThanOrEqual(0);
+    }
+    expect(manager.status("remote")?.latencyMs).toBeGreaterThanOrEqual(0);
+
+    expect(await manager.health("nope")).toEqual({
+      ok: false,
+      error: 'MCP server "nope" is not connected',
+    });
+  }, 30_000);
+
+  it("reconnects a known server and gives up honestly on a dead one", async () => {
+    servers = [await startHttpTestServer()];
+    manager = new McpManager({ logger: nullLogger });
+    await manager.connect(httpConfig(servers[0]?.url ?? ""));
+
+    const back = await manager.reconnect("remote", { attempts: 2, baseDelayMs: 1 });
+    expect(back.state).toBe("connected");
+
+    const unknown = await manager.reconnect("nope");
+    expect(unknown.state).toBe("failed");
+    expect(unknown.detail).toContain("No configuration known");
+
+    await manager.disconnectAll();
+    await Promise.all(servers.splice(0).map((server) => server.close()));
+    servers = [];
+    const dead = await manager.reconnect("remote", { attempts: 2, baseDelayMs: 1 });
+    expect(dead.state).toBe("failed");
+    expect(dead.detail).toBeTruthy();
   }, 30_000);
 });

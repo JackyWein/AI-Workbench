@@ -210,7 +210,12 @@ interface WorkbenchState {
   refreshTeams(): Promise<void>;
   createTeam(input: {
     name: string;
-    agents: Array<{ displayName: string; providerId: string; role: string }>;
+    agents: Array<{
+      displayName: string;
+      providerId: string;
+      modelId?: string;
+      role: string;
+    }>;
   }): Promise<void>;
   deleteTeam(teamId: string): Promise<void>;
   setTeamLead(teamId: string, agentId: string): Promise<void>;
@@ -250,6 +255,13 @@ function byProviderId(
 ): Record<string, StoredProviderConfig> {
   return Object.fromEntries(configs.map((config) => [config.providerId, config]));
 }
+
+/**
+ * Guards async selections against fast switching: only the latest request for
+ * a workspace/session may write its result. Stale answers are dropped.
+ */
+let workspaceRequest = 0;
+let sessionRequest = 0;
 
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   ready: false,
@@ -419,12 +431,20 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
   toggleWorkspacePanel: (tab) =>
-    set((state) => ({
-      workspacePanelOpen: tab && !state.workspacePanelOpen ? true : !state.workspacePanelOpen,
-      ...(tab ? { workspaceTab: tab } : {}),
-    })),
+    set((state) => {
+      if (!tab) {
+        return { workspacePanelOpen: !state.workspacePanelOpen };
+      }
+      // Switching to a different tab opens the panel instead of closing it;
+      // only pressing the active tab again toggles it shut.
+      if (!state.workspacePanelOpen || state.workspaceTab !== tab) {
+        return { workspacePanelOpen: true, workspaceTab: tab };
+      }
+      return { workspacePanelOpen: false };
+    }),
 
   async selectWorkspace(id) {
+    const token = ++workspaceRequest;
     set({ activeWorkspaceId: id, activeSessionId: null, sessions: [] });
     if (!id) {
       return;
@@ -432,17 +452,24 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     void get().refreshAgentTerminals(id);
     try {
       const sessions = await invoke("session.list", { workspaceId: id });
+      if (token !== workspaceRequest || get().activeWorkspaceId !== id) {
+        return;
+      }
       set({ sessions });
       const first = sessions[0];
       if (first) {
         await get().selectSession(first.id);
       }
     } catch (error) {
+      if (token !== workspaceRequest) {
+        return;
+      }
       set({ error: describeError(error) });
     }
   },
 
   async selectSession(id) {
+    const token = ++sessionRequest;
     set({ activeSessionId: id, view: "chat" });
     if (!id || get().messages[id]) {
       return;
@@ -452,11 +479,17 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         invoke("message.list", { sessionId: id }),
         invoke("session.getStatus", { sessionId: id }),
       ]);
+      if (token !== sessionRequest || get().activeSessionId !== id) {
+        return;
+      }
       set((state) => ({
         messages: { ...state.messages, [id]: messages },
         busy: { ...state.busy, [id]: status.busy },
       }));
     } catch (error) {
+      if (token !== sessionRequest) {
+        return;
+      }
       set({ error: describeError(error) });
     }
   },
@@ -531,13 +564,17 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   },
 
   async sendMessage(text) {
+    const value = text.trim();
+    if (!value) {
+      return;
+    }
     const sessionId = get().activeSessionId;
     if (!sessionId) {
       return;
     }
     set((state) => ({ busy: { ...state.busy, [sessionId]: true } }));
     try {
-      await invoke("session.sendMessage", { sessionId, text });
+      await invoke("session.sendMessage", { sessionId, text: value });
     } catch (error) {
       set((state) => ({
         error: describeError(error),
@@ -857,6 +894,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         agents: input.agents.map((agent) => ({
           displayName: agent.displayName,
           providerId: agent.providerId,
+          ...(agent.modelId === undefined || agent.modelId === "" ? {} : { modelId: agent.modelId }),
           role: agent.role,
           skills: [],
           plugins: [],
@@ -1099,7 +1137,10 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         });
         break;
       case "message.failed":
-        set({ error: event.error.message });
+        set((state) => ({
+          error: event.error.message,
+          busy: { ...state.busy, [event.sessionId]: false },
+        }));
         break;
       case "provider.usage.updated":
         set({ usage: event.usage });

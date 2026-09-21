@@ -223,6 +223,16 @@ export const storedProviderConfigSchema = z.object({
   enabled: z.boolean(),
   executablePath: z.string().nullable(),
   arguments: z.array(z.string()),
+  /**
+   * OpenAI-compatible base URL of a custom provider, e.g.
+   * `http://localhost:11434/v1`. Null means none is configured.
+   */
+  baseUrl: z.string().nullable(),
+  /**
+   * Reference into the CredentialManager. Never a raw secret (spec §57); the
+   * renderer only ever carries this reference.
+   */
+  credentialReference: z.string().nullable(),
   defaultModel: z.string().nullable(),
   /** Free-form adapter settings, e.g. a user-maintained model list. */
   settings: z.record(z.unknown()),
@@ -236,6 +246,10 @@ export const saveProviderConfigInputSchema = z.object({
   /** Absolute path to the executable; null clears it and returns to PATH. */
   executablePath: z.string().nullable().optional(),
   arguments: z.array(z.string()).optional(),
+  /** OpenAI-compatible base URL; null clears it. */
+  baseUrl: z.string().url().max(2000).nullable().optional(),
+  /** Credential reference; null clears it. Never a raw secret (spec §57). */
+  credentialReference: z.string().min(1).max(300).nullable().optional(),
   defaultModel: z.string().nullable().optional(),
   models: z.array(modelInfoSchema).optional(),
 });

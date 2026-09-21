@@ -13,6 +13,7 @@ export const logCategories = [
   "TEAM",
   "TERMINAL",
   "STATUS_ISLAND",
+  "UPDATER",
 ] as const;
 
 export type LogCategory = (typeof logCategories)[number];

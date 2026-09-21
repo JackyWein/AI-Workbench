@@ -25,6 +25,7 @@ export const claudeCodeProfile: CliProviderProfileInput = {
   description: "Anthropic's command line coding tool, run non-interactively",
   website: "https://code.claude.com",
   command: "claude",
+  icon: "claude-code",
   versionArgs: ["--version"],
   auth: {
     method: "cli",
@@ -102,6 +103,7 @@ export const codexProfile: CliProviderProfileInput = {
   displayName: "Codex",
   description: "OpenAI's command line coding tool, run non-interactively",
   command: "codex",
+  icon: "codex",
   versionArgs: ["--version"],
   auth: {
     method: "cli",
@@ -153,6 +155,7 @@ export const antigravityProfile: CliProviderProfileInput = {
   description: "Google's terminal coding agent, run headlessly",
   website: "https://antigravity.google",
   command: "agy",
+  icon: "antigravity",
   versionArgs: ["--version"],
   auth: {
     method: "cli",
@@ -171,6 +174,17 @@ export const antigravityProfile: CliProviderProfileInput = {
   unverified: true,
 };
 
+/**
+ * Where Windows shims of package-manager CLIs usually live when the installer
+ * did not put them on PATH: bun, npm-global and friends. `~`, `%VAR%` expand;
+ * missing entries are skipped by discovery.
+ */
+const WINDOWS_SHIM_LOCATIONS: readonly string[] = [
+  "%USERPROFILE%/.bun/bin",
+  "%APPDATA%/npm",
+  "~/.local/bin",
+];
+
 /** Google's Gemini CLI, still available on the paid plans that kept it. */
 export const geminiProfile: CliProviderProfileInput = {
   schemaVersion: 1,
@@ -178,6 +192,8 @@ export const geminiProfile: CliProviderProfileInput = {
   displayName: "Gemini CLI",
   description: "Google's previous command line tool, replaced by Antigravity",
   command: "gemini",
+  icon: "gemini",
+  knownLocations: [...WINDOWS_SHIM_LOCATIONS],
   versionArgs: ["--version"],
   auth: {
     method: "cli",
@@ -193,9 +209,46 @@ export const geminiProfile: CliProviderProfileInput = {
   unverified: true,
 };
 
+/**
+ * SST's OpenCode CLI (`opencode`), headless via `opencode run`.
+ *
+ * Unverified starting point like the other non-Claude profiles: flags from
+ * `opencode --help` still need a run against the real tool, and the UI says
+ * so. Plain stdout is the answer; no event format is assumed.
+ */
+export const opencodeProfile: CliProviderProfileInput = {
+  schemaVersion: 1,
+  id: "opencode",
+  displayName: "OpenCode",
+  description: "SST's command line coding tool, run headlessly",
+  website: "https://opencode.ai",
+  command: "opencode",
+  icon: "opencode",
+  knownLocations: [...WINDOWS_SHIM_LOCATIONS],
+  versionArgs: ["--version"],
+  auth: {
+    method: "cli",
+    probeArgs: ["auth", "list"],
+    authenticatedPattern: "stored",
+    loginHint: "Run `opencode auth login` once in a terminal.",
+  },
+  capabilities: ["chat", "streaming", "sessionResume", "modelSelection", "cliAuthentication"],
+  // Asked from the tool itself via `opencode models`; nothing is assumed here.
+  models: [],
+  modelsArgs: ["models"],
+  args: ["run"],
+  modelArgs: ["--model", "{model}"],
+  resumeArgs: ["--session", "{providerSessionId}"],
+  promptVia: "arg",
+  promptArgs: ["{prompt}"],
+  output: { format: "text" },
+  unverified: true,
+};
+
 export const builtInCliProfiles: CliProviderProfileInput[] = [
   claudeCodeProfile,
   codexProfile,
   antigravityProfile,
   geminiProfile,
+  opencodeProfile,
 ];

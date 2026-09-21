@@ -26,9 +26,15 @@ asarUnpack:
 # make unreliable.
 npmRebuild: false
 
-# Uploading is the release workflow's job; electron-builder would otherwise try
-# to publish by itself as soon as it detects a CI environment.
-publish: null
+# The provider setting only decides which metadata electron-builder writes
+# next to the artifacts (latest*.yml). Nothing is uploaded from here: the
+# release workflow copies the artifacts and that metadata to the GitHub
+# release, and the packaged app reads updates back from there. No --publish
+# flag is passed, so a local or CI build never publishes by itself.
+publish:
+  provider: github
+  owner: JackyWein
+  repo: AI-Workbench
 
 win:
   target:
@@ -37,6 +43,7 @@ win:
     - target: portable
       arch: [x64]
   artifactName: ${productName}-${version}-windows-${arch}.${ext}
+  portableArtifactName: ${productName}-${version}-windows-portable-${arch}.${ext}
 
 nsis:
   oneClick: false

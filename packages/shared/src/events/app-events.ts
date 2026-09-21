@@ -83,6 +83,26 @@ export const appEventSchema = z.discriminatedUnion("type", [
   // Team events reach the UI on the same channel as everything else, so the
   // renderer has one stream to follow (spec §50).
   z.object({ type: z.literal("team.event"), event: teamEventSchema }),
+
+  // Update progress reaches the UI on the same channel as everything else.
+  // Downloads and installs only ever start from an explicit user action; the
+  // main process never fetches or applies an update on its own.
+  z.object({ type: z.literal("update.checking") }),
+  z.object({
+    type: z.literal("update.available"),
+    version: z.string(),
+    releaseNotes: z.string().nullable(),
+  }),
+  z.object({
+    type: z.literal("update.progress"),
+    percent: z.number(),
+    bytesPerSecond: z.number(),
+    transferred: z.number(),
+    total: z.number(),
+  }),
+  z.object({ type: z.literal("update.downloaded"), version: z.string() }),
+  z.object({ type: z.literal("update.not-available"), version: z.string() }),
+  z.object({ type: z.literal("update.error"), message: z.string() }),
 ]);
 export type AppEvent = z.infer<typeof appEventSchema>;
 export type AppEventType = AppEvent["type"];

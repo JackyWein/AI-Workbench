@@ -4,14 +4,20 @@ import {
   TERMINAL_EVENT_CHANNEL,
   ipcContract,
   type IpcChannel,
-  type IpcInput,
+  type IpcHandlerInput,
   type IpcOutput,
 } from "@ai-workbench/shared";
 import { toProviderConfigOverrides, type AppServices } from "./services.js";
 import type { IslandController } from "./island-controller.js";
+import {
+  checkForUpdates,
+  downloadUpdate,
+  getUpdateState,
+  installUpdate,
+} from "./updater.js";
 
 type Handler<C extends IpcChannel> = (
-  input: IpcInput<C>,
+  input: IpcHandlerInput<C>,
 ) => Promise<IpcOutput<C>> | IpcOutput<C>;
 
 type Handlers = { [C in IpcChannel]: Handler<C> };
@@ -23,6 +29,43 @@ export interface RegisterIpcOptions {
   readonly island: IslandController;
 }
 
+/** Subscriptions that push main-process events to the renderer. */
+const eventUnsubscribes: Array<() => void> = [];
+
+/** The island has its own tiny bridge; pushes go to the main window only. */
+function isIslandWindow(window: BrowserWindow): boolean {
+  try {
+    return window.webContents.getURL().endsWith("island/index.html");
+  } catch {
+    return false;
+  }
+}
+
+function findMainWindow(): BrowserWindow | null {
+  return (
+    BrowserWindow.getAllWindows().find(
+      (window) => !window.isDestroyed() && !isIslandWindow(window),
+    ) ?? null
+  );
+}
+
+/**
+ * Strips absolute paths from messages handed to the renderer. The full detail
+ * is logged next to the channel in the main process; the UI gets a message
+ * without machine-specific paths.
+ */
+function sanitizeErrorMessage(message: string): string {
+  const withoutWindows = message.replace(
+    /[A-Za-z]:\\(?:[^\\s"'`,;()]*\\)*[^\\s"'`,;()]*/g,
+    "[path]",
+  );
+  const withoutPosix = withoutWindows.replace(
+    /(^|[\s"'`(])(?:\/[^/\s"'`()]+)+\/?/g,
+    "$1[path]",
+  );
+  const cleaned = withoutPosix.trim();
+  return cleaned.length === 0 ? "Unexpected error" : cleaned;
+}
 
 /** The services report scope decisions as maps; the contract carries lists. */
 function toAssignments<K extends string>(
@@ -58,7 +101,9 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       deleted: await services.workspaces.delete(input.id),
     }),
     "workspace.chooseDirectory": async () => {
-      const window = BrowserWindow.getFocusedWindow();
+      // Dialogs belong to the main window: the focused window may be the
+      // island, which must never become a dialog parent.
+      const window = findMainWindow();
       const result = await (window
         ? dialog.showOpenDialog(window, { properties: ["openDirectory", "createDirectory"] })
         : dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] }));
@@ -125,10 +170,19 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       const session = await services.sessions.require(input.sessionId);
       return services.files.readText(session.workingDirectory, input.path);
     },
+    "files.write": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      return services.files.writeText(session.workingDirectory, input.path, input.content);
+    },
 
     "git.status": async (input) => {
       const session = await services.sessions.require(input.sessionId);
       return services.git.status(session.workingDirectory);
+    },
+    "git.diff": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      const diff = await services.git.diff(session.workingDirectory, input.path, input.staged);
+      return { path: input.path, diff };
     },
 
     "terminal.list": (input) => services.terminals.list(input.sessionId),
@@ -188,7 +242,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       deleted: await services.skills.delete(input.id),
     }),
     "skill.importFromDirectory": async () => {
-      const window = BrowserWindow.getFocusedWindow();
+      const window = findMainWindow();
       const properties = ["openDirectory"] as const;
       const result = await (window
         ? dialog.showOpenDialog(window, { properties: [...properties] })
@@ -329,6 +383,11 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
 
     "settings.get": () => services.settings.get(),
     "settings.update": (input) => services.settings.update(input),
+
+    "update.check": () => checkForUpdates(),
+    "update.download": () => downloadUpdate(),
+    "update.install": () => installUpdate(),
+    "update.getStatus": () => getUpdateState(),
   };
 
   for (const channel of Object.keys(handlers) as IpcChannel[]) {
@@ -345,33 +404,53 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
 
       try {
         const handler = handlers[channel] as Handler<typeof channel>;
-        return await handler(parsed.data as IpcInput<typeof channel>);
+        return await handler(parsed.data as IpcHandlerInput<typeof channel>);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unexpected error";
+        // Full detail stays in the main-process log; the renderer gets the
+        // same message without absolute paths.
         logger.error("IPC handler failed", { channel, error: message });
-        throw new Error(message);
+        throw new Error(sanitizeErrorMessage(message));
       }
     });
   }
 
   const broadcast = (channel: string, payload: unknown): void => {
+    // The island has its own push path (island state); domain and terminal
+    // events go to the main window only.
     for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) {
+      if (window.isDestroyed() || isIslandWindow(window)) {
+        continue;
+      }
+      try {
         window.webContents.send(channel, payload);
+      } catch (error) {
+        logger.warn("Broadcast to the main window failed", {
+          channel,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   };
 
   // One push channel carries every domain event to whichever windows exist.
-  services.events.subscribe((event) => broadcast(APP_EVENT_CHANNEL, event));
+  eventUnsubscribes.push(services.events.subscribe((event) => broadcast(APP_EVENT_CHANNEL, event)));
 
   // Terminal bytes go on their own channel, so a busy shell cannot drown the
   // domain events the rest of the application depends on.
-  services.onTerminalEvent((event) => broadcast(TERMINAL_EVENT_CHANNEL, event));
+  eventUnsubscribes.push(services.onTerminalEvent((event) => broadcast(TERMINAL_EVENT_CHANNEL, event)));
 }
 
 export function removeIpcHandlers(): void {
+  while (eventUnsubscribes.length > 0) {
+    const unsubscribe = eventUnsubscribes.pop();
+    try {
+      unsubscribe?.();
+    } catch {
+      // Unsubscribing must never break shutdown.
+    }
+  }
   for (const channel of Object.keys(ipcContract) as IpcChannel[]) {
     ipcMain.removeHandler(channel);
   }

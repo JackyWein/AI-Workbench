@@ -122,9 +122,16 @@ export class TeamOrchestrator {
       const view = this.#service.view();
 
       // Work that is ready runs first; independent tasks run together, up to
-      // the run's concurrency limit (spec §45, §51).
+      // the run's concurrency limit (spec §45, §51). The batch never spends
+      // more agent calls than the run has left, so maxAgentCalls cannot be
+      // overshot by a wide batch.
       const capacity = this.#service.run.limits.maxConcurrentAgents - view.inFlight.length;
-      const batch = view.runnable.slice(0, Math.max(0, capacity));
+      const remainingCalls = this.#service.run.limits.maxAgentCalls - this.#service.run.agentCalls;
+      if (remainingCalls <= 0) {
+        this.#logger.warn("Run stopped by a limit", { reason: "no agent calls left" });
+        return this.#service.stop("completed", "limitReached");
+      }
+      const batch = view.runnable.slice(0, Math.max(0, Math.min(capacity, remainingCalls)));
 
       if (batch.length > 0) {
         await Promise.all(batch.map((task) => this.#workOn(task)));
@@ -132,8 +139,9 @@ export class TeamOrchestrator {
       }
 
       if (view.inFlight.length > 0) {
-        // Only possible when concurrency is saturated by a turn still running;
-        // the awaits above mean there is nothing to wait for here.
+        // Concurrency is saturated by turns claimed outside this loop (e.g.
+        // via Team MCP). Wait for progress instead of spinning hot.
+        await new Promise((resolve) => setTimeout(resolve, 100));
         continue;
       }
 
@@ -149,6 +157,9 @@ export class TeamOrchestrator {
             "will not complete. Re-plan or finish the goal.",
           ...(stuck ? { taskId: stuck.id } : {}),
         });
+        this.#service.emitAttentionRequired(
+          `Task graph stalled on "${stuck?.title ?? "a task"}"`,
+        );
       }
 
       // Nothing runnable: the lead decides what happens next.
@@ -338,7 +349,7 @@ export class TeamOrchestrator {
           });
           return;
         case "finish_goal":
-          if (agent.id !== this.#leadId()) {
+          if (this.#leadId() && agent.id !== this.#leadId()) {
             throw new TeamRuleError("Only the lead agent finishes the goal");
           }
           await this.#service.finishGoal(action.outcome, agent.id);
@@ -375,12 +386,14 @@ export class TeamOrchestrator {
     const collected: string[] = [];
     const stream = session.adapter.sendMessage(session.handle, { text: prompt });
 
-    const deadline = new Promise<never>((_resolve, reject) =>
-      setTimeout(
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
         () => reject(new Error(`no answer within ${this.#turnTimeoutMs}ms`)),
         this.#turnTimeoutMs,
-      ).unref?.(),
-    );
+      );
+      timer.unref?.();
+    });
 
     const consume = (async (): Promise<string> => {
       for await (const event of stream) {
@@ -396,7 +409,23 @@ export class TeamOrchestrator {
       return collected.join("");
     })();
 
-    return Promise.race([consume, deadline]);
+    try {
+      return await Promise.race([consume, deadline]);
+    } catch (error) {
+      // A timed-out turn must not keep the provider stream alive behind the
+      // run: cancel the session so the call is released.
+      void consume.catch(() => undefined);
+      try {
+        await session.adapter.cancel(session.handle);
+      } catch {
+        // Cancellation itself failing must not mask the original timeout.
+      }
+      throw error;
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   async #sessionFor(agent: AgentDefinition): Promise<AgentSession> {

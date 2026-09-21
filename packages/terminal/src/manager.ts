@@ -39,6 +39,12 @@ export interface TerminalManagerOptions {
   readonly maxTerminals?: number;
   /** Characters of output kept per terminal for reattachment. */
   readonly scrollbackLimit?: number;
+  /**
+   * Characters of scrollback handed out per reattach. A runaway command can
+   * leave far more behind than a view can replay without jank, so only the
+   * tail crosses IPC; the rest stays available in the live buffer.
+   */
+  readonly reattachLimit?: number;
 }
 
 interface TerminalState {
@@ -48,9 +54,12 @@ interface TerminalState {
   rows: number;
   /**
    * Recent output, so a view that was closed and reopened can rejoin an
-   * already running shell instead of showing an empty screen.
+   * already running shell instead of showing an empty screen. Kept as chunks
+   * so a fast command does not copy the whole buffer on every data event.
    */
-  scrollback: string;
+  scrollback: string[];
+  scrollbackChars: number;
+  readonly disposables: Array<{ dispose(): void }>;
 }
 
 export class TerminalLimitError extends Error {
@@ -78,6 +87,7 @@ export class TerminalManager {
   readonly #logger: Logger;
   readonly #maxTerminals: number;
   readonly #scrollbackLimit: number;
+  readonly #reattachLimit: number;
 
   constructor(options: TerminalManagerOptions) {
     this.#options = options;
@@ -86,6 +96,7 @@ export class TerminalManager {
     // workspace needs room without letting a runaway loop open hundreds.
     this.#maxTerminals = options.maxTerminals ?? 24;
     this.#scrollbackLimit = options.scrollbackLimit ?? 200_000;
+    this.#reattachLimit = options.reattachLimit ?? 50_000;
   }
 
   create(options: CreateTerminalOptions): TerminalInfo {
@@ -119,21 +130,37 @@ export class TerminalManager {
       cols,
       rows,
     };
-    const state: TerminalState = { info, pty, cols, rows, scrollback: "" };
+    const state: TerminalState = {
+      info,
+      pty,
+      cols,
+      rows,
+      scrollback: [],
+      scrollbackChars: 0,
+      disposables: [],
+    };
     this.#terminals.set(id, state);
 
-    pty.onData((chunk) => {
-      state.scrollback = trimScrollback(
-        state.scrollback + chunk,
-        this.#scrollbackLimit,
-      );
-      this.#options.onData(id, chunk);
-    });
-    pty.onExit(({ exitCode }) => {
-      this.#terminals.delete(id);
-      this.#logger.debug("Terminal exited", { terminalId: id, exitCode });
-      this.#options.onExit(id, exitCode);
-    });
+    state.disposables.push(
+      pty.onData((chunk) => {
+        appendScrollback(state, chunk, this.#scrollbackLimit);
+        this.#options.onData(id, chunk);
+      }),
+    );
+    state.disposables.push(
+      pty.onExit(({ exitCode }) => {
+        for (const disposable of state.disposables) {
+          try {
+            disposable.dispose();
+          } catch {
+            // Disposal must not break exit reporting.
+          }
+        }
+        this.#terminals.delete(id);
+        this.#logger.debug("Terminal exited", { terminalId: id, exitCode });
+        this.#options.onExit(id, exitCode);
+      }),
+    );
 
     this.#logger.info("Terminal started", {
       terminalId: id,
@@ -143,9 +170,20 @@ export class TerminalManager {
     return info;
   }
 
-  /** Output kept for a terminal, used when a view reattaches to it. */
+  /**
+   * The tail of the output kept for a terminal, used when a view reattaches
+   * to it. Bounded by the reattach limit so a noisy terminal does not push
+   * its whole history across IPC on every attach.
+   */
   scrollback(id: string): string {
-    return this.#terminals.get(id)?.scrollback ?? "";
+    const state = this.#terminals.get(id);
+    if (!state) {
+      return "";
+    }
+    const full = state.scrollback.join("");
+    return full.length <= this.#reattachLimit
+      ? full
+      : full.slice(full.length - this.#reattachLimit);
   }
 
   /** Returns the session's terminal, starting one when there is none yet. */
@@ -179,6 +217,13 @@ export class TerminalManager {
       return false;
     }
     this.#terminals.delete(id);
+    for (const disposable of state.disposables) {
+      try {
+        disposable.dispose();
+      } catch {
+        // Disposal must not break close.
+      }
+    }
     try {
       state.pty.kill();
     } catch (error) {
@@ -216,9 +261,34 @@ export class TerminalManager {
   }
 }
 
-/** Keeps the buffer bounded, cutting at the front so the newest output stays. */
-function trimScrollback(value: string, limit: number): string {
-  return value.length <= limit ? value : value.slice(value.length - limit);
+/**
+ * Appends output in amortized O(1), dropping whole chunks from the front so
+ * the newest output stays within the limit without copying the buffer.
+ */
+function appendScrollback(state: TerminalState, chunk: string, limit: number): void {
+  if (chunk.length === 0) {
+    return;
+  }
+  if (chunk.length >= limit) {
+    state.scrollback = [chunk.slice(chunk.length - limit)];
+    state.scrollbackChars = state.scrollback[0]?.length ?? 0;
+    return;
+  }
+  state.scrollback.push(chunk);
+  state.scrollbackChars += chunk.length;
+  let overflow = state.scrollbackChars - limit;
+  while (overflow > 0 && state.scrollback.length > 0) {
+    const first = state.scrollback[0] ?? "";
+    if (first.length <= overflow) {
+      state.scrollback.shift();
+      state.scrollbackChars -= first.length;
+      overflow -= first.length;
+    } else {
+      state.scrollback[0] = first.slice(overflow);
+      state.scrollbackChars -= overflow;
+      overflow = 0;
+    }
+  }
 }
 
 function defaultShell(): string {

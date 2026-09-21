@@ -16,6 +16,10 @@ export default defineConfig({
       "@ai-workbench/provider-codex": resolve(root, "packages/providers/codex/src/index.ts"),
       "@ai-workbench/provider-opencode": resolve(root, "packages/providers/opencode/src/index.ts"),
       "@ai-workbench/provider-gemini": resolve(root, "packages/providers/gemini/src/index.ts"),
+      "@ai-workbench/provider-openai-compatible": resolve(
+        root,
+        "packages/providers/openai-compatible/src/index.ts",
+      ),
       "@ai-workbench/transport-cli": resolve(
         root,
         "packages/providers/transports/cli/src/index.ts",

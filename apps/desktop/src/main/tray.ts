@@ -9,7 +9,8 @@ import type { Logger } from "@ai-workbench/shared";
  * app, show the island, pause the autonomous runs, stop everything, quit.
  */
 export interface TrayActions {
-  readonly openMainWindow: () => void;
+  /** Brings the main window forward; may return it for restore/show/focus. */
+  readonly openMainWindow: () => BrowserWindow | null | void;
   readonly toggleIsland: () => boolean;
   readonly describeActivity: () => { sessions: number; runs: number };
   readonly pauseRuns: () => Promise<void>;
@@ -46,7 +47,7 @@ export class StatusTray {
       // tray is never a blank square.
       this.#tray = new Tray(trayIcon());
       this.#tray.setToolTip("AI Workbench");
-      this.#tray.on("click", () => this.#options.actions.openMainWindow());
+      this.#tray.on("click", () => this.#openMainWindow());
       this.refresh();
       return true;
     } catch (error) {
@@ -74,7 +75,7 @@ export class StatusTray {
     );
     this.#tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: "Open AI Workbench", click: () => this.#options.actions.openMainWindow() },
+        { label: "Open AI Workbench", click: () => this.#openMainWindow() },
         {
           label: this.#options.islandVisible() ? "Hide Status Island" : "Show Status Island",
           click: () => {
@@ -93,14 +94,30 @@ export class StatusTray {
           label: "Pause autonomous runs",
           enabled: runs > 0,
           click: () => {
-            void this.#options.actions.pauseRuns().then(() => this.refresh());
+            // The menu always refreshes, even when pausing failed — otherwise
+            // a failure leaves stale counts behind and an unhandled rejection.
+            void this.#options.actions
+              .pauseRuns()
+              .catch((error: unknown) => {
+                this.#logger.warn("Pausing runs from the tray failed", {
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              })
+              .then(() => this.refresh());
           },
         },
         {
           label: "Stop all active work",
           enabled: busy,
           click: () => {
-            void this.#options.actions.stopAllWork().then(() => this.refresh());
+            void this.#options.actions
+              .stopAllWork()
+              .catch((error: unknown) => {
+                this.#logger.warn("Stopping work from the tray failed", {
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              })
+              .then(() => this.refresh());
           },
         },
         { type: "separator" },
@@ -115,14 +132,34 @@ export class StatusTray {
     }
     this.#tray = null;
   }
+
+  /** Brings the main window forward from a tray click or menu entry. */
+  #openMainWindow(): void {
+    try {
+      const window = this.#options.actions.openMainWindow();
+      // The action focuses the window itself, but a minimized or hidden
+      // window needs restoring and showing first — do it here so every tray
+      // entry point behaves the same.
+      if (window && typeof window === "object" && !window.isDestroyed()) {
+        if (window.isMinimized()) {
+          window.restore();
+        }
+        if (!window.isVisible()) {
+          window.show();
+        }
+        window.focus();
+      }
+    } catch (error) {
+      this.#logger.warn("Opening the main window from the tray failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    this.refresh();
+  }
 }
 
 /** Hides a window to the tray instead of closing it, when asked to (spec §104). */
 export function hideToTray(window: BrowserWindow): void {
-  if (process.platform === "darwin") {
-    window.hide();
-    return;
-  }
   window.hide();
 }
 

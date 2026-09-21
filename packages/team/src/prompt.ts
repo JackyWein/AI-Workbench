@@ -25,8 +25,20 @@ export function buildAgentPrompt(input: {
     `YOU\n${agent.id} — ${agent.displayName}${agent.role ? `\nRole: ${agent.role}` : ""}` +
       `\nYou are ${isLead ? "the lead agent" : "a team member"}.`,
   );
+  // Members know who leads, so a question can go to a mate that is actually
+  // there instead of interrupting the lead by default.
+  const leadId = service.team.leadAgentId;
+  const members = service.listAgents();
   sections.push(
-    `TEAM\n${state.agents.length > 0 ? state.agents.join("\n") : "You are working alone."}`,
+    `TEAM\n${members.length > 0
+      ? members
+          .map(
+            (member) =>
+              `${member.id} ${member.displayName}${member.role ? ` — ${member.role}` : ""}` +
+              (member.id === leadId ? " (lead)" : ""),
+          )
+          .join("\n")
+      : "You are working alone."}`,
   );
 
   if (state.summary) {

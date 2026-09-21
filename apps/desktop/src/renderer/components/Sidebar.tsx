@@ -8,11 +8,12 @@ import {
   Folder,
   Puzzle,
   Server,
+  Trash2,
   Users,
 } from "lucide-react";
 import type { Session, Workspace } from "@ai-workbench/shared";
-import { formatPath } from "../lib/format.js";
 import { useWorkbench, type MainView } from "../store/workbench.js";
+import { Popover } from "./Popover.js";
 
 interface SidebarProps {
   readonly workspaces: Workspace[];
@@ -33,6 +34,8 @@ export function Sidebar({
   const selectSession = useWorkbench((state) => state.selectSession);
   const createWorkspace = useWorkbench((state) => state.createWorkspace);
   const createSession = useWorkbench((state) => state.createSession);
+  const deleteWorkspace = useWorkbench((state) => state.deleteWorkspace);
+  const deleteSession = useWorkbench((state) => state.deleteSession);
   const chooseDirectory = useWorkbench((state) => state.chooseDirectory);
   const setView = useWorkbench((state) => state.setView);
   const status = useWorkbench((state) => state.status);
@@ -68,7 +71,6 @@ export function Sidebar({
           type="button"
           className="icon-button"
           onClick={() => void addWorkspace()}
-          title="Add workspace"
           aria-label="Add workspace"
         >
           <FolderPlus size={15} strokeWidth={1.75} aria-hidden="true" />
@@ -79,22 +81,34 @@ export function Sidebar({
         <div className="section">
           <p className="section__label">Workspaces</p>
           {workspaces.length === 0 ? (
-            <p className="row__meta" style={{ padding: "0 8px" }}>
-              No workspaces yet
-            </p>
+            <p className="row__meta sidebar__empty">No workspaces yet</p>
           ) : (
             workspaces.map((workspace) => (
-              <button
-                type="button"
+              <Popover
                 key={workspace.id}
-                className="row"
-                aria-current={workspace.id === activeWorkspaceId}
-                onClick={() => void selectWorkspace(workspace.id)}
-                title={workspace.path}
+                title="Workspace path"
+                triggerClassName="row"
+                current={workspace.id === activeWorkspaceId}
+                toggleOnClick={false}
+                onTriggerClick={() => void selectWorkspace(workspace.id)}
+                trigger={
+                  <>
+                    <Folder size={14} strokeWidth={1.75} aria-hidden="true" />
+                    <span className="row__text">{workspace.name}</span>
+                  </>
+                }
               >
-                <Folder size={14} strokeWidth={1.75} aria-hidden="true" />
-                <span className="row__text">{workspace.name}</span>
-              </button>
+                <p className="popover__detail">{workspace.path}</p>
+                <button
+                  type="button"
+                  className="quiet-button"
+                  onClick={() => void deleteWorkspace(workspace.id)}
+                  aria-label={`Delete workspace ${workspace.name}`}
+                >
+                  <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                  Delete workspace
+                </button>
+              </Popover>
             ))
           )}
         </div>
@@ -107,33 +121,44 @@ export function Sidebar({
                 type="button"
                 className="icon-button"
                 onClick={() => void addSession()}
-                title="New session"
                 aria-label="New session"
               >
                 <MessageSquarePlus size={14} strokeWidth={1.75} aria-hidden="true" />
               </button>
             </p>
             {sessions.length === 0 ? (
-              <p className="row__meta" style={{ padding: "0 8px" }}>
-                No sessions
-              </p>
+              <p className="row__meta sidebar__empty">No sessions</p>
             ) : (
               sessions.map((session) => (
-                <button
-                  type="button"
+                <Popover
                   key={session.id}
-                  className="row"
-                  aria-current={session.id === activeSessionId && view === "chat"}
-                  onClick={() => void selectSession(session.id)}
-                  title={formatPath(session.workingDirectory)}
+                  title="Working directory"
+                  triggerClassName="row"
+                  current={session.id === activeSessionId && view === "chat"}
+                  toggleOnClick={false}
+                  onTriggerClick={() => void selectSession(session.id)}
+                  trigger={
+                    <>
+                      <span
+                        className="status-dot"
+                        data-state={dotState(status[session.id])}
+                        aria-hidden="true"
+                      />
+                      <span className="row__text">{session.name}</span>
+                    </>
+                  }
                 >
-                  <span
-                    className="status-dot"
-                    data-state={dotState(status[session.id])}
-                    aria-hidden="true"
-                  />
-                  <span className="row__text">{session.name}</span>
-                </button>
+                  <p className="popover__detail">{session.workingDirectory}</p>
+                  <button
+                    type="button"
+                    className="quiet-button"
+                    onClick={() => void deleteSession(session.id)}
+                    aria-label={`Delete session ${session.name}`}
+                  >
+                    <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                    Delete session
+                  </button>
+                </Popover>
               ))
             )}
           </div>

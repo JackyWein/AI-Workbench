@@ -28,6 +28,25 @@ export function validModels(input: unknown): ModelInfo[] {
 }
 
 /**
+ * Parses a tool's model list: one `provider/model` id per line, as printed by
+ * commands like `opencode models`. Blank lines and surrounding whitespace are
+ * ignored; anything else becomes a model with its own id as display name.
+ */
+export function parseModelLines(stdout: string): ModelInfo[] {
+  const seen = new Set<string>();
+  const models: ModelInfo[] = [];
+  for (const line of stdout.split("\n")) {
+    const id = line.trim();
+    if (id.length === 0 || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    models.push({ id, displayName: id });
+  }
+  return models;
+}
+
+/**
  * The models a provider entry offers, from three sources of different weight
  * (spec §56 applies to models too: only what the tool reports is a fact).
  *

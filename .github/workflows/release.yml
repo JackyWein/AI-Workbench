@@ -66,9 +66,12 @@ jobs:
         run: |
           mkdir -p dist-artifacts
           # Only installable output, not the intermediate unpacked directories.
+          # The latest*.yml metadata and blockmap files travel with the
+          # installers: electron-updater needs them to find new versions.
           find release -maxdepth 1 -type f \
             \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" \
-               -o -name "*.AppImage" -o -name "*.tar.gz" \) \
+               -o -name "*.AppImage" -o -name "*.tar.gz" \
+               -o -name "latest*.yml" -o -name "*.blockmap" \) \
             -exec cp {} dist-artifacts/ \;
           ls -la dist-artifacts
 

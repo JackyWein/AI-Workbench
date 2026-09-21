@@ -17,10 +17,12 @@ inside the application shell.
 
 ## The bridge is an allowlist
 
-`window.workbench` exposes exactly two functions: `invoke(channel, input)` and
-`onEvent(listener)`. The preload rejects any channel that is not part of the
-IPC contract, and there is no channel that executes arbitrary code, runs a
-shell command or reads a path chosen by the renderer.
+`window.workbench` exposes a narrow, window-specific bridge: the main window
+gets `invoke(channel, input)`, `onEvent`, `onTerminalEvent` and `onNavigate`,
+while the island page gets only its own `workbenchIsland` bridge
+(`onState/open/dismiss/cycle`). The preload rejects any channel that is not
+part of the IPC contract, and there is no channel that executes arbitrary
+code, runs a shell command or reads a path chosen by the renderer.
 
 Because a sandboxed preload cannot load packages from `node_modules`, the
 preload bundle is fully self-contained and is built as CommonJS on purpose: an

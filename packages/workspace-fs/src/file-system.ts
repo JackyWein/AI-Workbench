@@ -1,4 +1,4 @@
-import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { Logger } from "@ai-workbench/shared";
 import {
@@ -50,17 +50,19 @@ const HIDDEN_DIRECTORIES = new Set([
 ]);
 
 /**
- * The only way the application reads a workspace from disk (spec §27). Every
- * path is resolved inside the workspace root, including through symbolic links,
- * and nothing here can write.
+ * The workspace file browser backend (spec §27). Every path is resolved
+ * inside the workspace root, including through symbolic links. Reads refuse
+ * binary content; writes refuse binary content and are size-capped.
  */
 export class WorkspaceFileSystem {
   readonly #logger: Logger;
   readonly #maxReadBytes: number;
+  readonly #maxWriteBytes: number;
 
-  constructor(options: WorkspaceFileSystemOptions) {
+  constructor(options: WorkspaceFileSystemOptions & { maxWriteBytes?: number }) {
     this.#logger = options.logger.child("WORKSPACE");
     this.#maxReadBytes = options.maxReadBytes ?? 512 * 1024;
+    this.#maxWriteBytes = options.maxWriteBytes ?? 512 * 1024;
   }
 
   /** Lists one directory. Directories come first, then files, both by name. */
@@ -131,8 +133,23 @@ export class WorkspaceFileSystem {
     };
   }
 
-  async describe(root: string, relativePath: string): Promise<DirectoryEntry> {
-    const realRoot = await this.#realRoot(root);
+  /** Writes a text file inside the workspace (spec §27: open/edit/save). */
+  async writeText(root: string, relativePath: string, content: string): Promise<DirectoryEntry> {
+    const absolute = await resolveRealPathInsideRoot(root, relativePath);
+    const buffer = Buffer.from(content, "utf8");
+    if (buffer.length > this.#maxWriteBytes) {
+      throw new PathBoundaryError(
+        `"${relativePath}" is larger than the ${this.#maxWriteBytes} byte write limit`,
+      );
+    }
+    if (buffer.subarray(0, 8000).includes(0)) {
+      throw new PathBoundaryError(`"${relativePath}" looks like a binary file`);
+    }
+    await writeFile(absolute, buffer);
+    return this.describe(root, relativePath);
+  }
+
+  async describe(root: string, relativePath: string): Promise<DirectoryEntry> {    const realRoot = await this.#realRoot(root);
     const absolute = await resolveRealPathInsideRoot(root, relativePath);
     const stats = await stat(absolute);
     return {

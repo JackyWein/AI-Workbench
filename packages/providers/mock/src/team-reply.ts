@@ -15,9 +15,11 @@
 interface TeamPrompt {
   readonly agentId: string;
   readonly isLead: boolean;
+  /** Null when the prompt does not mark one, which older prompts do not. */
+  readonly leadId: string | null;
   readonly taskId: string | null;
   readonly taskTitle: string;
-  /** Team mates, lead excluded, in the order the prompt listed them. */
+  /** Team mates in the order the prompt listed them, self excluded. */
   readonly others: string[];
   readonly openTasks: Array<{ id: string; status: string; title: string }>;
   readonly goal: string;
@@ -45,8 +47,14 @@ export function readTeamPrompt(prompt: string): TeamPrompt {
   const task = section(prompt, "YOUR TASK");
   const taskMatch = /^(\S+):\s*(.*)$/m.exec(task);
 
-  const others = section(prompt, "TEAM")
+  const mates = section(prompt, "TEAM")
     .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith("You are working alone."));
+  const leadMatch = /^(\S+).*\(lead\)\s*$/.exec(
+    mates.find((line) => line.endsWith("(lead)")) ?? "",
+  );
+  const others = mates
     .map((line) => line.split(/\s/)[0]?.trim() ?? "")
     .filter((id) => id.length > 0 && id !== agentId);
 
@@ -63,6 +71,7 @@ export function readTeamPrompt(prompt: string): TeamPrompt {
   return {
     agentId,
     isLead,
+    leadId: leadMatch?.[1] ?? null,
     taskId: taskMatch?.[1] ?? null,
     taskTitle: taskMatch?.[2] ?? "",
     others,
@@ -77,29 +86,70 @@ function block(...actions: unknown[]): string {
   );
 }
 
+/**
+ * Test markers a goal may carry, so an automated check can drive the paths a
+ * cooperative run never takes: `[fail: why]` fails the member's task,
+ * `[ask: question]` finishes it and flags a question to a mate. Both live in
+ * the adapter (spec §20), never in the team core, and ordinary goals without
+ * markers behave exactly as before.
+ */
+const FAIL_MARKER = /\[fail:\s*([^\]]+)\]/;
+const ASK_MARKER = /\[ask:\s*([^\]]+)\]/;
+
 /** The answer a cooperative team member would give for this prompt. */
 export function buildTeamReply(prompt: string): string {
   const parsed = readTeamPrompt(prompt);
 
   // A member with a task does the work and reports back.
   if (parsed.taskId) {
-    return [
-      `Working on ${parsed.taskTitle || parsed.taskId}.`,
-      block(
-        {
-          action: "publish_artifact",
-          name: `${parsed.taskTitle || "result"}.md`,
-          type: "report",
-          content: `${parsed.agentId} completed: ${parsed.taskTitle}`,
+    const fail = FAIL_MARKER.exec(parsed.goal);
+    if (fail) {
+      return [
+        `${parsed.taskTitle || parsed.taskId} cannot be done.`,
+        block({
+          action: "fail_task",
           taskId: parsed.taskId,
-        },
-        {
-          action: "complete_task",
-          taskId: parsed.taskId,
-          result: `${parsed.agentId} finished "${parsed.taskTitle}".`,
-        },
-      ),
-    ].join("\n\n");
+          error: fail[1]?.trim() ?? "The task cannot be done.",
+        }),
+      ].join("\n\n");
+    }
+
+    const actions: unknown[] = [
+      {
+        action: "publish_artifact",
+        name: `${parsed.taskTitle || "result"}.md`,
+        type: "report",
+        content: `${parsed.agentId} completed: ${parsed.taskTitle}`,
+        taskId: parsed.taskId,
+      },
+      {
+        action: "complete_task",
+        taskId: parsed.taskId,
+        result: `${parsed.agentId} finished "${parsed.taskTitle}".`,
+      },
+    ];
+    const ask = ASK_MARKER.exec(parsed.goal);
+    if (ask) {
+      const question = ask[1]?.trim() ?? "";
+      // A mate that is still around keeps the question unread until someone
+      // reads it; the lead reads everything on its next turn, so it is the
+      // last resort, not the default.
+      const peer = parsed.others.find((id) => id !== parsed.leadId) ?? null;
+      actions.push(
+        peer
+          ? {
+              action: "send_message",
+              to: peer,
+              type: "question",
+              content: question,
+              taskId: parsed.taskId,
+            }
+          : { action: "request_help", question, taskId: parsed.taskId },
+      );
+    }
+    return [`Working on ${parsed.taskTitle || parsed.taskId}.`, block(...actions)].join(
+      "\n\n",
+    );
   }
 
   if (!parsed.isLead) {

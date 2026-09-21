@@ -1,0 +1,445 @@
+import { app } from "electron";
+import type { AppEvent, Logger, UpdateState } from "@ai-workbench/shared";
+
+export interface UpdaterDeps {
+  readonly logger: Logger;
+  readonly publish: (event: AppEvent) => void;
+  readonly currentVersion: string;
+}
+
+/**
+ * The slice of electron-updater this file uses. It is declared locally on
+ * purpose: the package is loaded with a dynamic import at runtime, so
+ * typecheck and development runs keep working before `pnpm install` has
+ * provided it, and the bundler always keeps it external. After install the
+ * real module satisfies this shape.
+ */
+interface AutoUpdaterLike {
+  autoDownload: boolean;
+  autoInstallOnAppQuit: boolean;
+  checkForUpdates(): Promise<unknown>;
+  downloadUpdate(): Promise<unknown>;
+  quitAndInstall(): void;
+  on(event: string, listener: (...args: Array<unknown>) => void): unknown;
+}
+
+let deps: UpdaterDeps | null = null;
+let setupPromise: Promise<AutoUpdaterLike | null> | null = null;
+let state: UpdateState = {
+  status: "idle",
+  currentVersion: "",
+  availableVersion: null,
+  releaseNotes: null,
+  error: null,
+  progress: null,
+};
+
+/**
+ * Remembers the main-process dependencies. Warming up the loader here keeps
+ * the first explicit check fast; a failure stays silent and surfaces on the
+ * next explicit check instead. Never throws.
+ */
+export function initUpdater(next: UpdaterDeps): void {
+  deps = next;
+  state = {
+    status: "idle",
+    currentVersion: next.currentVersion,
+    availableVersion: null,
+    releaseNotes: null,
+    error: null,
+    progress: null,
+  };
+  setupPromise = null;
+  if (app.isPackaged) {
+    void ensureSetup();
+  }
+}
+
+export function getUpdateState(): UpdateState {
+  return { ...state };
+}
+
+/**
+ * Asks GitHub Releases which version is current. Packaged apps only, and only
+ * ever a check: with `autoDownload` off nothing is fetched until the user
+ * asks for the download. Resolves `{ started: false }` — never rejects — when
+ * there is no network, no updater module, or no packaged build.
+ */
+export async function checkForUpdates(): Promise<{ started: boolean }> {
+  const current = deps;
+  if (!current) {
+    return { started: false };
+  }
+  if (!app.isPackaged) {
+    current.logger.debug("Skipping update check: app is not packaged");
+    return { started: false };
+  }
+  const updater = await ensureSetup();
+  if (!updater) {
+    return { started: false };
+  }
+  try {
+    setState({ status: "checking", error: null, progress: null });
+    publish({ type: "update.checking" });
+    await updater.checkForUpdates();
+    return { started: true };
+  } catch (error) {
+    const message = describeError(error);
+    current.logger.warn("Update check failed", { error: message });
+    setState({ status: "error", error: message });
+    publish({ type: "update.error", message });
+    return { started: false };
+  }
+}
+
+/**
+ * Downloads the available update. Called only from the explicit download
+ * action in Settings, so a metered connection never pays for a fetch the
+ * user did not ask for. Never rejects.
+ */
+export async function downloadUpdate(): Promise<{ started: boolean }> {
+  const current = deps;
+  if (!current) {
+    return { started: false };
+  }
+  if (!app.isPackaged) {
+    current.logger.debug("Skipping update download: app is not packaged");
+    return { started: false };
+  }
+  if (state.availableVersion === null || state.status === "downloaded") {
+    current.logger.debug("Skipping update download: no update is available");
+    return { started: false };
+  }
+  const updater = await ensureSetup();
+  if (!updater) {
+    return { started: false };
+  }
+  try {
+    setState({ status: "downloading", progress: 0, error: null });
+    await updater.downloadUpdate();
+    return { started: true };
+  } catch (error) {
+    const message = describeError(error);
+    current.logger.warn("Update download failed", { error: message });
+    setState({ status: "error", error: message });
+    publish({ type: "update.error", message });
+    return { started: false };
+  }
+}
+
+/**
+ * Installs the downloaded update and restarts. Reached only through the
+ * explicit install action in Settings, after the download has finished, so
+ * nothing is ever installed silently. Never rejects.
+ */
+export async function installUpdate(): Promise<{ installing: boolean }> {
+  const current = deps;
+  if (!current) {
+    return { installing: false };
+  }
+  if (!app.isPackaged) {
+    current.logger.debug("Skipping update install: app is not packaged");
+    return { installing: false };
+  }
+  if (state.status !== "downloaded") {
+    current.logger.debug("Skipping update install: no downloaded update");
+    return { installing: false };
+  }
+  const updater = await ensureSetup();
+  if (!updater) {
+    return { installing: false };
+  }
+  try {
+    updater.quitAndInstall();
+    return { installing: true };
+  } catch (error) {
+    const message = describeError(error);
+    current.logger.error("Update install failed", { error: message });
+    setState({ status: "error", error: message });
+    publish({ type: "update.error", message });
+    return { installing: false };
+  }
+}
+
+function setState(patch: Partial<UpdateState>): void {
+  state = { ...state, ...patch };
+}
+
+function publish(event: AppEvent): void {
+  try {
+    deps?.publish(event);
+  } catch (error) {
+    deps?.logger.warn("Update event publish failed", { error: describeError(error) });
+  }
+}
+
+function ensureSetup(): Promise<AutoUpdaterLike | null> {
+  if (!setupPromise) {
+    // A failed setup resets the promise so the next check retries instead of
+    // reusing the cached null forever.
+    setupPromise = setup().then(
+      (updater) => {
+        if (!updater) {
+          setupPromise = null;
+        }
+        return updater;
+      },
+      () => {
+        setupPromise = null;
+        return null;
+      },
+    );
+  }
+  return setupPromise;
+}
+
+async function setup(): Promise<AutoUpdaterLike | null> {
+  const current = deps;
+  if (!current) {
+    return null;
+  }
+  try {
+    const updater = await loadAutoUpdater();
+    if (!updater) {
+      return null;
+    }
+    // Nothing moves without the user: no background fetch, and a downloaded
+    // update never applies itself when the app quits.
+    updater.autoDownload = false;
+    updater.autoInstallOnAppQuit = false;
+    attachListeners(updater, current);
+    return updater;
+  } catch (error) {
+    current.logger.warn("Update setup failed", { error: describeError(error) });
+    return null;
+  }
+}
+
+async function loadAutoUpdater(): Promise<AutoUpdaterLike | null> {
+  try {
+    // A variable specifier on purpose (see the interface above): this stays a
+    // runtime-only dependency and never breaks typecheck while uninstalled.
+    const specifier = "electron-updater";
+    const mod: unknown = await import(/* @vite-ignore */ specifier);
+    if (typeof mod !== "object" || mod === null) {
+      return null;
+    }
+    const candidate = (mod as { autoUpdater?: unknown }).autoUpdater;
+    return isAutoUpdaterLike(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAutoUpdaterLike(value: unknown): value is AutoUpdaterLike {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record["checkForUpdates"] === "function" &&
+    typeof record["downloadUpdate"] === "function" &&
+    typeof record["quitAndInstall"] === "function" &&
+    typeof record["on"] === "function"
+  );
+}
+
+function attachListeners(updater: AutoUpdaterLike, current: UpdaterDeps): void {
+  const guard = (name: string, run: () => void): void => {
+    try {
+      run();
+    } catch (error) {
+      current.logger.warn("Update listener failed", {
+        event: name,
+        error: describeError(error),
+      });
+    }
+  };
+
+  updater.on("checking-for-update", () => {
+    guard("checking-for-update", () => {
+      setState({ status: "checking", error: null });
+      publish({ type: "update.checking" });
+    });
+  });
+
+  updater.on("update-available", (...args) => {
+    guard("update-available", () => {
+      const parsed = parseUpdateInfo(args[0]);
+      if (!parsed) {
+        current.logger.warn("Ignoring update without a version");
+        return;
+      }
+      if (!isNewerVersion(parsed.version, state.currentVersion)) {
+        // Never offer a downgrade or a reinstall of the running version as an
+        // "update": feed mix-ups must not move the app backwards.
+        current.logger.warn("Ignoring update that is not newer", {
+          available: parsed.version,
+          current: state.currentVersion,
+        });
+        return;
+      }
+      setState({
+        status: "available",
+        availableVersion: parsed.version,
+        releaseNotes: parsed.releaseNotes,
+        error: null,
+        progress: null,
+      });
+      publish({
+        type: "update.available",
+        version: parsed.version,
+        releaseNotes: parsed.releaseNotes,
+      });
+    });
+  });
+
+  updater.on("update-not-available", () => {
+    guard("update-not-available", () => {
+      setState({
+        status: "not-available",
+        availableVersion: null,
+        releaseNotes: null,
+        error: null,
+        progress: null,
+      });
+      publish({ type: "update.not-available", version: state.currentVersion });
+    });
+  });
+
+  updater.on("download-progress", (...args) => {
+    guard("download-progress", () => {
+      const progress = parseProgress(args[0]);
+      setState({ status: "downloading", progress: progress.percent });
+      publish({ type: "update.progress", ...progress });
+    });
+  });
+
+  updater.on("update-downloaded", (...args) => {
+    guard("update-downloaded", () => {
+      const parsed = parseUpdateInfo(args[0]);
+      const version = parsed?.version ?? state.availableVersion ?? state.currentVersion;
+      setState({
+        status: "downloaded",
+        availableVersion: version,
+        progress: 100,
+        error: null,
+      });
+      publish({ type: "update.downloaded", version });
+    });
+  });
+
+  updater.on("error", (...args) => {
+    guard("error", () => {
+      const message = describeError(args[0]);
+      current.logger.warn("Updater reported an error", { error: message });
+      setState({ status: "error", error: message });
+      publish({ type: "update.error", message });
+    });
+  });
+}
+
+function parseUpdateInfo(value: unknown): {
+  version: string;
+  releaseNotes: string | null;
+} | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const version = record["version"];
+  if (typeof version !== "string" || version.length === 0) {
+    return null;
+  }
+  return { version, releaseNotes: normalizeReleaseNotes(record["releaseNotes"]) };
+}
+
+function normalizeReleaseNotes(value: unknown): string | null {
+  // Release notes are stored in state and cross the IPC bridge on every
+  // update event, so they are capped at 2000 characters — enough for a human
+  // to review in Settings, small enough that a huge changelog cannot bloat
+  // the renderer store. Longer notes are cut with an ellipsis marker.
+  const truncate = (text: string): string =>
+    text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? null : truncate(trimmed);
+  }
+  if (Array.isArray(value)) {
+    const parts: string[] = [];
+    for (const entry of value) {
+      if (typeof entry === "string" && entry.trim().length > 0) {
+        parts.push(entry.trim());
+      } else if (typeof entry === "object" && entry !== null && "note" in entry) {
+        const note = (entry as { note?: unknown }).note;
+        if (typeof note === "string" && note.trim().length > 0) {
+          parts.push(note.trim());
+        }
+      }
+    }
+    if (parts.length === 0) {
+      return null;
+    }
+    return truncate(parts.join("\n\n"));
+  }
+  return null;
+}
+
+function parseProgress(value: unknown): {
+  percent: number;
+  bytesPerSecond: number;
+  transferred: number;
+  total: number;
+} {
+  const none = { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 };
+  if (typeof value !== "object" || value === null) {
+    return none;
+  }
+  const record = value as Record<string, unknown>;
+  const numberOr = (field: string): number => {
+    const fieldValue = record[field];
+    return typeof fieldValue === "number" && Number.isFinite(fieldValue) ? fieldValue : 0;
+  };
+  const percent = numberOr("percent");
+  return {
+    percent: Math.min(100, Math.max(0, percent)),
+    bytesPerSecond: numberOr("bytesPerSecond"),
+    transferred: numberOr("transferred"),
+    total: numberOr("total"),
+  };
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return typeof error === "string" ? error : "Unknown update error";
+}
+
+/**
+ * True when `candidate` is strictly newer than `current`. Compares the numeric
+ * prefix (`1.2.3`) segment by segment; a pre-release suffix never makes a
+ * version newer than the same numbers without one.
+ */
+function isNewerVersion(candidate: string, current: string): boolean {
+  const numbers = (version: string): number[] =>
+    version
+      .split("+")[0]
+      ?.split("-")[0]
+      ?.split(".")
+      .map((part) => {
+        const parsed = Number.parseInt(part, 10);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+      }) ?? [];
+  const left = numbers(candidate);
+  const right = numbers(current);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const a = left[index] ?? 0;
+    const b = right[index] ?? 0;
+    if (a !== b) {
+      return a > b;
+    }
+  }
+  return false;
+}

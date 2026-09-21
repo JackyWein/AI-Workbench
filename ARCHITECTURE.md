@@ -138,16 +138,41 @@ goals that own them, so the schema never carries structure nothing uses.
 
 `EventBus` decouples publishers from subscribers. One failing subscriber cannot
 stop the others or the publisher. The main window subscribes through the push
-channel; the Status Island and `StatusAttentionService` will subscribe to the
+channel; the Status Island and `StatusAttentionService` subscribe to the
 same bus without any subsystem knowing about them.
+
+## Beyond the chat path
+
+Chat is one slice. These subsystems exist and attach to the same services:
+
+- **Skills** — `SkillService` in core persists skills with global, workspace
+  and session scope and resolves which apply to a session as provider system
+  instructions. Team agents carry their own skill lists.
+- **MCP, including remote** — `McpService` owns server configs, lifecycle and
+  statuses; remote transports carry their credential reference separately
+  because they have no process environment. The tool bridge plans provider
+  tool access by capability, and the team path adds each agent's scoped team
+  MCP server on top.
+- **OpenAI-compatible providers** — `@ai-workbench/provider-openai-compatible`
+  serves any OpenAI-style endpoint (model list, chat completions) as a normal
+  adapter with capability-driven UI.
+- **Custom providers** — a stored config with a base URL, a credential
+  reference or an `openaiCompatible` manifest registers as `custom-*` through
+  `registerCustomProviders`; invalid entries are rejected with a reason,
+  never guessed.
+- **Updater** — the main process owns the update state (`idle`, `checking`,
+  `available`, `downloading`, `downloaded`, `not-available`, `error`, with
+  versions, notes and progress); the renderer reads it through
+  `update.getStatus` and follows `update.*` events.
+- **Agents view grid** — `AgentsView` shows one tile per agent terminal side
+  by side: provider identity from the registry, honest process state, live
+  xterm. Only providers reporting `interactiveTerminal` can launch there.
 
 ## Not implemented yet
 
-| Area | Goal | Planned attachment point |
+| Area | State | Planned attachment point |
 |---|---|---|
-| Codex and Gemini profiles verified against the tools | G2 | `packages/providers/cli` |
-| Skills, plugins, MCP, credentials | G4 | new managers in `AppServices` |
-| Team system | G5 | `packages/team/*`, Team MCP + Orchestrator |
-| Status Island, tray | G6 | second BrowserWindow + `StatusAttentionService` |
+| Codex, Gemini, Antigravity and OpenCode profiles verified against the tools | Unverified starting points; the UI says so | `packages/providers/*` |
+| Project activity feed, display picker and provider-disconnect feed for the island | Open | `IslandController` sources, `packages/status` |
 
 See `docs/adr/` for the reasoning behind the major decisions.

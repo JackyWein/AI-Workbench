@@ -159,6 +159,13 @@ export class StatusAttentionService {
     );
     if (urgent) {
       this.#seen.add(urgent.key);
+      // Long-lived app, bounded memory: forget the oldest news first.
+      if (this.#seen.size > 200) {
+        const oldest = this.#seen.values().next().value;
+        if (oldest !== undefined) {
+          this.#seen.delete(oldest);
+        }
+      }
       this.#override = { entry: urgent, until: new Date(now.getTime() + this.#expandMs) };
     } else if (this.#override && this.#override.until.getTime() <= now.getTime()) {
       this.#override = null;

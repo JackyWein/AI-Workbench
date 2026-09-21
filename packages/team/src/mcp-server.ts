@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import type { McpServerConfig } from "@ai-workbench/shared";
 import { z } from "zod";
 import { EVERYONE, TeamLimitError, TeamRuleError, type TeamService } from "./service.js";
 
@@ -298,4 +299,73 @@ export async function serveTeamMcp(
   const server = createTeamMcpServer(options);
   await server.connect(options.transport);
   return server;
+}
+
+/**
+ * The scope a provider is handed the team server under (spec §42).
+ *
+ * A provider that speaks MCP reaches the team as one of its own MCP servers:
+ * one stdio entry per agent, so the connection always belongs to exactly the
+ * agent the provider is answering as. The scope travels in the environment of
+ * the server the provider spawns, never in the tool arguments, which is also
+ * how a future stdio bridge process recovers whom it serves.
+ */
+
+/** Stable id under which the team server is handed to providers. */
+export const TEAM_MCP_SERVER_ID = "team";
+
+/** Environment carrying the scope into the stdio server a provider spawns. */
+export const TEAM_MCP_RUN_ENV = "AI_WORKBENCH_TEAM_RUN_ID";
+export const TEAM_MCP_AGENT_ENV = "AI_WORKBENCH_TEAM_AGENT_ID";
+
+/** Which run and agent one team MCP connection belongs to. */
+export interface TeamMcpScope {
+  readonly runId: string;
+  readonly agentId: string;
+}
+
+/** How the provider spawns the scoped server; the scope is added as env. */
+export interface TeamMcpStdio {
+  readonly command: string;
+  readonly args?: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
+  readonly cwd?: string;
+}
+
+/** The scope as environment variables for the spawned server. */
+export function teamMcpScopeEnv(scope: TeamMcpScope): Record<string, string> {
+  return {
+    [TEAM_MCP_RUN_ENV]: scope.runId,
+    [TEAM_MCP_AGENT_ENV]: scope.agentId,
+  };
+}
+
+/** Reads the scope back from a spawned server's environment, if present. */
+export function parseTeamMcpScope(
+  env: Readonly<Record<string, string | undefined>>,
+): TeamMcpScope | null {
+  const runId = env[TEAM_MCP_RUN_ENV];
+  const agentId = env[TEAM_MCP_AGENT_ENV];
+  if (!runId || !agentId) {
+    return null;
+  }
+  return { runId, agentId };
+}
+
+/**
+ * The stdio server entry handing this scope to a provider: the configured
+ * spawn plus the scope in its environment, so each agent gets its own
+ * connection and can never act as another.
+ */
+export function describeTeamMcpServer(scope: TeamMcpScope, stdio: TeamMcpStdio): McpServerConfig {
+  return {
+    id: TEAM_MCP_SERVER_ID,
+    name: "ai-workbench-team-mcp",
+    transport: "stdio",
+    command: stdio.command,
+    args: stdio.args ? [...stdio.args] : [],
+    env: { ...stdio.env, ...teamMcpScopeEnv(scope) },
+    ...(stdio.cwd === undefined ? {} : { cwd: stdio.cwd }),
+    enabled: true,
+  };
 }

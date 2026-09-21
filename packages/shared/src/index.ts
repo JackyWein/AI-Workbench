@@ -11,6 +11,7 @@ export * from "./domain/skill.js";
 export * from "./domain/plugin.js";
 export * from "./domain/mcp.js";
 export * from "./domain/team.js";
+export * from "./domain/updater.js";
 export * from "./domain/status-island.js";
 export * from "./events/provider-events.js";
 export * from "./events/app-events.js";

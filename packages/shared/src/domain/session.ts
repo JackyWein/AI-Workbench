@@ -46,6 +46,11 @@ export const createSessionInputSchema = z.object({
   modelId: z.string().min(1).optional(),
   /** Defaults to the workspace path when omitted. */
   workingDirectory: z.string().min(1).optional(),
+  enabledSkills: z.array(z.string().min(1)).max(200).optional(),
+  enabledPlugins: z.array(z.string().min(1)).max(200).optional(),
+  enabledMcpServers: z.array(z.string().min(1)).max(200).optional(),
+  settings: z.record(z.unknown()).optional(),
+  uiState: z.record(z.unknown()).optional(),
 });
 
 export type CreateSessionInput = z.infer<typeof createSessionInputSchema>;
@@ -56,6 +61,9 @@ export const updateSessionInputSchema = z.object({
   providerId: z.string().min(1).nullable().optional(),
   modelId: z.string().min(1).nullable().optional(),
   workingDirectory: z.string().min(1).optional(),
+  enabledSkills: z.array(z.string().min(1)).max(200).optional(),
+  enabledPlugins: z.array(z.string().min(1)).max(200).optional(),
+  enabledMcpServers: z.array(z.string().min(1)).max(200).optional(),
   settings: z.record(z.unknown()).optional(),
   uiState: z.record(z.unknown()).optional(),
 });

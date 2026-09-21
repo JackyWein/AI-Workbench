@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { RefreshCw } from "lucide-react";
 import type { GitFileChange, GitStatus } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
+import { Popover } from "./Popover.js";
 
 interface ChangesViewProps {
   readonly sessionId: string;
@@ -12,15 +13,28 @@ interface ChangesViewProps {
 export function ChangesView({ sessionId, onError }: ChangesViewProps): JSX.Element {
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  // Guards async loads against fast switching: only the latest request may
+  // write its result. Stale answers are dropped.
+  const requestRef = useRef(0);
 
   const load = useCallback(async (): Promise<void> => {
+    const token = ++requestRef.current;
     setLoading(true);
     try {
-      setStatus(await invoke("git.status", { sessionId }));
+      const next = await invoke("git.status", { sessionId });
+      if (requestRef.current !== token) {
+        return;
+      }
+      setStatus(next);
     } catch (error) {
+      if (requestRef.current !== token) {
+        return;
+      }
       onError(describeError(error));
     } finally {
-      setLoading(false);
+      if (requestRef.current === token) {
+        setLoading(false);
+      }
     }
   }, [sessionId, onError]);
 
@@ -51,10 +65,9 @@ export function ChangesView({ sessionId, onError }: ChangesViewProps): JSX.Eleme
         ) : null}
         <button
           type="button"
-          className="quiet-button"
+          className="quiet-button push-right"
           onClick={() => void load()}
           disabled={loading}
-          style={{ marginLeft: "auto" }}
         >
           <RefreshCw size={12} strokeWidth={1.75} aria-hidden="true" />
           Refresh
@@ -70,9 +83,13 @@ export function ChangesView({ sessionId, onError }: ChangesViewProps): JSX.Eleme
               <span className="changes__badge" data-kind={change.kind}>
                 {badgeFor(change)}
               </span>
-              <span className="row__text" title={change.path}>
-                {change.path}
-              </span>
+              <Popover
+                title="File path"
+                triggerClassName="row__text"
+                trigger={<>{change.path}</>}
+              >
+                <p className="popover__detail">{change.path}</p>
+              </Popover>
               {change.staged ? <span className="row__meta">staged</span> : null}
             </li>
           ))}

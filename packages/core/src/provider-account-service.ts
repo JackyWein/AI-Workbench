@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { eq } from "drizzle-orm";
 import type { Database } from "@ai-workbench/database";
@@ -89,7 +89,38 @@ export class ProviderAccountService {
       if (!isAbsolute(input.home)) {
         throw new Error("An account home must be an absolute path");
       }
+      if (input.home.length > 1024) {
+        throw new Error("An account home path is too long");
+      }
       home = resolve(input.home);
+      // Resolve symlinks/junctions so `..`, trailing slashes and links cannot
+      // bypass the default-home and duplicate checks below.
+      try {
+        home = await realpath(home);
+      } catch {
+        // A not-yet-existing path stays as resolved; existence is checked below.
+      }
+      // Never accept system, SSH or root locations as a tool home.
+      const lowered = home.toLowerCase().replace(/\\/g, "/");
+      const denied = ["/", "/etc", "/root", "/windows", "/program files", ".ssh"];
+      if (
+        denied.some((entry) => lowered === entry || lowered.endsWith(entry)) ||
+        lowered.includes("/.ssh/") ||
+        /^[a-z]:\/$/i.test(lowered)
+      ) {
+        throw new Error("This location cannot be used as an account home");
+      }
+      try {
+        const found = await stat(home);
+        if (!found.isDirectory()) {
+          throw new Error("An account home must be a directory");
+        }
+      } catch (error) {
+        if (error instanceof Error && error.message === "An account home must be a directory") {
+          throw error;
+        }
+        throw new Error("This account home does not exist");
+      }
       if (factory.accounts.isDefaultHome(home)) {
         throw new Error("This is the tool's default account, which is always connected");
       }

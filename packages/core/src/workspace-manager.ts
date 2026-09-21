@@ -69,6 +69,14 @@ export class WorkspaceManager {
 
   async create(input: CreateWorkspaceInput): Promise<Workspace> {
     const path = await this.#validateDirectory(input.path);
+    // The same folder twice is one workspace, not two: adding it again
+    // selects the existing one instead of duplicating the sidebar.
+    const same = (await this.list()).find(
+      (workspace) => workspace.path.toLowerCase() === path.toLowerCase(),
+    );
+    if (same) {
+      return same;
+    }
     const now = new Date();
     const row: WorkspaceRow = {
       id: createId("ws"),

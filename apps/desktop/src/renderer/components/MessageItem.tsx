@@ -68,10 +68,8 @@ function ToolCallBlock({ toolCall }: { readonly toolCall: ToolCallRecord }): JSX
           size={13}
           strokeWidth={1.75}
           aria-hidden="true"
-          style={{
-            transform: open ? "rotate(90deg)" : "none",
-            transition: "transform var(--duration-fast) var(--easing-standard)",
-          }}
+          className="tool-call__chevron"
+          data-open={open}
         />
         <span>{toolCall.name}</span>
         {toolCall.summary ? <span>· {toolCall.summary}</span> : null}

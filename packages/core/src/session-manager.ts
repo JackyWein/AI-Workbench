@@ -134,11 +134,11 @@ export class SessionManager {
       modelId: input.modelId ?? null,
       workingDirectory,
       providerSessionId: null,
-      enabledSkills: [],
-      enabledPlugins: [],
-      enabledMcpServers: [],
-      settings: {},
-      uiState: {},
+      enabledSkills: input.enabledSkills ?? [],
+      enabledPlugins: input.enabledPlugins ?? [],
+      enabledMcpServers: input.enabledMcpServers ?? [],
+      settings: input.settings ?? {},
+      uiState: input.uiState ?? {},
       createdAt: now,
       updatedAt: now,
     };
@@ -172,6 +172,11 @@ export class SessionManager {
       ...(input.name === undefined ? {} : { name: input.name.trim() }),
       ...(input.providerId === undefined ? {} : { providerId: input.providerId }),
       ...(input.modelId === undefined ? {} : { modelId: input.modelId }),
+      ...(input.enabledSkills === undefined ? {} : { enabledSkills: input.enabledSkills }),
+      ...(input.enabledPlugins === undefined ? {} : { enabledPlugins: input.enabledPlugins }),
+      ...(input.enabledMcpServers === undefined
+        ? {}
+        : { enabledMcpServers: input.enabledMcpServers }),
       ...(input.settings === undefined ? {} : { settings: input.settings }),
       ...(input.uiState === undefined ? {} : { uiState: input.uiState }),
       workingDirectory,
@@ -187,6 +192,9 @@ export class SessionManager {
         modelId: updated.modelId,
         workingDirectory: updated.workingDirectory,
         providerSessionId: updated.providerSessionId,
+        enabledSkills: updated.enabledSkills,
+        enabledPlugins: updated.enabledPlugins,
+        enabledMcpServers: updated.enabledMcpServers,
         settings: updated.settings,
         uiState: updated.uiState,
         updatedAt: updated.updatedAt,
@@ -240,6 +248,16 @@ export class SessionManager {
       throw new NoProviderSelectedError(sessionId);
     }
 
+    // Claim the session synchronously, before any await, so a second call
+    // cannot slip through while the first is still inserting messages.
+    const placeholder: ActiveRun = {
+      handle: { sessionId, providerSessionId: session.providerSessionId ?? sessionId },
+      adapter,
+      cancelled: false,
+      finished: Promise.resolve(),
+    };
+    this.#runs.set(sessionId, placeholder);
+
     const userMessage = await this.#insertMessage({
       sessionId,
       role: "user",
@@ -250,7 +268,40 @@ export class SessionManager {
     });
     this.#events.publish({ type: "message.created", message: userMessage });
 
-    const resolved = await this.#ensureProviderSession(session, adapter);
+    let resolved: { handle: ProviderSessionHandle };
+    try {
+      resolved = await this.#ensureProviderSession(session, adapter);
+    } catch (error) {
+      // No assistant row exists yet, so nothing is stuck streaming — but the
+      // failure must be visible as an answer, not just a throw.
+      const message = error instanceof Error ? error.message : String(error);
+      const failed = await this.#insertMessage({
+        sessionId,
+        role: "assistant",
+        content: message,
+        status: "failed",
+        providerId: session.providerId,
+        modelId: session.modelId,
+      });
+      this.#events.publish({ type: "message.created", message: failed });
+      this.#runs.delete(sessionId);
+      throw error;
+    }
+    // A cancel that landed while the provider session was starting must win:
+    // do not start streaming a run the user already stopped.
+    if (placeholder.cancelled) {
+      const cancelled = await this.#insertMessage({
+        sessionId,
+        role: "assistant",
+        content: "cancelled",
+        status: "failed",
+        providerId: session.providerId,
+        modelId: session.modelId,
+      });
+      this.#events.publish({ type: "message.created", message: cancelled });
+      this.#runs.delete(sessionId);
+      throw new Error("cancelled");
+    }
     const assistantMessage = await this.#insertMessage({
       sessionId,
       role: "assistant",
@@ -264,7 +315,7 @@ export class SessionManager {
     const run: ActiveRun = {
       handle: resolved.handle,
       adapter,
-      cancelled: false,
+      cancelled: placeholder.cancelled,
       finished: Promise.resolve(),
     };
     const finished = this.#stream(run, session.providerId, assistantMessage, text).finally(
@@ -291,13 +342,44 @@ export class SessionManager {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    await run.finished;
+    // An adapter that ignores cancellation must not hang shutdown: after a
+    // grace period the run is retired regardless and the stream is released.
+    await Promise.race([
+      run.finished.catch(() => undefined),
+      new Promise((resolve) => setTimeout(resolve, 5_000)),
+    ]);
     return true;
   }
 
   /** Stops every active run; used on application shutdown (spec §132). */
   async shutdown(): Promise<void> {
     await Promise.all([...this.#runs.keys()].map((id) => this.cancel(id)));
+  }
+
+  /**
+   * Turns interrupted by a crash or a kill never finish on their own: on
+   * startup every message still marked streaming becomes a visible failure
+   * instead of a permanently animated row (spec §53, sessions side).
+   */
+  async recoverInterrupted(): Promise<number> {
+    const stale = await this.#db
+      .select({ id: chatMessages.id })
+      .from(chatMessages)
+      .where(eq(chatMessages.status, "streaming"));
+    for (const row of stale) {
+      await this.#db
+        .update(chatMessages)
+        .set({
+          status: "failed",
+          error: "Interrupted by restart",
+          updatedAt: new Date(),
+        })
+        .where(eq(chatMessages.id, row.id));
+    }
+    if (stale.length > 0) {
+      this.#logger.info("Recovered interrupted turns", { count: stale.length });
+    }
+    return stale.length;
   }
 
   /**
@@ -442,6 +524,18 @@ export class SessionManager {
 
     await this.#touchSession(sessionId);
 
+    // A session that still has its generated name takes the topic of its
+    // first exchange, so past conversations stay findable. Renamed sessions
+    // are never touched.
+    if (status === "complete") {
+      await this.#nameFromFirstExchange(sessionId, text).catch((error: unknown) => {
+        this.#logger.debug("Session could not be named from its first turn", {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
     // The run is retired before the terminal events are published, so anything
     // reacting to the finished answer already sees an idle session and may send
     // the next message immediately.
@@ -460,6 +554,24 @@ export class SessionManager {
   }
 
   /** Skills that apply to this session, as provider system instructions. */
+  async #nameFromFirstExchange(sessionId: string, text: string): Promise<void> {
+    const session = await this.get(sessionId);
+    if (!session || !/^Session \d+$/.test(session.name)) {
+      return;
+    }
+    const messages = await this.listMessages(sessionId, 10);
+    // Only the very first exchange names the session: one user turn and the
+    // answer that just completed.
+    if (messages.length !== 2 || messages[0]?.role !== "user") {
+      return;
+    }
+    const topic = text.split("\n")[0]?.replace(/\s+/g, " ").trim() ?? "";
+    if (topic.length === 0) {
+      return;
+    }
+    await this.update({ id: sessionId, name: topic.slice(0, 48) });
+  }
+
   async #buildSystemInstructions(
     session: Session,
     capabilities: ProviderCapabilities | null,

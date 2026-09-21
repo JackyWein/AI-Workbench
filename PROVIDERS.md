@@ -140,6 +140,7 @@ Details worth knowing:
 | Codex | Starting point, **not verified** against the tool |
 | Antigravity | Starting point, **not verified** against the tool. Google's replacement for the Gemini CLI, run as `agy` |
 | Gemini CLI | Starting point, **not verified** against the tool. Kept for the plans that still have it |
+| OpenCode | Starting point, **not verified** against the tool. Run headlessly as `opencode run`; installation probed via `opencode --version`, auth via `opencode auth list` (pattern `stored`), models asked from the tool itself via `opencode models` |
 
 An unverified profile says so in the application, on the provider's own screen.
 It is a documented guess at the flags, not a claim that the integration works.
@@ -148,10 +149,17 @@ applied immediately, without restarting.
 
 ### Models
 
-A provider reports its own models through `listModels()`. Only Claude Code
-ships a list, because it is the only one of these tools whose models are
-documented alongside the flags; none of them has a command that prints the
-models an account may use, so nothing is guessed on their behalf.
+A provider reports its own models through `listModels()`. Claude Code ships a
+list because its models are documented alongside the flags. A profile can also
+declare `modelsArgs`: a command whose stdout lists one model id per line
+(`opencode models` is the first of these tools to offer one). The adapter runs
+it in the background at startup, parses it with `parseModelLines`, caches it
+in `models.json` and re-reads it via `refreshModels()`; a failing command
+leaves the previous list alone. An extension hook (`discoverModels`) covers
+tools whose list needs code rather than a command.
+
+Every other tool without such a command starts empty, and nothing is guessed
+on its behalf.
 
 The Providers screen therefore has a model field: one `id` per line, or
 `id = Display name`. What is entered there replaces the profile's list, is
@@ -193,6 +201,14 @@ For anything that is not a CLI, implement the adapter contract directly:
 
 Registration is the only integration point. No generic service should need a
 change to support a new provider — if one does, the abstraction is wrong.
+
+### Custom OpenAI-compatible providers (no code change)
+
+A stored provider config with a base URL, a credential reference or an
+`openaiCompatible` manifest becomes a `custom-*` provider through
+`registerCustomProviders` (`packages/providers/openai-compatible`). Its models
+come from the endpoint's own model list; a config without a reachable endpoint
+is rejected with a reason instead of running against a guessed one.
 
 ## Verifying a provider against the real tool
 

@@ -1,5 +1,6 @@
 import { type JSX, useEffect, useRef, useState } from "react";
 import { CornerDownLeft, Square } from "lucide-react";
+import { layout } from "@ai-workbench/ui";
 
 interface ComposerProps {
   readonly busy: boolean;
@@ -24,7 +25,7 @@ export function Composer({
       return;
     }
     input.style.height = "auto";
-    input.style.height = `${Math.min(input.scrollHeight, 220)}px`;
+    input.style.height = `${Math.min(input.scrollHeight, layout.composerMaxHeight)}px`;
   }, [text]);
 
   const submit = (): void => {
@@ -34,6 +35,8 @@ export function Composer({
     }
     onSend(value);
     setText("");
+    // The caret stays where the next message starts: back in the box.
+    inputRef.current?.focus();
   };
 
   return (
@@ -50,6 +53,10 @@ export function Composer({
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey) {
+              // An IME commit also arrives as Enter; it must not send.
+              if (event.nativeEvent.isComposing) {
+                return;
+              }
               event.preventDefault();
               submit();
             }

@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import type { ProviderSummary, Session } from "@ai-workbench/shared";
+import { providerLabel } from "../lib/provider-label.js";
 import { useWorkbench } from "../store/workbench.js";
 
 interface ModelPickerProps {
@@ -20,9 +21,6 @@ export function ModelPicker({ session, providers }: ModelPickerProps): JSX.Eleme
   return (
     <div style={{ display: "flex", gap: "var(--space-3)" }}>
       <label>
-        <span className="visually-hidden" hidden>
-          Provider
-        </span>
         <select
           className="select"
           value={session.providerId ?? ""}
@@ -33,7 +31,7 @@ export function ModelPicker({ session, providers }: ModelPickerProps): JSX.Eleme
         >
           {providers.map((entry) => (
             <option key={entry.metadata.id} value={entry.metadata.id}>
-              {entry.metadata.displayName}
+              {providerLabel(entry)}
             </option>
           ))}
         </select>
@@ -58,7 +56,7 @@ export function ModelPicker({ session, providers }: ModelPickerProps): JSX.Eleme
           {provider.models.length === 0 ? (
             <option value="">No models listed</option>
           ) : null}
-          {session.modelId === null && provider.models.length > 0 ? (
+          {!session.modelId && provider.models.length > 0 ? (
             <option value="">Default model</option>
           ) : null}
           {provider.models.map((model) => (

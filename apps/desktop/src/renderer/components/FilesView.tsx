@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type JSX } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { ChevronRight, File, Folder } from "lucide-react";
 import type { DirectoryEntry, FileContents } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
@@ -13,14 +13,24 @@ export function FilesView({ sessionId, onError }: FilesViewProps): JSX.Element {
   const [path, setPath] = useState("");
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [selected, setSelected] = useState<FileContents | null>(null);
+  // Guards async loads against fast navigation: only the latest request may
+  // write its result. Stale answers are dropped.
+  const requestRef = useRef(0);
 
   const load = useCallback(
     async (next: string): Promise<void> => {
+      const token = ++requestRef.current;
       try {
         const result = await invoke("files.list", { sessionId, path: next });
+        if (requestRef.current !== token) {
+          return;
+        }
         setEntries(result);
         setPath(next);
       } catch (error) {
+        if (requestRef.current !== token) {
+          return;
+        }
         onError(describeError(error));
       }
     },
@@ -30,6 +40,8 @@ export function FilesView({ sessionId, onError }: FilesViewProps): JSX.Element {
   useEffect(() => {
     setSelected(null);
     void load("");
+    // A session switch unmounts (keyed by session id), but the guard above
+    // also drops answers that arrive after a newer request started.
   }, [load]);
 
   const open = async (entry: DirectoryEntry): Promise<void> => {
@@ -38,9 +50,17 @@ export function FilesView({ sessionId, onError }: FilesViewProps): JSX.Element {
       await load(entry.path);
       return;
     }
+    const token = ++requestRef.current;
     try {
-      setSelected(await invoke("files.read", { sessionId, path: entry.path }));
+      const contents = await invoke("files.read", { sessionId, path: entry.path });
+      if (requestRef.current !== token) {
+        return;
+      }
+      setSelected(contents);
     } catch (error) {
+      if (requestRef.current !== token) {
+        return;
+      }
       onError(describeError(error));
     }
   };

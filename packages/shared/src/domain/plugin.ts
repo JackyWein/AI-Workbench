@@ -39,6 +39,8 @@ export const pluginManifestSchema = z.object({
   tools: z.array(pluginToolSchema).default([]),
   permissions: z.array(z.string()).default([]),
   capabilities: z.array(z.string()).default([]),
+  /** Opaque plugin configuration (spec §33). Validated by the plugin, not the core. */
+  configuration: z.unknown().optional(),
 });
 
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;

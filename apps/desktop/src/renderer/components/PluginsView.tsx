@@ -1,5 +1,5 @@
 import { useEffect, useState, type JSX } from "react";
-import { Unplug } from "lucide-react";
+import { ChevronRight, Unplug } from "lucide-react";
 import type { PluginManifest, PluginScopes } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { ScopeToggle } from "./SkillsView.js";
@@ -107,47 +107,66 @@ function PluginEntry({
   const decision = (scope: keyof PluginScopes): boolean | undefined =>
     scopes[scope]?.find((entry) => entry.pluginId === plugin.id)?.enabled;
 
+  // Quiet by default: one line per plugin, the scopes and tools behind it.
+  const [open, setOpen] = useState(false);
+  const detailsId = `plugin-${plugin.id}-details`;
+
   return (
     <article className="provider-entry">
-      <div className="provider-entry__head">
+      <button
+        type="button"
+        className="provider-entry__head provider-entry__toggle"
+        aria-expanded={open}
+        aria-controls={detailsId}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <ChevronRight
+          size={13}
+          strokeWidth={1.75}
+          aria-hidden="true"
+          className="provider-entry__chevron"
+          data-open={open}
+        />
         <span className="provider-entry__name">{plugin.name}</span>
         <span className="row__meta">{plugin.version}</span>
-      </div>
+      </button>
 
-      {plugin.description ? (
-        <p className="field__description">{plugin.description}</p>
-      ) : null}
+      <div className="provider-entry__details" id={detailsId} hidden={!open}>
+        {plugin.description ? (
+          <p className="field__description">{plugin.description}</p>
+        ) : null}
 
-      {needsAccount && !connected ? (
-        <p className="notice" role="note">
-          Needs a connected {plugin.authentication.accountType ?? "account"}{" "}
-          account before it can be used.
-        </p>
-      ) : null}
+        {needsAccount && !connected ? (
+          <p className="notice" role="note">
+            Needs a connected {plugin.authentication.accountType ?? "account"}{" "}
+            account before it can be used.
+          </p>
+        ) : null}
 
-      <div className="scope-toggles">
-        <ScopeToggle
-          label="Everywhere"
-          checked={decision("global") ?? false}
-          onChange={(value) => void setPluginEnabled(plugin.id, "global", value)}
-        />
-        <ScopeToggle
-          label="This session"
-          checked={decision("session") ?? false}
-          disabled={!hasSession}
-          onChange={(value) => void setPluginEnabled(plugin.id, "session", value)}
-        />
-      </div>
-
-      {plugin.tools.length > 0 ? (
-        <div className="tag-list">
-          {plugin.tools.map((tool) => (
-            <span className="tag" key={tool.name}>
-              {tool.name}
-            </span>
-          ))}
+        <div className="scope-toggles">
+          <ScopeToggle
+            label="Everywhere"
+            checked={decision("global") ?? false}
+            onChange={(value) => void setPluginEnabled(plugin.id, "global", value)}
+          />
+          <ScopeToggle
+            label="This session"
+            checked={decision("session") ?? false}
+            disabled={!hasSession}
+            onChange={(value) => void setPluginEnabled(plugin.id, "session", value)}
+          />
         </div>
-      ) : null}
+
+        {plugin.tools.length > 0 ? (
+          <div className="tag-list">
+            {plugin.tools.map((tool) => (
+              <span className="tag" key={tool.name}>
+                {tool.name}
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </article>
   );
 }

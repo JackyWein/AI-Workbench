@@ -26,6 +26,7 @@ import {
   builtInCliProfiles,
   parseProfile,
 } from "@ai-workbench/provider-cli";
+import { registerCustomProviders } from "@ai-workbench/provider-openai-compatible";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import { resolveInteractiveCommand } from "@ai-workbench/transport-cli";
 import { TerminalManager } from "@ai-workbench/terminal";
@@ -107,6 +108,26 @@ export async function createServices(
   const database = createDatabase({
     file: join(options.userDataPath, "ai-workbench.db"),
   });
+  try {
+    return await createServicesInner(options, logger, database);
+  } catch (error) {
+    // Startup never leaves a half-wired runtime behind: the process exits on
+    // bootstrap failure, but the database must still be closed so no lock or
+    // journal survives the failed start.
+    try {
+      database.close();
+    } catch {
+      // Closing is best-effort; the original error is what matters.
+    }
+    throw error;
+  }
+}
+
+async function createServicesInner(
+  options: CreateServicesOptions,
+  logger: Logger,
+  database: DatabaseHandle,
+): Promise<AppServices> {
   const migration = await runMigrations(database.client, logger.child("DATABASE"));
   logger.child("DATABASE").info("Database ready", {
     applied: migration.applied.length,
@@ -125,14 +146,21 @@ export async function createServices(
       // New limits read in the background reach the usage popover too.
       if (usageRef && summary.usage) {
         usageRef.invalidate();
-        void usageRef.refresh();
+        void usageRef.refresh().catch((error: unknown) => {
+          logger.debug("Usage refresh after provider change failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
       }
     },
   });
 
   const providerConfigs = new ProviderConfigService({ db: database.db, logger });
+  // Read once: the same snapshot feeds the per-provider overrides below and
+  // the custom-provider registration, so the two cannot disagree.
+  const storedProviderConfigs = await providerConfigs.list();
   const storedConfigs = new Map(
-    (await providerConfigs.list()).map((config) => [config.providerId, config]),
+    storedProviderConfigs.map((config) => [config.providerId, config]),
   );
   const overridesFor = (providerId: string): Partial<ProviderConfig> =>
     toProviderConfigOverrides(storedConfigs.get(providerId));
@@ -144,6 +172,10 @@ export async function createServices(
     const adapter = new CliProviderAdapter(parseProfile(profile));
     await providers.register(adapter, overridesFor(adapter.metadata.id));
   }
+
+  // Custom OpenAI-compatible endpoints from stored configs (spec §16, §17):
+  // no core change is needed to support a new one.
+  registerCustomProviders(providers.registry, storedProviderConfigs);
 
   // Further accounts of tools that keep several side by side (spec §39).
   const accounts = new ProviderAccountService({
@@ -175,7 +207,12 @@ export async function createServices(
   await plugins.load();
 
   const mcpManager = new McpManager({ logger, clientVersion: "1.0.0" });
-  const mcp = new McpService({ db: database.db, logger, manager: mcpManager });
+  const mcp = new McpService({
+    db: database.db,
+    logger,
+    manager: mcpManager,
+    credentials: { resolve: (reference) => credentials.resolve(reference) },
+  });
   // Servers the user enabled come up with the application; one that refuses to
   // start is reported, never thrown (spec §60).
   const connected = await mcp.connectEnabled();
@@ -186,7 +223,7 @@ export async function createServices(
     });
   }
 
-  const teams = new TeamManager({ db: database.db, events, logger, providers });
+  const teams = new TeamManager({ db: database.db, events, logger, providers, mcp });
 
   const settings = new SettingsService({ db: database.db, logger });
   const storedSettings = await settings.get();
@@ -204,6 +241,7 @@ export async function createServices(
     skills,
     mcp,
   });
+  await sessions.recoverInterrupted();
   const usage = new UsageService({ providers, events, logger });
   usageRef = usage;
 
@@ -286,16 +324,22 @@ export async function createServices(
       return () => terminalListeners.delete(listener);
     },
     dispose: async () => {
-      agentTerminals.stopAll();
-      terminals.closeAll();
-      terminalListeners.clear();
-      // A run in flight is paused rather than orphaned (spec §132).
-      await teams.shutdown();
-      await sessions.shutdown();
-      await mcpManager.disconnectAll();
-      await providers.dispose();
-      events.clear();
-      database.close();
+      // Order matters: agents and shells stop first, then the managers that
+      // own in-flight work pause it, then connections close. The database
+      // closes last, and always — even when a step above throws.
+      try {
+        agentTerminals.stopAll();
+        terminals.closeAll();
+        terminalListeners.clear();
+        // A run in flight is paused rather than orphaned (spec §132).
+        await teams.shutdown();
+        await sessions.shutdown();
+        await mcpManager.disconnectAll();
+        await providers.dispose();
+        events.clear();
+      } finally {
+        database.close();
+      }
     },
   };
 }

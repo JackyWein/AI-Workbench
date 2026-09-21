@@ -1,6 +1,6 @@
 import { useEffect, useRef, type JSX } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
+import { Terminal, type IDisposable } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { describeError, invoke } from "../lib/client.js";
 
@@ -8,6 +8,16 @@ interface TerminalViewProps {
   readonly sessionId: string;
   readonly onError: (message: string) => void;
 }
+
+/**
+ * Lines kept in the rendered buffer; the main process keeps the full history
+ * and only a bounded tail is replayed (see XtermPane for the shared caps).
+ */
+const RENDER_SCROLLBACK_LINES = 2000;
+/** Characters of history replayed when attaching to a running shell. */
+const MAX_REATTACH_CHARS = 50_000;
+/** Live output held while a frame is pending, so it cannot grow unbounded. */
+const MAX_PENDING_CHARS = 200_000;
 
 /**
  * A real shell for the session (spec §26). The process lives in the main
@@ -27,6 +37,21 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     let disposed = false;
     let terminalId: string | null = null;
     let detach: (() => void) | null = null;
+    let input: IDisposable | null = null;
+    // Live output is coalesced to one write per frame so a fast command
+    // cannot schedule a parse per IPC event.
+    let live = "";
+    let liveFrame: number | null = null;
+    const flushLive = (): void => {
+      liveFrame = null;
+      if (live.length === 0 || disposed) {
+        live = "";
+        return;
+      }
+      const chunk = live;
+      live = "";
+      terminal.write(chunk);
+    };
 
     const styles = getComputedStyle(document.documentElement);
     const token = (name: string, fallback: string): string =>
@@ -37,6 +62,7 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
       fontSize: 12,
       lineHeight: 1.3,
       cursorBlink: true,
+      scrollback: RENDER_SCROLLBACK_LINES,
       // The terminal uses the same surface tokens as the rest of the app.
       theme: {
         background: token("--surface-sunken", "#0a0b0d"),
@@ -49,7 +75,11 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(container);
-    fit.fit();
+    try {
+      fit.fit();
+    } catch {
+      // Not laid out yet; the resize observer below catches up.
+    }
     terminalRef.current = terminal;
 
     const start = async (): Promise<void> => {
@@ -67,7 +97,11 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
         }
         terminalId = info.id;
         if (scrollback) {
-          terminal.write(scrollback);
+          terminal.write(
+            scrollback.length <= MAX_REATTACH_CHARS
+              ? scrollback
+              : scrollback.slice(scrollback.length - MAX_REATTACH_CHARS),
+          );
         }
 
         detach = window.workbench.onTerminalEvent((event) => {
@@ -75,16 +109,24 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
             return;
           }
           if (event.type === "data") {
-            terminal.write(event.chunk);
+            live += event.chunk;
+            if (live.length > MAX_PENDING_CHARS) {
+              live = live.slice(live.length - MAX_PENDING_CHARS);
+            }
+            liveFrame ??= requestAnimationFrame(flushLive);
           } else {
+            if (liveFrame !== null) {
+              cancelAnimationFrame(liveFrame);
+              flushLive();
+            }
             terminal.writeln(`\r\n[process exited with code ${event.exitCode}]`);
             terminalId = null;
           }
         });
 
-        terminal.onData((data) => {
+        input = terminal.onData((data) => {
           if (terminalId) {
-            void invoke("terminal.write", { terminalId, data });
+            void invoke("terminal.write", { terminalId, data }).catch(() => undefined);
           }
         });
 
@@ -102,23 +144,37 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     void start();
 
     const resize = (): void => {
-      fit.fit();
+      if (container.clientWidth === 0 || container.clientHeight === 0) {
+        return;
+      }
+      try {
+        fit.fit();
+      } catch {
+        return;
+      }
       if (terminalId) {
         void invoke("terminal.resize", {
           terminalId,
           cols: terminal.cols,
           rows: terminal.rows,
-        });
+        }).catch(() => undefined);
       }
     };
 
-    const observer = new ResizeObserver(resize);
+    const observer = new ResizeObserver(() => requestAnimationFrame(resize));
     observer.observe(container);
 
     return () => {
       disposed = true;
       observer.disconnect();
       detach?.();
+      input?.dispose();
+      input = null;
+      if (liveFrame !== null) {
+        cancelAnimationFrame(liveFrame);
+        liveFrame = null;
+      }
+      live = "";
       terminal.dispose();
       terminalRef.current = null;
       // The shell itself is deliberately left running.

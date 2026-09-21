@@ -79,6 +79,27 @@ and the user can always pause or stop a run.
 Team core must not name a provider. An agent references a provider id from the
 registry, so any mix of adapters can form a team.
 
+## Team MCP handover
+
+`#adapterForAgent` wraps each agent's adapter in a `TeamScopedAdapter` that
+injects the agent's tool access at session creation: its selected servers plus
+its scoped team MCP server (one scope per run and agent). Providers without
+MCP support run unchanged on action blocks, and a failed resolution keeps the
+turn running without tool access instead of failing it.
+
+## Per-agent provider and model
+
+Each agent stores its own `providerId` plus an optional `modelId`, so one team
+can mix adapters and models freely. The adapter is resolved per agent at
+runtime; team core still names no provider.
+
+## Crash recovery resets tasks
+
+`resumeRun` returns finished runs as-is but resets every task a dead process
+left `claimed` or `running` back to `ready` (`startedAt` cleared) before
+driving again — otherwise the run stalls forever with in-flight work nothing
+waits for.
+
 ## Definition of done
 
 The list in `AI_WORKBENCH.md` §130 applies in full: a goal reaches the lead,

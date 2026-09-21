@@ -33,7 +33,7 @@ import type {
 } from "./extensions.js";
 import { buildInteractiveArgs, buildTurnArgs } from "./invocation.js";
 import { buildMcpLaunch, mcpServersFor, NO_MCP, type CliMcpLaunch } from "./mcp.js";
-import { ModelStore, validModels } from "./models.js";
+import { ModelStore, parseModelLines, validModels } from "./models.js";
 import { classifyError, parseWithRules } from "./parse.js";
 import type { CliProviderProfile } from "./profile.js";
 import { UsageStore } from "./usage.js";
@@ -208,7 +208,7 @@ export class CliProviderAdapter implements AIProviderAdapter {
       transport,
     });
 
-    if (this.#extensions.discoverModels) {
+    if (this.#extensions.discoverModels || this.#profile.modelsArgs.length > 0) {
       // The last known list is served at once; asking the tool again takes a
       // process start and must not hold up the application's startup.
       await this.#models.load(context.stateDirectory);
@@ -607,14 +607,32 @@ export class CliProviderAdapter implements AIProviderAdapter {
   }
 
   async #discoverModels(): Promise<void> {
-    if (!this.#extensions.discoverModels || !this.#extensionContext) {
+    if (this.#extensions.discoverModels && this.#extensionContext) {
+      await this.#models.refresh(() =>
+        this.#runExtension("discoverModels", HOOK_TIMEOUT_MS.discoverModels, (extensions, context) =>
+          extensions.discoverModels?.(context) ?? Promise.resolve(null),
+        ),
+      );
       return;
     }
-    await this.#models.refresh(() =>
-      this.#runExtension("discoverModels", HOOK_TIMEOUT_MS.discoverModels, (extensions, context) =>
-        extensions.discoverModels?.(context) ?? Promise.resolve(null),
-      ),
-    );
+    // Profile-driven discovery: the tool lists its own models, one id per
+    // line. Without such a command the list stays manual (spec §21).
+    if (this.#profile.modelsArgs.length === 0 || !this.#transport) {
+      return;
+    }
+    const transport = this.#transport;
+    const args = [...this.#profile.modelsArgs];
+    await this.#models.refresh(async () => {
+      try {
+        const { stdout, exit } = await transport.exec({ args, timeoutMs: 30_000 });
+        if (exit.code !== 0) {
+          return null;
+        }
+        return parseModelLines(stdout);
+      } catch {
+        return null;
+      }
+    });
   }
 
   /** Runs a hook against this entry's context; null when not initialized or on failure. */

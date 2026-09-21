@@ -1,8 +1,9 @@
-import { type JSX, useCallback, useSyncExternalStore } from "react";
+import { type JSX, useEffect, useState } from "react";
 import {
   ACTIVITY_BUCKETS,
   ACTIVITY_BUCKET_MS,
   activityOf,
+  startActivityTracking,
   subscribeActivity,
   type ActivitySnapshot,
 } from "../lib/terminal-activity.js";
@@ -24,12 +25,29 @@ export function ActivityTrace({
   width = 60,
   height = 14,
 }: ActivityTraceProps): JSX.Element {
-  const subscribe = useCallback(
-    (listener: () => void) => (terminalId ? subscribeActivity(terminalId, listener) : () => {}),
-    [terminalId],
-  );
-  // A stable snapshot per notification, so React only re-renders on a beat.
-  const snapshot = useSyncExternalStore(subscribe, () => cached(terminalId));
+  // Plain state refreshed on a steady beat: the snapshot is wall-clock
+  // derived, so an external store could hand back a different object without
+  // a notification (tearing). Re-reading on an interval cannot tear.
+  const [snapshot, setSnapshot] = useState<ActivitySnapshot>(() => activityOf(terminalId));
+
+  useEffect(() => {
+    const stop = startActivityTracking();
+    setSnapshot(activityOf(terminalId));
+    if (!terminalId) {
+      return stop;
+    }
+    const unsubscribe = subscribeActivity(terminalId, () => {
+      setSnapshot(activityOf(terminalId));
+    });
+    const ticker = setInterval(() => {
+      setSnapshot(activityOf(terminalId));
+    }, ACTIVITY_BUCKET_MS / 2);
+    return () => {
+      clearInterval(ticker);
+      unsubscribe();
+      stop();
+    };
+  }, [terminalId]);
 
   const gap = 1;
   const barWidth = (width - gap * (ACTIVITY_BUCKETS - 1)) / ACTIVITY_BUCKETS;
@@ -66,19 +84,4 @@ export function ActivityTrace({
       })}
     </svg>
   );
-}
-
-const snapshots = new Map<string, { at: number; value: ActivitySnapshot }>();
-
-/** useSyncExternalStore needs the same object until something changed. */
-function cached(terminalId: string | null): ActivitySnapshot {
-  const key = terminalId ?? "";
-  const beat = Math.floor(Date.now() / (ACTIVITY_BUCKET_MS / 2));
-  const hit = snapshots.get(key);
-  if (hit && hit.at === beat) {
-    return hit.value;
-  }
-  const value = activityOf(terminalId);
-  snapshots.set(key, { at: beat, value });
-  return value;
 }

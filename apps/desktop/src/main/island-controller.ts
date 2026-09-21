@@ -33,7 +33,16 @@ export class IslandController {
   readonly #window: StatusIslandWindow;
   readonly #tray: StatusTray;
   #unsubscribe: (() => void) | null = null;
+  #eventsUnsubscribe: (() => void) | null = null;
   #timer: NodeJS.Timeout | null = null;
+  #refreshing = false;
+  #needsRefresh = false;
+  #lastSessionCount = 0;
+  #lastRunCount = 0;
+  /** True while the island is hidden only because the main window is. */
+  #hiddenWithMain = false;
+  /** Serializes preference writes so concurrent callers cannot interleave. */
+  #preferencesChain: Promise<void> = Promise.resolve();
 
   constructor(options: IslandControllerOptions) {
     this.#options = options;
@@ -46,12 +55,27 @@ export class IslandController {
       devServerUrl: options.devServerUrl,
       onMoved: ({ x, y, displayId }) => {
         // A dragged island keeps where it was put, across restarts (spec §95).
+        // Positions that are already stored are not written again, so settling
+        // the window cannot turn into a write loop.
+        const current = this.#services.attention.preferences;
+        if (
+          current.position === "custom" &&
+          current.customX === x &&
+          current.customY === y &&
+          current.displayId === displayId
+        ) {
+          return;
+        }
         void this.setPreferences({
           position: "custom",
           customX: x,
           customY: y,
           displayId,
-        });
+        }).catch((error: unknown) =>
+          this.#services.logger.warn("Could not persist dragged island position", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
       },
     });
 
@@ -86,12 +110,31 @@ export class IslandController {
     });
 
     // Anything that changes what the island should show also refreshes it.
-    this.#services.events.subscribe(() => void this.refresh());
+    // Fire-and-forget refreshes must never reject unhandled: a failing
+    // refresh is logged and the next tick retries.
+    this.#eventsUnsubscribe = this.#services.events.subscribe(() =>
+      this.refresh().catch((error: unknown) =>
+        this.#services.logger.warn("Island refresh failed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      ),
+    );
     // Time passes too: an entry ages out and usage changes on its own.
-    this.#timer = setInterval(() => void this.refresh(), 2_000);
+    this.#timer = setInterval(
+      () =>
+        this.refresh().catch((error: unknown) =>
+          this.#services.logger.warn("Island refresh failed", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        ),
+      2_000,
+    );
     this.#timer.unref?.();
 
     const settings = await this.#services.settings.get();
+    // The window always learns the preferences, so showing it later works
+    // even when it did not start visible with the app.
+    this.#window.configure(settings.statusIsland);
     if (settings.statusIsland.enabled && settings.statusIsland.startWithApp) {
       this.#window.apply(settings.statusIsland);
     }
@@ -100,6 +143,25 @@ export class IslandController {
 
   /** Collects the current picture and lets the service decide (spec §102). */
   async refresh(): Promise<IslandState> {
+    if (this.#refreshing) {
+      this.#needsRefresh = true;
+      return this.#services.attention.state;
+    }
+    this.#refreshing = true;
+    let state: IslandState;
+    try {
+      state = await this.#refreshInner();
+    } finally {
+      this.#refreshing = false;
+    }
+    if (this.#needsRefresh) {
+      this.#needsRefresh = false;
+      return await this.refresh();
+    }
+    return state;
+  }
+
+  async #refreshInner(): Promise<IslandState> {
     const now = new Date();
     const runs = await this.#runSnapshots();
 
@@ -159,12 +221,16 @@ export class IslandController {
         sessionId: session.id,
         name: session.name,
         // A solo session has no task graph, so its state is the honest
-        // answer rather than a percentage (spec §103).
-        status: "answering",
+        // answer rather than a percentage (spec §103; §96 "Working").
+        status: "working",
       }));
 
     const sortByNewest = <T extends { at: Date }>(entries: T[]): T[] =>
       entries.sort((left, right) => right.at.getTime() - left.at.getTime());
+
+    // Tray counts come from the real lists, not from island entries (spec §104).
+    this.#lastSessionCount = busySessions.length;
+    this.#lastRunCount = runs.filter((snapshot) => snapshot.run.status === "running").length;
 
     return this.#services.attention.update({
       usage: await this.#services.usage.get(),
@@ -179,6 +245,17 @@ export class IslandController {
   }
 
   async setPreferences(patch: Partial<IslandPreferences>): Promise<IslandState> {
+    // Preference writes go through one chain so two concurrent callers (drag
+    // position + settings screen) apply in order instead of interleaving.
+    const run = this.#preferencesChain.then(() => this.#setPreferencesInner(patch));
+    this.#preferencesChain = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  async #setPreferencesInner(patch: Partial<IslandPreferences>): Promise<IslandState> {
     const settings = await this.#services.settings.update({
       statusIsland: { ...this.#services.attention.preferences, ...patch },
     });
@@ -192,11 +269,17 @@ export class IslandController {
     return this.setPreferences({ pinnedWidget: widget });
   }
 
-  cycle(direction: 1 | -1): IslandState {
+  async cycle(direction: 1 | -1): Promise<IslandState> {
     const state = this.#services.attention.cycle(direction);
-    void this.#services.settings.update({
-      statusIsland: this.#services.attention.preferences,
-    });
+    try {
+      await this.#services.settings.update({
+        statusIsland: this.#services.attention.preferences,
+      });
+    } catch (error) {
+      this.#services.logger.warn("Could not persist island preferences", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
     return state;
   }
 
@@ -205,24 +288,60 @@ export class IslandController {
   }
 
   show(): boolean {
+    // An explicit show is the user's choice, not a side effect of the main
+    // window coming back.
+    this.#hiddenWithMain = false;
     this.#window.show();
     this.#tray.refresh();
     return this.#window.visible;
   }
 
   hide(): boolean {
+    // An explicit hide is the user's choice and stays until shown again.
+    this.#hiddenWithMain = false;
     this.#window.hide();
     this.#tray.refresh();
     return this.#window.visible;
   }
 
+  /**
+   * Follows the main window when the island was not asked to stay (spec §101).
+   * A manually hidden island is never resurrected by this; only an island
+   * that was hidden together with the main window comes back with it.
+   */
+  setMainVisible(visible: boolean): void {
+    if (visible) {
+      if (this.#hiddenWithMain) {
+        this.#hiddenWithMain = false;
+        this.#window.apply(this.#services.attention.preferences);
+        this.#tray.refresh();
+      }
+      return;
+    }
+    if (this.#services.attention.preferences.stayVisibleWhenHidden) {
+      return;
+    }
+    if (this.#window.visible) {
+      this.#window.hide();
+      this.#hiddenWithMain = true;
+      this.#tray.refresh();
+    }
+  }
+
   /** Brings the main window forward, at the place the entry is about. */
   open(target: IslandTarget): boolean {
     const window = this.#options.focusMainWindow();
-    if (!window) {
+    if (!window || window.isDestroyed()) {
       return false;
     }
-    window.webContents.send(ISLAND_NAVIGATE_CHANNEL, target);
+    try {
+      window.webContents.send(ISLAND_NAVIGATE_CHANNEL, target);
+    } catch (error) {
+      this.#services.logger.warn("Could not navigate the main window", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
     this.dismiss();
     return true;
   }
@@ -230,6 +349,8 @@ export class IslandController {
   dispose(): void {
     this.#unsubscribe?.();
     this.#unsubscribe = null;
+    this.#eventsUnsubscribe?.();
+    this.#eventsUnsubscribe = null;
     if (this.#timer) {
       clearInterval(this.#timer);
       this.#timer = null;
@@ -241,7 +362,10 @@ export class IslandController {
   async #runSnapshots(): Promise<
     Awaited<ReturnType<AppServices["teams"]["getSnapshot"]>>[]
   > {
-    const runs = await this.#services.teams.listRuns();
+    // Bound before filtering: the history can grow without bound, but only a
+    // small window is ever snapshotted, so cap the raw list first and the
+    // relevant subset second.
+    const runs = (await this.#services.teams.listRuns()).slice(0, 50);
     const relevant = runs
       .filter((run) => run.status === "running" || run.finishedAt !== null)
       .slice(0, 10);
@@ -254,12 +378,7 @@ export class IslandController {
   }
 
   #activity(): { sessions: number; runs: number } {
-    const state = this.#services.attention.state;
-    const runs = state.entries.filter((entry) => entry.widget === "teamProgress").length;
-    const sessions = state.entries.filter(
-      (entry) => entry.widget === "activeAgents",
-    ).length;
-    return { sessions, runs };
+    return { sessions: this.#lastSessionCount, runs: this.#lastRunCount };
   }
 
   async #pauseRuns(): Promise<void> {

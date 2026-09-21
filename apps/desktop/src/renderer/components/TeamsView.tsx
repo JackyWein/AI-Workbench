@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import { Pause, Play, Plus, Square, Trash2 } from "lucide-react";
 import type {
   ProviderSummary,
@@ -8,6 +8,8 @@ import type {
   TeamTask,
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { Logo } from "./Logo.js";
+import { providerLabel } from "../lib/provider-label.js";
 
 /**
  * The team screen (spec §70, §94).
@@ -18,6 +20,7 @@ import { useWorkbench } from "../store/workbench.js";
  */
 export function TeamsView(): JSX.Element {
   const teams = useWorkbench((state) => state.teams);
+  const providers = useWorkbench((state) => state.providers);
   const refreshTeams = useWorkbench((state) => state.refreshTeams);
   const hasWorkspace = useWorkbench((state) => state.activeWorkspaceId !== null);
   const [creating, setCreating] = useState(false);
@@ -58,7 +61,7 @@ export function TeamsView(): JSX.Element {
         ) : (
           <section>
             {teams.map((team) => (
-              <TeamEntry key={team.id} team={team} />
+              <TeamEntry key={team.id} team={team} providers={providers} />
             ))}
           </section>
         )}
@@ -67,8 +70,20 @@ export function TeamsView(): JSX.Element {
   );
 }
 
-function TeamEntry({ team }: { readonly team: TeamDefinition }): JSX.Element {
-  const runs = useWorkbench((state) => state.teamRuns[team.id] ?? []);
+/**
+ * Stable empty list: `?? []` would hand zustand a new array identity on every
+ * call and re-render the entry in a loop.
+ */
+const EMPTY_RUNS: TeamRun[] = [];
+
+function TeamEntry({
+  team,
+  providers,
+}: {
+  readonly team: TeamDefinition;
+  readonly providers: readonly ProviderSummary[];
+}): JSX.Element {
+  const runs = useWorkbench((state) => state.teamRuns[team.id] ?? EMPTY_RUNS);
   const openRunId = useWorkbench((state) => state.openRunId);
   const startRun = useWorkbench((state) => state.startTeamRun);
   const deleteTeam = useWorkbench((state) => state.deleteTeam);
@@ -110,7 +125,7 @@ function TeamEntry({ team }: { readonly team: TeamDefinition }): JSX.Element {
               {agent.id === team.leadAgentId ? " · lead" : ""}
             </dt>
             <dd className="detail__value">
-              {agent.providerId}
+              <AgentProvider providerId={agent.providerId} providers={providers} />
               {agent.role ? ` — ${agent.role}` : ""}
             </dd>
           </div>
@@ -189,7 +204,7 @@ function TeamEntry({ team }: { readonly team: TeamDefinition }): JSX.Element {
       ) : null}
 
       {openRunId && runs.some((run) => run.id === openRunId) ? (
-        <RunDetail runId={openRunId} />
+        <RunDetail runId={openRunId} providers={providers} />
       ) : null}
     </article>
   );
@@ -197,12 +212,92 @@ function TeamEntry({ team }: { readonly team: TeamDefinition }): JSX.Element {
 
 type RunTab = "tasks" | "agents" | "messages" | "artifacts" | "decisions";
 
-function RunDetail({ runId }: { readonly runId: string }): JSX.Element {
+const RUN_TABS: readonly RunTab[] = ["tasks", "agents", "messages", "artifacts", "decisions"];
+
+/**
+ * How many run-log rows stay mounted per tab. A long run would otherwise keep
+ * every row alive inside a max-height list; older rows page back in on
+ * demand, anchored at the newest entries.
+ */
+const RUN_LIST_PAGE = 50;
+
+const EMPTY_LIST: readonly never[] = [];
+
+function usePagedList<T>(
+  items: readonly T[],
+  resetKey: string,
+): { readonly visible: readonly T[]; readonly hidden: number; readonly showMore: () => void } {
+  const [count, setCount] = useState(RUN_LIST_PAGE);
+  useEffect(() => {
+    setCount(RUN_LIST_PAGE);
+  }, [resetKey]);
+  const hidden = Math.max(0, items.length - count);
+  const visible = hidden === 0 ? items : items.slice(hidden);
+  return {
+    visible,
+    hidden,
+    showMore: () => setCount((current) => current + RUN_LIST_PAGE),
+  };
+}
+
+function ListPager({
+  hidden,
+  onShowMore,
+}: {
+  readonly hidden: number;
+  readonly onShowMore: () => void;
+}): JSX.Element | null {
+  if (hidden === 0) {
+    return null;
+  }
+  return (
+    <button type="button" className="quiet-button" onClick={onShowMore}>
+      <span className="row__meta">Show earlier ({hidden} hidden)</span>
+    </button>
+  );
+}
+
+function RunDetail({
+  runId,
+  providers,
+}: {
+  readonly runId: string;
+  readonly providers: readonly ProviderSummary[];
+}): JSX.Element {
   const snapshot = useWorkbench((state) => state.runSnapshots[runId]);
   const pauseRun = useWorkbench((state) => state.pauseTeamRun);
   const resumeRun = useWorkbench((state) => state.resumeTeamRun);
   const cancelRun = useWorkbench((state) => state.cancelTeamRun);
   const [tab, setTab] = useState<RunTab>("tasks");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // Roving tabindex, like the workspace tools: one tab stop, arrows move and
+  // select.
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const current = RUN_TABS.findIndex((name) => name === tab);
+    let next: number | null = null;
+    if (event.key === "ArrowRight") {
+      next = (current + 1) % RUN_TABS.length;
+    } else if (event.key === "ArrowLeft") {
+      next = (current - 1 + RUN_TABS.length) % RUN_TABS.length;
+    } else if (event.key === "Home") {
+      next = 0;
+    } else if (event.key === "End") {
+      next = RUN_TABS.length - 1;
+    }
+    const target = next === null ? undefined : RUN_TABS[next];
+    if (target) {
+      event.preventDefault();
+      setTab(target);
+      tabRefs.current[next ?? 0]?.focus();
+    }
+  };
+
+  // Hooks stay above the loading return so switching runs keeps their order.
+  const tasksPage = usePagedList(snapshot?.tasks ?? EMPTY_LIST, `${runId}:tasks`);
+  const messagesPage = usePagedList(snapshot?.messages ?? EMPTY_LIST, `${runId}:messages`);
+  const artifactsPage = usePagedList(snapshot?.artifacts ?? EMPTY_LIST, `${runId}:artifacts`);
+  const decisionsPage = usePagedList(snapshot?.decisions ?? EMPTY_LIST, `${runId}:decisions`);
 
   if (!snapshot) {
     return <p className="field__description">Loading the run…</p>;
@@ -258,91 +353,110 @@ function RunDetail({ runId }: { readonly runId: string }): JSX.Element {
         </span>
       </div>
 
-      <div className="panel__tabs">
-        {(["tasks", "agents", "messages", "artifacts", "decisions"] as const).map(
-          (name) => (
-            <button
-              type="button"
-              key={name}
-              className="panel__tab"
-              aria-current={tab === name}
-              onClick={() => setTab(name)}
-            >
-              {name.charAt(0).toUpperCase() + name.slice(1)}
-            </button>
-          ),
-        )}
+      <div className="panel__tabs" role="tablist" aria-label="Run detail" onKeyDown={onTabKeyDown}>
+        {RUN_TABS.map((name, index) => (
+          <button
+            type="button"
+            key={name}
+            role="tab"
+            id={`run-${runId}-tab-${name}`}
+            aria-selected={tab === name}
+            aria-controls={`run-${runId}-panel`}
+            tabIndex={tab === name ? 0 : -1}
+            ref={(node) => {
+              tabRefs.current[index] = node;
+            }}
+            className="panel__tab"
+            onClick={() => setTab(name)}
+          >
+            {name.charAt(0).toUpperCase() + name.slice(1)}
+          </button>
+        ))}
       </div>
 
+      <div role="tabpanel" id={`run-${runId}-panel`} aria-labelledby={`run-${runId}-tab-${tab}`}>
       {tab === "tasks" ? (
-        <ul className="changes__list">
-          {snapshot.tasks.length === 0 ? (
-            <li className="row__meta">No tasks yet.</li>
-          ) : (
-            snapshot.tasks.map((task) => (
-              <li className="changes__item" key={task.id}>
-                <span className="changes__badge" data-state={task.status}>
-                  {task.status}
-                </span>
-                <span className="row__text">{task.title}</span>
-                <span className="row__meta">{taskDetail(task)}</span>
-              </li>
-            ))
-          )}
-        </ul>
+        <>
+          <ListPager hidden={tasksPage.hidden} onShowMore={tasksPage.showMore} />
+          <ul className="changes__list">
+            {tasksPage.visible.length === 0 ? (
+              <li className="row__meta">No tasks yet.</li>
+            ) : (
+              tasksPage.visible.map((task) => (
+                <li className="changes__item" key={task.id}>
+                  <span className="changes__badge" data-state={task.status}>
+                    {task.status}
+                  </span>
+                  <span className="row__text">{task.title}</span>
+                  <span className="row__meta">{taskDetail(task)}</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </>
       ) : null}
 
-      {tab === "agents" ? <AgentActivity snapshot={snapshot} /> : null}
+      {tab === "agents" ? <AgentActivity snapshot={snapshot} providers={providers} /> : null}
 
       {tab === "messages" ? (
-        <ul className="changes__list">
-          {snapshot.messages.length === 0 ? (
-            <li className="row__meta">Nothing sent yet.</li>
-          ) : (
-            snapshot.messages.map((message) => (
-              <li className="changes__item" key={message.id}>
-                <span className="changes__badge">{message.type}</span>
-                <span className="row__text">
-                  {message.from} → {message.to}: {message.content}
-                </span>
-              </li>
-            ))
-          )}
-        </ul>
+        <>
+          <ListPager hidden={messagesPage.hidden} onShowMore={messagesPage.showMore} />
+          <ul className="changes__list">
+            {messagesPage.visible.length === 0 ? (
+              <li className="row__meta">Nothing sent yet.</li>
+            ) : (
+              messagesPage.visible.map((message) => (
+                <li className="changes__item" key={message.id}>
+                  <span className="changes__badge">{message.type}</span>
+                  <span className="row__text">
+                    {message.from} → {message.to}: {message.content}
+                  </span>
+                </li>
+              ))
+            )}
+          </ul>
+        </>
       ) : null}
 
       {tab === "artifacts" ? (
-        <ul className="changes__list">
-          {snapshot.artifacts.length === 0 ? (
-            <li className="row__meta">Nothing published yet.</li>
-          ) : (
-            snapshot.artifacts.map((artifact) => (
-              <li className="changes__item" key={artifact.id}>
-                <span className="changes__badge">{artifact.type}</span>
-                <span className="row__text">{artifact.name}</span>
-                <span className="row__meta">{artifact.createdBy}</span>
-              </li>
-            ))
-          )}
-        </ul>
+        <>
+          <ListPager hidden={artifactsPage.hidden} onShowMore={artifactsPage.showMore} />
+          <ul className="changes__list">
+            {artifactsPage.visible.length === 0 ? (
+              <li className="row__meta">Nothing published yet.</li>
+            ) : (
+              artifactsPage.visible.map((artifact) => (
+                <li className="changes__item" key={artifact.id}>
+                  <span className="changes__badge">{artifact.type}</span>
+                  <span className="row__text">{artifact.name}</span>
+                  <span className="row__meta">{artifact.createdBy}</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </>
       ) : null}
 
       {tab === "decisions" ? (
-        <ul className="changes__list">
-          {snapshot.decisions.length === 0 ? (
-            <li className="row__meta">Nothing recorded yet.</li>
-          ) : (
-            snapshot.decisions.map((decision) => (
-              <li className="changes__item" key={decision.id}>
-                <span className="row__text">
-                  {decision.title}: {decision.decision}
-                </span>
-                <span className="row__meta">{decision.author}</span>
-              </li>
-            ))
-          )}
-        </ul>
+        <>
+          <ListPager hidden={decisionsPage.hidden} onShowMore={decisionsPage.showMore} />
+          <ul className="changes__list">
+            {decisionsPage.visible.length === 0 ? (
+              <li className="row__meta">Nothing recorded yet.</li>
+            ) : (
+              decisionsPage.visible.map((decision) => (
+                <li className="changes__item" key={decision.id}>
+                  <span className="row__text">
+                    {decision.title}: {decision.decision}
+                  </span>
+                  <span className="row__meta">{decision.author}</span>
+                </li>
+              ))
+            )}
+          </ul>
+        </>
       ) : null}
+      </div>
     </div>
   );
 }
@@ -350,11 +464,13 @@ function RunDetail({ runId }: { readonly runId: string }): JSX.Element {
 /** The compact per-agent summary from spec §93. */
 function AgentActivity({
   snapshot,
+  providers,
 }: {
   readonly snapshot: TeamRunSnapshot;
+  readonly providers: readonly ProviderSummary[];
 }): JSX.Element {
   const teams = useWorkbench((state) => state.teams);
-  const providers = useWorkbench((state) => state.providers);
+
   const team = teams.find((entry) => entry.id === snapshot.run.teamId);
 
   if (!team) {
@@ -368,7 +484,10 @@ function AgentActivity({
           <dt className="detail__label">{agent.displayName}</dt>
           <dd className="detail__value">
             {agentActivity(agent.id, snapshot)}
-            <span className="row__meta"> · {providerName(agent.providerId, providers)}</span>
+            <span className="row__meta">
+              {" "}
+              · <AgentProvider providerId={agent.providerId} providers={providers} />
+            </span>
           </dd>
         </div>
       ))}
@@ -391,44 +510,112 @@ function agentActivity(agentId: string, snapshot: TeamRunSnapshot): string {
   return done > 0 ? `Idle · ${done} completed` : "Waiting";
 }
 
-function providerName(providerId: string, providers: ProviderSummary[]): string {
+/** Provider mark plus account label, so two sign-ins of one tool differ. */
+function AgentProvider({
+  providerId,
+  providers,
+}: {
+  readonly providerId: string;
+  readonly providers: readonly ProviderSummary[];
+}): JSX.Element {
+  const provider = providers.find((entry) => entry.metadata.id === providerId);
+  if (!provider) {
+    return <>{providerId}</>;
+  }
   return (
-    providers.find((entry) => entry.metadata.id === providerId)?.metadata.displayName ??
-    providerId
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+      <Logo
+        name={provider.metadata.icon}
+        label={provider.metadata.displayName}
+        size={14}
+      />
+      {providerLabel(provider)}
+    </span>
   );
+}
+
+interface AgentDraft {
+  readonly key: number;
+  name: string;
+  role: string;
+  providerId: string;
+  modelId: string;
 }
 
 function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
   const providers = useWorkbench((state) => state.providers);
   const createTeam = useWorkbench((state) => state.createTeam);
   const [name, setName] = useState("");
-  const [roster, setRoster] = useState(
-    "Lead = plans and reviews\nBuilder = implements\nReviewer = checks the work",
-  );
-  const [providerId, setProviderId] = useState(providers[0]?.metadata.id ?? "");
+  const [agents, setAgents] = useState<AgentDraft[]>([
+    { key: 1, name: "Lead", role: "plans and reviews", providerId: "", modelId: "" },
+    { key: 2, name: "Builder", role: "implements", providerId: "", modelId: "" },
+    { key: 3, name: "Reviewer", role: "checks the work", providerId: "", modelId: "" },
+  ]);
+  const keyRef = useRef(4);
   const [saving, setSaving] = useState(false);
 
-  const submit = async (): Promise<void> => {
-    const agents = roster
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0)
-      .map((line) => {
-        const [rawName, ...rest] = line.split("=");
-        return {
-          displayName: (rawName ?? "").trim(),
-          providerId,
-          role: rest.join("=").trim(),
-        };
-      })
-      .filter((agent) => agent.displayName.length > 0);
+  // Providers load after the form mounts; agents without a choice inherit the
+  // first available one instead of staying empty.
+  const firstProviderId = providers[0]?.metadata.id ?? "";
+  useEffect(() => {
+    if (firstProviderId.length === 0) {
+      return;
+    }
+    setAgents((current) =>
+      current.map((agent) =>
+        agent.providerId.length > 0 ? agent : { ...agent, providerId: firstProviderId },
+      ),
+    );
+  }, [firstProviderId]);
 
-    if (name.trim().length === 0 || agents.length === 0) {
+  const patchAgent = (key: number, patch: Partial<AgentDraft>): void => {
+    setAgents((current) =>
+      current.map((agent) => {
+        if (agent.key !== key) {
+          return agent;
+        }
+        const next = { ...agent, ...patch };
+        // A provider change drops a model the new provider does not offer.
+        if (patch.providerId !== undefined) {
+          const provider = providers.find((entry) => entry.metadata.id === patch.providerId);
+          if (!provider?.models.some((model) => model.id === next.modelId)) {
+            next.modelId = "";
+          }
+        }
+        return next;
+      }),
+    );
+  };
+
+  const addAgent = (): void => {
+    const key = keyRef.current;
+    keyRef.current += 1;
+    setAgents((current) => [
+      ...current,
+      { key, name: "", role: "", providerId: firstProviderId, modelId: "" },
+    ]);
+  };
+
+  const removeAgent = (key: number): void => {
+    setAgents((current) => (current.length <= 1 ? current : current.filter((agent) => agent.key !== key)));
+  };
+
+  const submit = async (): Promise<void> => {
+    const roster = agents
+      .map((agent) => ({
+        displayName: agent.name.trim(),
+        role: agent.role.trim(),
+        providerId: agent.providerId || firstProviderId,
+        modelId: agent.modelId,
+      }))
+      .filter((agent) => agent.displayName.length > 0 && agent.providerId.length > 0);
+
+    if (name.trim().length === 0 || roster.length === 0) {
       return;
     }
     setSaving(true);
     try {
-      await createTeam({ name: name.trim(), agents });
+      await createTeam({ name: name.trim(), agents: roster });
       onDone();
     } finally {
       setSaving(false);
@@ -439,6 +626,7 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
     <section className="provider-entry">
       <div className="provider-entry__head">
         <span className="provider-entry__name">New team</span>
+        <span className="row__meta">First agent is the lead</span>
       </div>
       <div className="provider-entry__config">
         <label className="stacked-field">
@@ -449,43 +637,129 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
             onChange={(event) => setName(event.target.value)}
           />
         </label>
+        {agents.map((agent, index) => (
+          <AgentDraftRow
+            key={agent.key}
+            agent={agent}
+            index={index}
+            providers={providers}
+            removable={agents.length > 1}
+            onPatch={(patch) => patchAgent(agent.key, patch)}
+            onRemove={() => removeAgent(agent.key)}
+          />
+        ))}
+        <div className="scope-toggles">
+          <button type="button" className="quiet-button" onClick={addAgent}>
+            <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
+            Add agent
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            disabled={saving || name.trim().length === 0}
+            onClick={() => void submit()}
+          >
+            {saving ? "Creating" : "Create team"}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AgentDraftRow({
+  agent,
+  index,
+  providers,
+  removable,
+  onPatch,
+  onRemove,
+}: {
+  readonly agent: AgentDraft;
+  readonly index: number;
+  readonly providers: readonly ProviderSummary[];
+  readonly removable: boolean;
+  readonly onPatch: (patch: Partial<AgentDraft>) => void;
+  readonly onRemove: () => void;
+}): JSX.Element {
+  const provider = providers.find((entry) => entry.metadata.id === agent.providerId);
+  const canSelectModel =
+    (provider?.capabilities.supported.includes("modelSelection") ?? false) &&
+    (provider?.models.length ?? 0) > 0;
+
+  return (
+    <fieldset className="agent-draft">
+      <legend className="field__description">
+        Agent {index + 1}
+        {index === 0 ? " · lead" : ""}
+      </legend>
+      <div className="agent-draft__row">
         <label className="stacked-field">
-          <span className="field__description">Provider for every agent</span>
+          <span className="field__description">Name</span>
+          <input
+            className="text-input"
+            value={agent.name}
+            placeholder="Builder"
+            onChange={(event) => onPatch({ name: event.target.value })}
+          />
+        </label>
+        <label className="stacked-field">
+          <span className="field__description">Role</span>
+          <input
+            className="text-input"
+            value={agent.role}
+            placeholder="implements"
+            onChange={(event) => onPatch({ role: event.target.value })}
+          />
+        </label>
+      </div>
+      <div className="agent-draft__row">
+        <label className="stacked-field">
+          <span className="field__description">Provider</span>
           <select
             className="select"
-            value={providerId}
-            onChange={(event) => setProviderId(event.target.value)}
+            aria-label={`Provider for agent ${index + 1}`}
+            value={agent.providerId}
+            onChange={(event) => onPatch({ providerId: event.target.value })}
           >
-            {providers.map((provider) => (
-              <option key={provider.metadata.id} value={provider.metadata.id}>
-                {provider.metadata.displayName}
+            {providers.map((entry) => (
+              <option key={entry.metadata.id} value={entry.metadata.id}>
+                {providerLabel(entry)}
               </option>
             ))}
           </select>
         </label>
-        <label className="stacked-field">
-          <span className="field__description">
-            Agents, one per line as <code>Name = role</code>. The first is the
-            lead.
-          </span>
-          <textarea
-            className="text-input text-input--multiline"
-            rows={4}
-            value={roster}
-            spellCheck={false}
-            onChange={(event) => setRoster(event.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          className="ghost-button"
-          disabled={saving || name.trim().length === 0}
-          onClick={() => void submit()}
-        >
-          {saving ? "Creating" : "Create team"}
-        </button>
+        {canSelectModel && provider ? (
+          <label className="stacked-field">
+            <span className="field__description">Model</span>
+            <select
+              className="select"
+              aria-label={`Model for agent ${index + 1}`}
+              value={agent.modelId}
+              onChange={(event) => onPatch({ modelId: event.target.value })}
+            >
+              <option value="">Default model</option>
+              {provider.models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {removable ? (
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={onRemove}
+            aria-label={`Remove agent ${index + 1}`}
+          >
+            <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+            Remove
+          </button>
+        ) : null}
       </div>
-    </section>
+    </fieldset>
   );
 }
 

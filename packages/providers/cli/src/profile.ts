@@ -188,6 +188,12 @@ export const cliProviderProfileSchema = z.object({
   /** Added when continuing a provider session. Supports {providerSessionId}. */
   resumeArgs: z.array(z.string()).default([]),
   /**
+   * Lists the models the account may use, one `provider/model` per stdout
+   * line (like `opencode models`). Empty means the tool has no such command
+   * and the list stays manual (spec §21: nothing is guessed on its behalf).
+   */
+  modelsArgs: z.array(z.string()).default([]),
+  /**
    * "append" adds the resume arguments after the base ones; "replace" swaps the
    * base arguments out entirely, for CLIs where resuming is its own subcommand.
    */

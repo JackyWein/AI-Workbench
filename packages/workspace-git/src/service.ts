@@ -60,4 +60,29 @@ export class GitService {
       return notARepository;
     }
   }
+
+  /** Unified diff for one file (spec §28). Empty when there is nothing to show. */
+  async diff(workingDirectory: string, relativePath: string, staged: boolean): Promise<string> {
+    if (!(await this.isAvailable())) {
+      return "";
+    }
+    try {
+      const { stdout, exit } = await this.#transport.exec({
+        args: staged
+          ? ["diff", "--cached", "--", relativePath]
+          : ["diff", "--", relativePath],
+        cwd: workingDirectory,
+      });
+      if (exit.code !== 0) {
+        return "";
+      }
+      return stdout.slice(0, 200 * 1024);
+    } catch (error) {
+      this.#logger.debug("Git diff failed", {
+        workingDirectory,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return "";
+    }
+  }
 }

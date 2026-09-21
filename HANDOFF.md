@@ -62,31 +62,110 @@ it is where most of the honest claims come from.
 - Eight validated `statusIsland.*` IPC channels, the island's own small preload
   bridge, close-to-tray behaviour, and the full preferences block in Settings.
 
-### Not done
+### Not done (updated 2026-09-21, still on `claude/repo-setup-instructions-8tgcbw`)
 
-1. **Command palette entries for the island.** This is literally where the
-   session stopped: `apps/desktop/src/renderer/components/CommandPalette.tsx`
-   was open to add "Show/Hide Status Island", "Cycle island widget" and
-   "Pin: …" commands. The store actions they need already exist
-   (`cycleIslandWidget`, `setIslandPreferences`). Spec §100 asks for click,
-   scroll, keyboard and palette; only the palette route is missing.
-2. **No startup check for the island yet.** Every other G6 claim will need one
-   before `PROGRESS.md` can tick it. The pattern to copy is the team check in
-   `apps/desktop/src/main/startup-check.ts`: drive the real thing, assert on
-   state the application actually holds, never on a selector alone.
-3. **`PROGRESS.md` has no G6 criterion ticked.** That is deliberate. Do not tick
-   any of the 22 until `pnpm verify` proves it. The island code compiles and
-   the service is tested, but the window, the tray and the deep-link have not
-   been exercised in a running application.
+1. **Command palette entries for the island — DONE, committed.** Commit
+   `6ff6209` added "Show/Hide Status Island", "Cycle Status Island widget",
+   "Status Island: automatic" and "Pin Status Island: …" to
+   `apps/desktop/src/renderer/components/CommandPalette.tsx`, with a
+   startup-check step driving the cycle entry through the real palette.
+2. **Island startup checks — WRITTEN in the working tree, NOT yet proven.**
+   `apps/desktop/src/main/startup-check.ts` now drives the island in the
+   running app (enable, separate window, hide/show, least-privilege bridge,
+   preferences round-trip, custom position with clamping, restart persistence,
+   completed/attention/error entries, palette + keyboard + wheel cycling,
+   pinning order, deep-link open, return to compact, hide-main-while-running).
+   Supporting uncommitted changes: island starts in check mode
+   (`index.ts`), `configure`/`apply` split + focusable window + no-move-loop
+   (`status-island.ts`), `cycle` persistence + `setMainVisible`
+   (`island-controller.ts`), per-page preload bridges (`preload/index.ts`),
+   island keyboard/wheel (`renderer/island/main.tsx`), `IpcInput` vs
+   `IpcHandlerInput` (`shared/ipc/contract.ts`), `[fail:]`/`[ask:]` mock
+   markers (`mock/team-reply.ts` + new `team-reply.test.ts`) and lead marking
+   (`team/prompt.ts`). `pnpm typecheck`, `pnpm lint`, `pnpm test`
+   (224 passed) and `pnpm build` are green on Windows. `pnpm verify:app`
+   cannot run on this Windows box (no bash/Xvfb; `bash scripts/verify-app.sh`
+   fails with REGDB_E_CLASSNOTREG), so the island checks have NOT been
+   executed end-to-end yet — run them on Linux/macOS before ticking anything.
+3. **`PROGRESS.md` has no G6 criterion ticked.** That is still deliberate. Do
+   not tick any of the 22 until `pnpm verify` (including `verify:app`)
+   proves it on a machine that can run it.
 4. `packages/status` is not yet listed in `PROGRESS.md`'s verification section.
+
+## Stand 2026-09-22 (Style-Wunsch + Kritik-Fixes, alles unverified bis Linux-verify)
+
+- **Agents-Grid 2×2 gebaut:** neu `apps/desktop/src/renderer/components/AgentsView.tsx`
+  (LaunchBar capability-gefiltert, Tiles mit Logo/LIVE/ActivityTrace/XtermPane,
+  Chat/Agents-Toggle), verdrahtet in `App.tsx`, Styles in `app.css`.
+- **Multi-Account + Logos sichtbar:** `ProvidersView.tsx` (Logo + AccountsSection
+  mit Connect/Disconnect über existierende `account.*` IPC),
+  `SessionHeader.tsx` + `ModelPicker.tsx` + `TeamsView.tsx` zeigen
+  `providerLabel` (`lib/provider-label.ts`, z.B. „Claude Code · Arbeit").
+- **Architektur-Fixes aus Kritiken:** Orchestrator Hot-Loop + Timeout-Cancel +
+  Batch-Budget (`team/orchestrator.ts`), `failTask` Terminal-Guard
+  (`team/service.ts`), Session Double-Run + Failed-Answer
+  (`core/session-manager.ts`), `#seen`-Cap (`status/attention-service.ts`),
+  Island-Refresh-Guard + Event-Unsubscribe (`island-controller.ts`),
+  Terminal-Disposables (`terminal/manager.ts`), nur-https `openExternal`
+  (`main/window.ts`), tote `visually-hidden hidden`-Spans entfernt.
+- `pnpm typecheck/lint/build` grün auf Windows. `pnpm test` für
+  team/status/terminal grün (42 passed). Voll-`verify:app` weiter nur auf
+  Linux/macOS möglich. `PROGRESS.md` unverändert (kein Tick ohne Beweis).
+
+## Stand 2026-09-22 spät (Remote-MCP + Perf + Polish drin)
+
+- **G4 Remote-MCP fertig implementiert:** `mcp/manager.ts` http/sse mit
+  `credentialReference` (Secret nur via CredentialManager, nie geloggt),
+  `reconnect`/`health`/`latencyMs`, 18/18 MCP-Tests grün. Wiring in
+  `main/services.ts` nachgezogen (`credentials.resolve`). Offen: echte
+  `credential_reference`-Spalte + Migration (Referenz liegt derzeit im
+  Env-Bag unter reserviertem Key, dokumentiert in `mcp-service.ts`).
+- **G7 Perf:** Chat-Fenster + Memo, Team-Paging, Xterm-Caps, Terminal-Chunks,
+  Event-Flush — `typecheck/lint` grün.
+- **G7 Quiet-Polish:** Skills/Plugins/MCP-Collapse, Popover statt `title`,
+  Reduced-Motion, Roving-Tabs, Tokens, Island `expanded`+Fokus.
+  Startup-Check Skill-Schritt an Collapse angepasst.
+- **Offen:** OpenAI-compat + Custom-UI Builder, Team-MCP-Handover Builder,
+  danach Voll-`test`/`build`, Kritik-Runde 2.
+
+## Stand 2026-09-22 Audit-Runde (Spec gegen Code, Erweiterungen unangetastet)- **Team-Audit (§39-53):** §50 `USER_ATTENTION_REQUIRED` nie emittiert →
+  jetzt in `requestHelp` + Stall; §52 Lead-null angeglichen (kein Lead →
+  jeder darf finishen, wie MCP); §53 Resume resettet `claimed/running` →
+  `ready` + persistiert. Tests 50/50 grün.
+- **G1-G3-Audit:** Session `enabled*` via CRUD (§22) nachgezogen
+  (Schema + Manager); File-Edit `files.write` (§27) + Git-Diff
+  `git.diff` (§28) mit IPC/UI-Backend implementiert.
+- **Island-Audit (§95-104):** `connectionHealth` in Defaults, Click-Cycle +
+  Right-Click-Back + Wheel-Throttle (§100), NaN-Guard, Solo „working"
+  (§103), Tray-Zähler aus echten Listen (§104), Display-Reset (§101),
+  `SECURITY.md`-Bridge-Drift korrigiert.
+- `typecheck/lint/build` grün. Verbleibend aus Audits: ProjectActivity-Widget,
+  Permission-Quelle, Provider-Disconnect/Build-Feeds, DB-Namens-Mapping-Doku,
+  Event-Namens-Mapping, Settings-Areas-Mapping, Dev-Mode-Panel, fehlende
+  §88-Komponenten, Release-Workflow, Upgrade-Doku.
+
+## Release 0.0.1 (2026-09-22)
+
+Commit auf `claude/repo-setup-instructions-8tgcbw`, Tag `v0.0.1`. Enthalten:
+G6-Island + Tray + Startup-Checks, Agents-Grid, Multi-Account, Logos,
+Remote-MCP, OpenAI-compat + Custom-Provider, Team-MCP-Handover, per-Agent
+Teams, Auto-Updater (GitHub), Modell-Discovery (`modelsArgs`), Datei-Edit +
+Git-Diff, Session-Auto-Namen, Sidebar-Löschen, Workspace-Dedup, Quiet-Polish,
+Perf-Fenster, Bug-Hunt-Fixes (Races, Leaks, Shutdown, Recovery). Bewusst
+offen: Linux-`verify:app`, echte Codex/Gemini-Runs, Ordner-Dialog-Klick,
+PROGRESS-Ticks erst nach Beweisen. Ungeprüft: Mutex-Lost-Updates (Team-Budget),
+Session-Vollzeilen-Races, Plugin→Provider-Bridge, Agent-Scope (siehe Audits).
 
 ## What to do first
 
-1. Run `pnpm verify` and confirm it is green on your machine.
+1. On Linux/macOS: `pnpm verify` and confirm it is green. On Windows only
+   `typecheck + lint + test + build` are expected green; `verify:app` needs
+   bash/Xvfb/Electron display.
 2. Open the app with `pnpm dev`, turn the island on in Settings, and see it.
    Nothing in G6 should be ticked before a person has actually looked at it.
-3. Finish the palette commands (item 1 above).
-4. Write the island startup checks and tick G6 from what they prove.
+3. Run `verify:app` on Linux, fix any island check failures, then tick G6 in
+   `PROGRESS.md` from what the run proves (plus the tray check, which still
+   has no headless assertion).
 
 ## Things that will bite you if nobody says them
 

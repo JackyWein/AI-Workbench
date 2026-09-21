@@ -67,7 +67,8 @@ const api = {
 
 /**
  * The island's bridge is separate and tiny on purpose: a floating,
- * always-on-top window gets only what it needs (spec §5).
+ * always-on-top window gets only what it needs (spec §5). It may show state,
+ * navigate the main window, settle back and cycle widgets — nothing else.
  */
 const islandApi = {
   onState(listener: (state: IslandState) => void): () => void {
@@ -87,9 +88,23 @@ const islandApi = {
   async dismiss(): Promise<void> {
     await ipcRenderer.invoke("statusIsland.dismiss", undefined);
   },
+
+  async cycle(direction: 1 | -1): Promise<void> {
+    await ipcRenderer.invoke("statusIsland.cycle", { direction });
+  },
 };
 
 export type WorkbenchApi = typeof api;
 
-contextBridge.exposeInMainWorld("workbench", api);
-contextBridge.exposeInMainWorld("workbenchIsland", islandApi);
+// One preload file serves both pages, but each page gets only its own bridge:
+// the island page (island/index.html, in dev and in the build) can reach the
+// island channels and nothing else, while the main window keeps the full
+// contract. Least privilege per window, not per file (spec §5).
+// Declared locally: this project compiles the preload without the DOM lib.
+declare const location: { pathname: string };
+const isIslandPage = location.pathname.endsWith("island/index.html");
+if (isIslandPage) {
+  contextBridge.exposeInMainWorld("workbenchIsland", islandApi);
+} else {
+  contextBridge.exposeInMainWorld("workbench", api);
+}

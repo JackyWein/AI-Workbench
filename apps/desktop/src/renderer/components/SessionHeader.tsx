@@ -8,8 +8,11 @@ import type {
   Workspace,
 } from "@ai-workbench/shared";
 import { formatPath } from "../lib/format.js";
+import { providerLabel } from "../lib/provider-label.js";
 import { UsageIndicator } from "./UsageIndicator.js";
+import { Logo } from "./Logo.js";
 import { ModelPicker } from "./ModelPicker.js";
+import { ModeToggle } from "./AgentsView.js";
 import { useWorkbench } from "../store/workbench.js";
 
 interface SessionHeaderProps {
@@ -50,12 +53,28 @@ export function SessionHeader({
         <span className="header__subtitle">
           {workspace ? workspace.name : formatPath(session.workingDirectory, 28)}
         </span>
+        {provider ? (
+          <span
+            className="header__subtitle"
+            title={session.providerId ?? undefined}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+          >
+            <Logo
+              name={provider.metadata.icon}
+              label={provider.metadata.displayName}
+              size={14}
+            />
+            {providerLabel(provider)}
+          </span>
+        ) : null}
         {status && status !== "idle" ? (
           <span className="header__subtitle">{statusLabel(status)}</span>
         ) : null}
       </div>
 
       <div className="header__actions">
+        <ModeToggle />
+
         {busy ? (
           <button type="button" className="quiet-button" onClick={onCancel}>
             <Square size={12} strokeWidth={2} aria-hidden="true" />

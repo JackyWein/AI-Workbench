@@ -27,6 +27,8 @@ export interface WorkbenchIslandApi {
   open(target: IslandTarget): Promise<void>;
   /** Lets the island settle back to its compact state (spec §97). */
   dismiss(): Promise<void>;
+  /** Steps through the widgets that currently have something to say. */
+  cycle(direction: 1 | -1): Promise<void>;
 }
 
 declare global {

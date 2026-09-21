@@ -5,6 +5,7 @@ import type {
   IslandWidgetId,
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { UpdateSection } from "./UpdateSection.js";
 
 interface SettingsViewProps {
   readonly settings: AppSettings;
@@ -89,6 +90,8 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
             />
           </div>
         </section>
+
+        <UpdateSection currentVersion={appInfo?.version ?? null} />
 
         {appInfo ? (
           <section>
@@ -192,6 +195,25 @@ function IslandSettings({ settings }: { readonly settings: AppSettings }): JSX.E
           <option value="topRight">Top right</option>
           <option value="custom">Where I left it</option>
         </select>
+      </div>
+
+      <div className="field">
+        <div>
+          <p className="field__label">Display</p>
+          <p className="field__description">
+            {island.displayId === null
+              ? "Follows the active monitor."
+              : `Pinned to display ${island.displayId} by dragging. Resetting follows the active one again.`}
+          </p>
+        </div>
+        <button
+          type="button"
+          className="ghost-button"
+          disabled={island.displayId === null}
+          onClick={() => void setIslandPreferences({ displayId: null })}
+        >
+          Use active monitor
+        </button>
       </div>
 
       <div className="field">

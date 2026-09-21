@@ -349,6 +349,9 @@ export class TeamService {
 
   async failTask(taskId: string, error: string): Promise<TeamTask> {
     const task = this.#require(taskId);
+    if (isTerminal(task.status)) {
+      return task;
+    }
     const updated = await this.#update(task, {
       status: "failed",
       error,
@@ -442,6 +445,7 @@ export class TeamService {
       taskId: input.taskId ?? null,
       question: input.question,
     });
+    this.emitAttentionRequired(`Help requested by ${input.from}: ${input.question}`);
     return message;
   }
 

@@ -8,6 +8,8 @@
  */
 export const ACTIVITY_BUCKET_MS = 2000;
 export const ACTIVITY_BUCKETS = 30;
+/** Upper bound of tracked terminals; the map must not grow without end. */
+export const MAX_TRACKED_TERMINALS = 500;
 
 type Listener = () => void;
 
@@ -23,6 +25,8 @@ const series = new Map<string, Series>();
 const listeners = new Map<string, Set<Listener>>();
 let detach: (() => void) | null = null;
 let ticker: ReturnType<typeof setInterval> | null = null;
+/** Re-entrant calls share one tracker; the last cleanup stops it. */
+let refs = 0;
 
 function bucketStart(time: number): number {
   return time - (time % ACTIVITY_BUCKET_MS);
@@ -46,8 +50,9 @@ function notify(terminalId: string): void {
   }
 }
 
-/** Starts listening; safe to call more than once. */
+/** Starts listening; re-entrant, the last cleanup stops the tracker. */
 export function startActivityTracking(): () => void {
+  refs += 1;
   if (!detach) {
     detach = window.workbench.onTerminalEvent((event) => {
       if (event.type !== "data") {
@@ -62,6 +67,15 @@ export function startActivityTracking(): () => void {
           lastOutputAt: now,
         };
         series.set(event.terminalId, entry);
+        // The oldest series goes when the cap is reached; a closed
+        // terminal nobody watches must not pin memory forever.
+        while (series.size > MAX_TRACKED_TERMINALS) {
+          const oldest = series.keys().next();
+          if (oldest.done) {
+            break;
+          }
+          series.delete(oldest.value);
+        }
       }
       advance(entry, now);
       const last = entry.buckets.length - 1;
@@ -79,6 +93,10 @@ export function startActivityTracking(): () => void {
     }, ACTIVITY_BUCKET_MS / 2);
   }
   return () => {
+    refs = Math.max(0, refs - 1);
+    if (refs > 0) {
+      return;
+    }
     detach?.();
     detach = null;
     if (ticker) {
@@ -119,5 +137,8 @@ export function subscribeActivity(terminalId: string, listener: Listener): () =>
   set.add(listener);
   return () => {
     set?.delete(listener);
+    if ((set?.size ?? 0) === 0) {
+      listeners.delete(terminalId);
+    }
   };
 }

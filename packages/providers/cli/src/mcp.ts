@@ -21,6 +21,22 @@ export function mcpServersFor(toolAccess: ProviderToolAccess | undefined): CliMc
 }
 
 /**
+ * Adds a scoped extra server — the team MCP server — to the servers a CLI
+ * call is handed (spec §42). The entry replaces any same-named one, so a
+ * stale server in the tool's own configuration can never shadow the scoped
+ * connection. Without an entry the list passes through unchanged.
+ */
+export function withTeamMcpServer(
+  servers: readonly CliMcpServer[],
+  team: CliMcpServer | null | undefined,
+): CliMcpServer[] {
+  if (!team) {
+    return [...servers];
+  }
+  return [...servers.filter((server) => server.id !== team.id), team];
+}
+
+/**
  * Writes the servers in the form the profile names (spec §36, §38). Each
  * strategy is a configuration format several tools share, so a tool is a
  * choice of strategy in its profile rather than code here. A tool whose format
