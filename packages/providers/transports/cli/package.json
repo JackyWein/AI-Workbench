@@ -11,5 +11,8 @@
   "dependencies": {
     "@ai-workbench/provider-base": "workspace:*",
     "@ai-workbench/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*"
   }
 }

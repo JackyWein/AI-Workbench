@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { WorkspaceFileSystem } from "../file-system.js";
 import {
   PathBoundaryError,
@@ -52,13 +53,13 @@ describe.skipIf(process.platform === "win32")("symbolic links", () => {
   let outside: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "ai-workbench-fs-"));
-    outside = await mkdtemp(join(tmpdir(), "ai-workbench-out-"));
+    root = await makeTempDirectory("ai-workbench-fs-");
+    outside = await makeTempDirectory("ai-workbench-out-");
   });
 
   afterEach(async () => {
-    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
-    await rm(outside, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(root);
+    await removeTempDirectory(outside);
   });
 
   it("refuses a link that points outside the root", async () => {
@@ -89,12 +90,12 @@ describe("WorkspaceFileSystem", () => {
   let fs: WorkspaceFileSystem;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "ai-workbench-fs-"));
+    root = await makeTempDirectory("ai-workbench-fs-");
     fs = new WorkspaceFileSystem({ logger: nullLogger, maxReadBytes: 64 });
   });
 
   afterEach(async () => {
-    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(root);
   });
 
   it("lists directories before files, each sorted by name", async () => {

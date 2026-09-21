@@ -18,6 +18,32 @@ export interface ProviderContext {
   readonly resolveCredential?: (reference: string) => Promise<string | null>;
 }
 
+/**
+ * What tools a session may use, described structurally so the provider layer
+ * does not depend on the MCP package (spec §36).
+ */
+export interface ProviderToolAccess {
+  readonly kind: "provider-mcp" | "host-mediated" | "none";
+  /** Servers the provider is expected to connect to itself. */
+  readonly mcpServers: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly transport: string;
+    readonly command?: string;
+    readonly args?: readonly string[];
+    readonly env?: Readonly<Record<string, string>>;
+    readonly url?: string;
+    readonly cwd?: string;
+  }>;
+  /** Tools the application executes on the provider's behalf. */
+  readonly hostTools: ReadonlyArray<{
+    readonly serverId: string;
+    readonly name: string;
+    readonly description: string;
+    readonly inputSchema: Readonly<Record<string, unknown>>;
+  }>;
+}
+
 export interface ProviderSessionConfig {
   /** AI Workbench session id. Not the provider-native id. */
   readonly sessionId: string;
@@ -25,6 +51,8 @@ export interface ProviderSessionConfig {
   readonly modelId?: string;
   /** Effective, already-resolved skill instructions (spec §30). */
   readonly systemInstructions?: string;
+  /** Resolved by the tool bridge before the session is created. */
+  readonly toolAccess?: ProviderToolAccess;
   readonly settings?: Record<string, unknown>;
 }
 

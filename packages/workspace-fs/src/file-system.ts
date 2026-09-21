@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import type { Logger } from "@ai-workbench/shared";
 import {
@@ -6,6 +6,7 @@ import {
   resolveRealPathInsideRoot,
   toRelativePath,
 } from "./paths.js";
+import { resolve } from "node:path";
 
 export type EntryKind = "file" | "directory" | "other";
 
@@ -64,6 +65,7 @@ export class WorkspaceFileSystem {
 
   /** Lists one directory. Directories come first, then files, both by name. */
   async list(root: string, relativePath = ""): Promise<DirectoryEntry[]> {
+    const realRoot = await this.#realRoot(root);
     const directory = await resolveRealPathInsideRoot(root, relativePath);
     const entries = await readdir(directory, { withFileTypes: true });
 
@@ -83,7 +85,7 @@ export class WorkspaceFileSystem {
         const stats = await stat(absolute);
         results.push({
           name: entry.name,
-          path: toRelativePath(root, absolute),
+          path: toRelativePath(realRoot, absolute),
           kind: stats.isDirectory() ? "directory" : stats.isFile() ? "file" : "other",
           size: stats.size,
           modifiedAt: stats.mtime,
@@ -99,6 +101,7 @@ export class WorkspaceFileSystem {
 
   /** Reads a text file, refusing binary content and capping the size. */
   async readText(root: string, relativePath: string): Promise<FileContents> {
+    const realRoot = await this.#realRoot(root);
     const absolute = await resolveRealPathInsideRoot(root, relativePath);
     const stats = await stat(absolute);
 
@@ -111,7 +114,7 @@ export class WorkspaceFileSystem {
 
     if (isBinary(limited)) {
       return {
-        path: toRelativePath(root, absolute),
+        path: toRelativePath(realRoot, absolute),
         content: "",
         truncated: false,
         size: stats.size,
@@ -120,7 +123,7 @@ export class WorkspaceFileSystem {
     }
 
     return {
-      path: toRelativePath(root, absolute),
+      path: toRelativePath(realRoot, absolute),
       content: limited.toString("utf8"),
       truncated: buffer.length > limited.length,
       size: stats.size,
@@ -129,15 +132,20 @@ export class WorkspaceFileSystem {
   }
 
   async describe(root: string, relativePath: string): Promise<DirectoryEntry> {
+    const realRoot = await this.#realRoot(root);
     const absolute = await resolveRealPathInsideRoot(root, relativePath);
     const stats = await stat(absolute);
     return {
       name: basename(absolute),
-      path: toRelativePath(root, absolute),
+      path: toRelativePath(realRoot, absolute),
       kind: stats.isDirectory() ? "directory" : stats.isFile() ? "file" : "other",
       size: stats.size,
       modifiedAt: stats.mtime,
     };
+  }
+
+  async #realRoot(root: string): Promise<string> {
+    return realRootOf(root);
   }
 
   /** Whether a path exists inside the root, without throwing on absence. */
@@ -152,6 +160,18 @@ export class WorkspaceFileSystem {
       this.#logger.debug("Path does not exist", { relativePath });
       return false;
     }
+  }
+}
+
+/**
+ * Entries are resolved through their real path, so relative paths have to be
+ * computed against the real root as well.
+ */
+async function realRootOf(root: string): Promise<string> {
+  try {
+    return await realpath(resolve(root));
+  } catch {
+    return resolve(root);
   }
 }
 

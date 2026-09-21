@@ -1,7 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import type { AIProviderAdapter } from "@ai-workbench/provider-base";
@@ -62,7 +61,7 @@ describe("provider failure isolation", () => {
   let workspaces: WorkspaceManager;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-resilience-"));
+    directory = await makeTempDirectory("ai-workbench-resilience-");
     database = createDatabase({ file: join(directory, "test.db") });
     await runMigrations(database.client);
 
@@ -104,7 +103,7 @@ describe("provider failure isolation", () => {
     await sessions.shutdown();
     await providers.dispose();
     database.close();
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   async function sessionWith(providerId: string): Promise<string> {
@@ -191,7 +190,7 @@ describe("provider failure isolation", () => {
 
 describe("logging", () => {
   it("redacts anything that looks like a secret", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "ai-workbench-log-"));
+    const directory = await makeTempDirectory("ai-workbench-log-");
     const file = join(directory, "log.json");
     const logger = createLogger({ destinationFile: file, level: "info" });
 
@@ -212,6 +211,6 @@ describe("logging", () => {
     expect(contents).not.toContain("also-secret");
     expect(contents).toContain("[redacted]");
 
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 });

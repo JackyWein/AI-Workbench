@@ -1,5 +1,6 @@
 import init from "../migrations/0000_init.sql?raw";
 import providerConfigs from "../migrations/0001_provider-configs.sql?raw";
+import skillsPluginsMcp from "../migrations/0002_skills-plugins-mcp.sql?raw";
 
 export interface EmbeddedMigration {
   readonly id: string;
@@ -13,4 +14,5 @@ export interface EmbeddedMigration {
 export const migrations: EmbeddedMigration[] = [
   { id: "0000_init", sql: init },
   { id: "0001_provider_configs", sql: providerConfigs },
+  { id: "0002_skills_plugins_mcp", sql: skillsPluginsMcp },
 ];

@@ -1,7 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import { CliProviderAdapter, parseProfile } from "@ai-workbench/provider-cli";
 import type { AppEvent, ChatMessage } from "@ai-workbench/shared";
@@ -114,13 +113,13 @@ describe("command line provider end to end", () => {
   let app: Harness;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-cli-flow-"));
+    directory = await makeTempDirectory("ai-workbench-cli-flow-");
     app = await boot(directory);
   });
 
   afterEach(async () => {
     await app.dispose();
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   it("streams an answer and adopts the session id the CLI assigns", async () => {

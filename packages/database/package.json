@@ -17,6 +17,7 @@
     "drizzle-orm": "^0.45.0"
   },
   "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*",
     "drizzle-kit": "^0.31.0"
   }
 }

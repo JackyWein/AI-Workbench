@@ -5,11 +5,13 @@ import {
   normalizeError,
   type AIProviderAdapter,
   type ProviderSessionHandle,
+  type ProviderToolAccess,
 } from "@ai-workbench/provider-base";
 import type {
   ChatMessage,
   CreateSessionInput,
   Logger,
+  ProviderCapabilities,
   MessageStatus,
   MessageUsage,
   NormalizedProviderError,
@@ -22,6 +24,9 @@ import type { EventBus } from "./event-bus.js";
 import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
 import { createId } from "./ids.js";
 import type { ProviderManager } from "./provider-manager.js";
+import type { McpService } from "./mcp-service.js";
+import type { SkillService } from "./skill-service.js";
+import { ToolBridge } from "./tool-bridge.js";
 import type { WorkspaceManager } from "./workspace-manager.js";
 
 export class SessionNotFoundError extends Error {
@@ -58,6 +63,9 @@ export interface SessionManagerOptions {
   readonly logger: Logger;
   readonly providers: ProviderManager;
   readonly workspaces: WorkspaceManager;
+  /** Optional: without them a session simply gets no skills and no tools. */
+  readonly skills?: SkillService;
+  readonly mcp?: McpService;
 }
 
 /**
@@ -71,6 +79,9 @@ export class SessionManager {
   readonly #logger: Logger;
   readonly #providers: ProviderManager;
   readonly #workspaces: WorkspaceManager;
+  readonly #skills: SkillService | undefined;
+  readonly #mcp: McpService | undefined;
+  readonly #toolBridge = new ToolBridge();
   readonly #runs = new Map<string, ActiveRun>();
 
   constructor(options: SessionManagerOptions) {
@@ -79,6 +90,8 @@ export class SessionManager {
     this.#logger = options.logger.child("SESSION");
     this.#providers = options.providers;
     this.#workspaces = options.workspaces;
+    this.#skills = options.skills;
+    this.#mcp = options.mcp;
   }
 
   async list(workspaceId?: string): Promise<Session[]> {
@@ -445,6 +458,85 @@ export class SessionManager {
     this.#publishStatus(sessionId, status === "failed" ? "error" : "idle");
   }
 
+  /** Skills that apply to this session, as provider system instructions. */
+  async #buildSystemInstructions(
+    session: Session,
+    capabilities: ProviderCapabilities | null,
+  ): Promise<string> {
+    if (!this.#skills) {
+      return "";
+    }
+    try {
+      const effective = await this.#skills.resolveForSession({
+        sessionId: session.id,
+        workspaceId: session.workspaceId,
+        ...(capabilities ? { capabilities } : {}),
+      });
+      return this.#skills.buildInstructions(effective);
+    } catch (error) {
+      // A skill problem must not stop the conversation.
+      this.#logger.warn("Skills could not be resolved", {
+        sessionId: session.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return "";
+    }
+  }
+
+  /** Tool access for this session, decided by capability rather than brand. */
+  async #buildToolAccess(
+    session: Session,
+    capabilities: ProviderCapabilities | null,
+  ): Promise<ProviderToolAccess | null> {
+    if (!this.#mcp || !capabilities) {
+      return null;
+    }
+    try {
+      const enabledServerIds = await this.#mcp.enabledForSession(session.id);
+      if (enabledServerIds.length === 0) {
+        return null;
+      }
+
+      const plan = this.#toolBridge.plan({
+        capabilities,
+        enabledServerIds,
+        configs: await this.#mcp.list(),
+        statuses: this.#mcp.statuses(),
+        toolsFor: (ids) => this.#mcp!.manager.toolsForSession(ids),
+      });
+
+      for (const entry of plan.unavailable) {
+        this.#logger.warn("MCP server is enabled but unusable", {
+          sessionId: session.id,
+          serverId: entry.id,
+          reason: entry.reason,
+        });
+      }
+
+      return {
+        kind: plan.kind,
+        mcpServers: plan.mcpServers,
+        hostTools: plan.hostTools,
+      };
+    } catch (error) {
+      this.#logger.warn("Tool access could not be resolved", {
+        sessionId: session.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  async #safeCapabilities(
+    adapter: AIProviderAdapter,
+  ): Promise<ProviderCapabilities | null> {
+    try {
+      return await adapter.getCapabilities();
+    } catch {
+      return null;
+    }
+  }
+
   /** Stores a provider-assigned session id and tells the UI about it. */
   async #persistProviderSessionId(
     sessionId: string,
@@ -475,10 +567,16 @@ export class SessionManager {
     session: Session,
     adapter: AIProviderAdapter,
   ): Promise<{ handle: ProviderSessionHandle }> {
+    const capabilities = await this.#safeCapabilities(adapter);
+    const systemInstructions = await this.#buildSystemInstructions(session, capabilities);
+    const toolAccess = await this.#buildToolAccess(session, capabilities);
+
     const config = {
       sessionId: session.id,
       workingDirectory: session.workingDirectory,
       ...(session.modelId ? { modelId: session.modelId } : {}),
+      ...(systemInstructions ? { systemInstructions } : {}),
+      ...(toolAccess ? { toolAccess } : {}),
     };
 
     let info = null;

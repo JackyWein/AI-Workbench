@@ -11,5 +11,8 @@
   "dependencies": {
     "@ai-workbench/shared": "workspace:*",
     "node-pty": "^1.1.0"
+  },
+  "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*"
   }
 }

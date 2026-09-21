@@ -11,5 +11,8 @@
   "dependencies": {
     "@ai-workbench/shared": "workspace:*",
     "@ai-workbench/transport-cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*"
   }
 }

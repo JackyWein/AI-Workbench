@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { execCli } from "@ai-workbench/transport-cli";
 import { parseStatus } from "../parse.js";
 import { GitService } from "../service.js";
@@ -90,12 +90,12 @@ describe("GitService against a real repository", () => {
   let service: GitService;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-git-"));
+    directory = await makeTempDirectory("ai-workbench-git-");
     service = new GitService({ logger: nullLogger });
   });
 
   afterEach(async () => {
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   it("reports a directory that is not a repository", async () => {

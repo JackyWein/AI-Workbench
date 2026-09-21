@@ -28,11 +28,10 @@ mkdir -p "$DATA_DIR" "$WORKSPACE_DIR"
 
 trap 'rm -rf "$WORK_DIR"' EXIT
 
-ELECTRON_ARGS=(apps/desktop/out/main/index.js)
-if [ "$(id -u)" = "0" ]; then
-  # Chromium refuses its own sandbox as root; this affects the check only.
-  ELECTRON_ARGS=(--no-sandbox "${ELECTRON_ARGS[@]}")
-fi
+# Chromium's SUID sandbox needs a root-owned helper, which neither a container
+# nor a CI runner provides. This concession applies to the check only; the
+# packaged application keeps its sandbox.
+ELECTRON_ARGS=(--no-sandbox apps/desktop/out/main/index.js)
 
 RUNNER=()
 if [ -z "${DISPLAY:-}" ] && command -v xvfb-run >/dev/null 2>&1; then

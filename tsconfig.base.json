@@ -33,7 +33,12 @@
       "@ai-workbench/transport-cli": ["./packages/providers/transports/cli/src/index.ts"],
       "@ai-workbench/workspace-fs": ["./packages/workspace-fs/src/index.ts"],
       "@ai-workbench/workspace-git": ["./packages/workspace-git/src/index.ts"],
+      "@ai-workbench/credentials": ["./packages/credentials/src/index.ts"],
+      "@ai-workbench/mcp": ["./packages/mcp/src/index.ts"],
+      "@ai-workbench/plugins": ["./packages/plugins/src/index.ts"],
+      "@ai-workbench/skills": ["./packages/skills/src/index.ts"],
       "@ai-workbench/terminal": ["./packages/terminal/src/index.ts"],
+      "@ai-workbench/test-support": ["./packages/test-support/src/index.ts"],
       "@ai-workbench/ui": ["./packages/ui/src/index.ts"],
       "@ai-workbench/ui/*": ["./packages/ui/src/*"]
     }

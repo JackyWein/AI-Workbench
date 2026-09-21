@@ -1,7 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import {
   CliProviderAdapter,
@@ -91,13 +90,13 @@ describe.skipIf(!enabled)("installed provider CLI, end to end", () => {
   let app: Harness;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-real-"));
+    directory = await makeTempDirectory("ai-workbench-real-");
     app = await boot(directory);
   });
 
   afterEach(async () => {
     await app.dispose();
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   it("detects the installed tool", async () => {

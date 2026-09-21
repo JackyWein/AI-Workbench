@@ -1,8 +1,8 @@
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { chmod, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { ProviderError } from "@ai-workbench/provider-base";
 import { extractVersion, findExecutable, probeVersion } from "../discovery.js";
 import { AsyncQueue, LineAssembler } from "../lines.js";
@@ -172,11 +172,11 @@ describe("executable discovery", () => {
   let directory: string;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-path-"));
+    directory = await makeTempDirectory("ai-workbench-path-");
   });
 
   afterEach(async () => {
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   it("finds an executable on PATH", async () => {
@@ -192,7 +192,10 @@ describe("executable discovery", () => {
     const found = await findExecutable("demo-cli", {
       env: { PATH: directory, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
     });
-    expect(found).toEqual({ path: executable, source: "path" });
+    // The extension comes from PATHEXT and keeps its casing, which need not
+    // match the file on disk; Windows paths are case-insensitive.
+    expect(found?.source).toBe("path");
+    expect(found?.path.toLowerCase()).toBe(executable.toLowerCase());
   });
 
   it.skipIf(process.platform === "win32")(

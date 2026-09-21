@@ -1,7 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import type { AppEvent, ChatMessage } from "@ai-workbench/shared";
@@ -89,13 +88,13 @@ describe("session vertical slice", () => {
   let app: TestApp;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-"));
+    directory = await makeTempDirectory("ai-workbench-");
     app = await bootApp(directory);
   });
 
   afterEach(async () => {
     await app.dispose();
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   it("creates a workspace and a session with sensible defaults", async () => {
@@ -165,7 +164,7 @@ describe("session vertical slice", () => {
   });
 
   it("stops a response on request and keeps what arrived", async () => {
-    const slowDirectory = await mkdtemp(join(tmpdir(), "ai-workbench-slow-"));
+    const slowDirectory = await makeTempDirectory("ai-workbench-slow-");
     const slowApp = await bootApp(slowDirectory, {
       chunkDelayMs: 8,
       startupDelayMs: 8,
@@ -191,7 +190,7 @@ describe("session vertical slice", () => {
       expect(stored.at(-1)?.status).toBe("cancelled");
     } finally {
       await slowApp.dispose();
-      await rm(slowDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      await removeTempDirectory(slowDirectory);
     }
   });
 
@@ -216,7 +215,7 @@ describe("session vertical slice", () => {
   });
 
   it("refuses a second message while one is in flight", async () => {
-    const busyDirectory = await mkdtemp(join(tmpdir(), "ai-workbench-busy-"));
+    const busyDirectory = await makeTempDirectory("ai-workbench-busy-");
     const busyApp = await bootApp(busyDirectory, {
       chunkDelayMs: 8,
       startupDelayMs: 8,
@@ -239,7 +238,7 @@ describe("session vertical slice", () => {
       await waitForMessage(busyApp.events, messageId);
     } finally {
       await busyApp.dispose();
-      await rm(busyDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+      await removeTempDirectory(busyDirectory);
     }
   });
 

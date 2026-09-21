@@ -1,7 +1,6 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, type DatabaseHandle } from "../client.js";
 import { runMigrations } from "../migrator.js";
 import { migrations } from "../migrations.js";
@@ -11,13 +10,13 @@ describe("migrations", () => {
   let handle: DatabaseHandle;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-db-"));
+    directory = await makeTempDirectory("ai-workbench-db-");
     handle = createDatabase({ file: join(directory, "test.db") });
   });
 
   afterEach(async () => {
     handle.close();
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   it("ships at least one generated migration", () => {

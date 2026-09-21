@@ -10,5 +10,8 @@
   },
   "dependencies": {
     "@ai-workbench/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*"
   }
 }

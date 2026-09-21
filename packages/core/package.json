@@ -9,11 +9,18 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ai-workbench/credentials": "workspace:*",
     "@ai-workbench/database": "workspace:*",
+    "@ai-workbench/mcp": "workspace:*",
+    "@ai-workbench/plugins": "workspace:*",
     "@ai-workbench/provider-base": "workspace:*",
     "@ai-workbench/shared": "workspace:*",
+    "@ai-workbench/skills": "workspace:*",
     "@ai-workbench/workspace-fs": "workspace:*",
     "drizzle-orm": "^0.45.0",
     "pino": "^9.6.0"
+  },
+  "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*"
   }
 }

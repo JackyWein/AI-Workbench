@@ -1,7 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import {
   TerminalLimitError,
   TerminalManager,
@@ -49,7 +47,7 @@ describe("TerminalManager", () => {
   let manager: TerminalManager;
 
   beforeEach(async () => {
-    directory = await mkdtemp(join(tmpdir(), "ai-workbench-terminal-"));
+    directory = await makeTempDirectory("ai-workbench-terminal-");
     output = "";
     exits = [];
     manager = new TerminalManager({
@@ -64,7 +62,7 @@ describe("TerminalManager", () => {
 
   afterEach(async () => {
     manager.closeAll();
-    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
+    await removeTempDirectory(directory);
   });
 
   it("starts a shell in the session's working directory", async () => {
@@ -134,7 +132,14 @@ describe("TerminalManager", () => {
       (value) => value !== "0",
     );
 
-    expect(exits[0]).toMatchObject({ id: info.id, code: 7 });
+    // ConPTY does not forward the shell's own exit code, so only POSIX can
+    // assert the value. What the manager owes on every platform is the same:
+    // report the exit for that terminal, with a code, and forget it.
+    expect(exits[0]?.id).toBe(info.id);
+    expect(typeof exits[0]?.code).toBe("number");
+    if (!isWindows) {
+      expect(exits[0]?.code).toBe(7);
+    }
     expect(manager.has(info.id)).toBe(false);
   });
 
