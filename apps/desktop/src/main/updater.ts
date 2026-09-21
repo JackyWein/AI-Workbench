@@ -72,10 +72,16 @@ export async function checkForUpdates(): Promise<{ started: boolean }> {
   }
   if (!app.isPackaged) {
     current.logger.debug("Skipping update check: app is not packaged");
+    setState({ status: "error", error: "Updates are only available in the installed app, not in development." });
+    publish({ type: "update.error", message: "Updates are only available in the installed app, not in development." });
     return { started: false };
   }
   const updater = await ensureSetup();
   if (!updater) {
+    const message = "The updater module could not be loaded. Reinstall the app from GitHub Releases.";
+    current.logger.warn("Update check skipped: no updater", {});
+    setState({ status: "error", error: message });
+    publish({ type: "update.error", message });
     return { started: false };
   }
   try {
@@ -215,17 +221,40 @@ async function setup(): Promise<AutoUpdaterLike | null> {
   }
 }
 
+/**
+ * Finds the updater instance in a dynamically imported module. electron-updater
+ * is CommonJS, so depending on the loader the instance sits top-level, under
+ * `default`, or under `module.exports` — checking only one shape is how the
+ * update button silently died (no shape matched, every check no-op'd).
+ */
+export function resolveAutoUpdater(mod: unknown): AutoUpdaterLike | null {
+  if (typeof mod !== "object" || mod === null) {
+    return null;
+  }
+  const record = mod as {
+    autoUpdater?: unknown;
+    default?: unknown;
+    ["module.exports"]?: unknown;
+  };
+  for (const candidate of [record.autoUpdater, record.default, record["module.exports"]]) {
+    if (typeof candidate === "object" && candidate !== null) {
+      const inner = (candidate as { autoUpdater?: unknown }).autoUpdater;
+      const resolved = inner ?? candidate;
+      if (isAutoUpdaterLike(resolved)) {
+        return resolved;
+      }
+    }
+  }
+  return null;
+}
+
 async function loadAutoUpdater(): Promise<AutoUpdaterLike | null> {
   try {
     // A variable specifier on purpose (see the interface above): this stays a
     // runtime-only dependency and never breaks typecheck while uninstalled.
     const specifier = "electron-updater";
     const mod: unknown = await import(/* @vite-ignore */ specifier);
-    if (typeof mod !== "object" || mod === null) {
-      return null;
-    }
-    const candidate = (mod as { autoUpdater?: unknown }).autoUpdater;
-    return isAutoUpdaterLike(candidate) ? candidate : null;
+    return resolveAutoUpdater(mod);
   } catch {
     return null;
   }
