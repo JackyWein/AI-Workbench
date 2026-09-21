@@ -1,5 +1,21 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from "react";
+import type { IslandWidgetId } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+
+const ISLAND_WIDGET_LABELS: Record<IslandWidgetId, string> = {
+  needsAttention: "Needs attention",
+  activeAgents: "Active agents",
+  teamProgress: "Team progress",
+  providerUsage: "Usage",
+  completedWork: "Completed work",
+  errors: "Errors",
+  connectionHealth: "Connection health",
+  idle: "Idle",
+};
+
+function islandWidgetLabel(widget: IslandWidgetId): string {
+  return ISLAND_WIDGET_LABELS[widget];
+}
 
 interface Command {
   readonly id: string;
@@ -95,6 +111,43 @@ export function CommandPalette(): JSX.Element | null {
       },
     ];
 
+    // The Status Island is reachable from the keyboard as well as by click
+    // and scroll (spec §81, §100).
+    const island = settings.statusIsland;
+    list.push(
+      {
+        id: "island.toggle",
+        label: island.enabled ? "Hide Status Island" : "Show Status Island",
+        group: "Status Island",
+        run: () => state.setIslandPreferences({ enabled: !island.enabled }),
+      },
+      {
+        id: "island.cycle",
+        label: "Cycle Status Island widget",
+        group: "Status Island",
+        run: () => state.cycleIslandWidget(1),
+      },
+    );
+    if (island.pinnedWidget !== null) {
+      list.push({
+        id: "island.automatic",
+        label: "Status Island: automatic",
+        group: "Status Island",
+        run: () => state.pinIslandWidget(null),
+      });
+    }
+    for (const widget of island.enabledWidgets) {
+      if (widget === island.pinnedWidget) {
+        continue;
+      }
+      list.push({
+        id: `island.pin.${widget}`,
+        label: `Pin Status Island: ${islandWidgetLabel(widget)}`,
+        group: "Status Island",
+        run: () => state.pinIslandWidget(widget),
+      });
+    }
+
     if (activeSessionId) {
       list.push({
         id: "session.cancel",
@@ -151,7 +204,15 @@ export function CommandPalette(): JSX.Element | null {
     }
 
     return list;
-  }, [store, workspaces, sessions, providers, settings.theme, activeSessionId]);
+  }, [
+    store,
+    workspaces,
+    sessions,
+    providers,
+    settings.theme,
+    settings.statusIsland,
+    activeSessionId,
+  ]);
 
   const results = useMemo(() => {
     const needle = query.trim().toLowerCase();

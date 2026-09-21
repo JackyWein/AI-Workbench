@@ -17,6 +17,7 @@ import type {
   SkillScopes,
   IslandPreferences,
   IslandTarget,
+  IslandWidgetId,
   TeamDefinition,
   TeamRun,
   TeamRunSnapshot,
@@ -131,6 +132,8 @@ interface WorkbenchState {
 
   setIslandPreferences(patch: Partial<IslandPreferences>): Promise<void>;
   cycleIslandWidget(direction: 1 | -1): Promise<void>;
+  /** Keeps one widget on the island; null returns to automatic (spec §100). */
+  pinIslandWidget(widget: IslandWidgetId | null): Promise<void>;
   /** Opens the place an island entry is about (spec §98). */
   goTo(target: IslandTarget): Promise<void>;
 
@@ -559,6 +562,17 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async cycleIslandWidget(direction) {
     try {
       const state = await invoke("statusIsland.cycle", { direction });
+      set((current) => ({
+        settings: { ...current.settings, statusIsland: state.preferences },
+      }));
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async pinIslandWidget(widget) {
+    try {
+      const state = await invoke("statusIsland.pinWidget", { widget });
       set((current) => ({
         settings: { ...current.settings, statusIsland: state.preferences },
       }));

@@ -123,13 +123,18 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // Chromium only dispatches focus events to a page that has focus itself. A
+  // headless display has no window manager to hand it over, so the check asks
+  // for it explicitly rather than depending on whatever had focus before.
+  focusWindow(window);
   await check(
     "usage detail opens on keyboard focus",
     `(() => {
        const trigger = document.querySelector('.usage-indicator');
-       trigger?.focus();
-       return new Promise(resolve => setTimeout(
-         () => resolve(Boolean(document.querySelector('.popover__panel'))), 60));
+       if (!trigger) return false;
+       trigger.blur();
+       trigger.focus();
+       return ${waitFor("document.querySelector('.popover__panel')", 2000)};
      })()`,
   );
 
@@ -699,6 +704,14 @@ function resumeScenario(): string {
 }
 
 /** Polls a renderer-side condition until it holds or the budget runs out. */
+function focusWindow(window: BrowserWindow): void {
+  if (!window.isVisible()) {
+    window.show();
+  }
+  window.focus();
+  window.webContents.focus();
+}
+
 function waitFor(condition: string, timeoutMs = 4000): string {
   return `(() => new Promise(resolve => {
     const deadline = Date.now() + ${timeoutMs};
