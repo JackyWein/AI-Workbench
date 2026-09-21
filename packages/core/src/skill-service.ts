@@ -6,26 +6,20 @@ import {
   workspaceSkills,
   type SkillRow,
 } from "@ai-workbench/database";
-import {
-  SkillManager,
-  type EffectiveSkill,
-  type SkillManifest,
-  type SkillManifestInput,
-  type SkillScope,
-} from "@ai-workbench/skills";
-import type { Logger, ProviderCapabilities } from "@ai-workbench/shared";
+import { SkillManager } from "@ai-workbench/skills";
+import type {
+  EffectiveSkill,
+  Logger,
+  ProviderCapabilities,
+  SkillAssignmentInput,
+  SkillManifest,
+  SkillManifestInput,
+  SkillScope,
+} from "@ai-workbench/shared";
 
 export interface SkillServiceOptions {
   readonly db: Database;
   readonly logger: Logger;
-}
-
-export interface SkillAssignmentInput {
-  readonly skillId: string;
-  readonly scope: SkillScope;
-  /** Required for workspace and session scopes. */
-  readonly scopeId?: string;
-  readonly enabled: boolean;
 }
 
 /**

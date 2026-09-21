@@ -5,14 +5,14 @@ import {
   sessionMcpServers,
   type McpServerRow,
 } from "@ai-workbench/database";
+import type { McpManager } from "@ai-workbench/mcp";
 import {
   parseMcpServerConfig,
-  type McpManager,
+  type Logger,
   type McpServerConfig,
   type McpServerConfigInput,
   type McpServerStatus,
-} from "@ai-workbench/mcp";
-import type { Logger } from "@ai-workbench/shared";
+} from "@ai-workbench/shared";
 
 export interface McpServiceOptions {
   readonly db: Database;

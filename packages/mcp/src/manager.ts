@@ -6,7 +6,7 @@ import {
   type McpServerConfig,
   type McpServerStatus,
   type McpTool,
-} from "./config.js";
+} from "@ai-workbench/shared";
 
 interface Connection {
   readonly config: McpServerConfig;

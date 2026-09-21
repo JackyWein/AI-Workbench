@@ -50,6 +50,12 @@ select {
 .app {
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr) auto;
+  /*
+   * The row is bounded explicitly. A grid item's default `min-height: auto`
+   * lets a long screen push the row past the window, and since the body does
+   * not scroll that pushed the sidebar's own navigation out of reach.
+   */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
 }
 
@@ -57,6 +63,7 @@ select {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   background: var(--surface-base);
   border-left: 1px solid var(--border-subtle);
 }
@@ -610,6 +617,7 @@ select {
 
 .context {
   width: var(--context-width);
+  min-height: 0;
   border-left: 1px solid var(--border-subtle);
   padding: var(--space-5);
   display: flex;
@@ -852,6 +860,42 @@ select {
   color: var(--text-secondary);
 }
 
+/* --------------------------------------------------------- scope toggles -- */
+
+/*
+ * A skill or server is switched on per scope. The three checkboxes sit on one
+ * quiet line rather than in a card of their own.
+ */
+.scope-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.scope-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.scope-toggle input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.scope-toggle input:disabled,
+.scope-toggle:has(input:disabled) {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.context__group .scope-toggle {
+  padding: var(--space-1) 0;
+}
+
 /* --------------------------------------------------------- empty states -- */
 
 .empty {
@@ -915,6 +959,13 @@ select {
 
 .text-input:focus {
   border-color: var(--border-strong);
+}
+
+.text-input--multiline {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: var(--line-body);
+  resize: vertical;
 }
 
 /* ------------------------------------------------------ workspace panel -- */

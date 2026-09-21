@@ -7,9 +7,14 @@ import type { CliProviderProfileInput } from "./profile.js";
  *
  * The Claude Code profile was checked against the real tool: its flags against
  * `claude --help`, and its event mapping against a recorded live stream that is
- * replayed in the test suite. The other two are marked `unverified` — their
- * flags and event shapes are a documented starting point, not a validated
+ * replayed in the test suite. The rest are marked `unverified` — their flags
+ * and event shapes are a documented starting point, not a validated
  * integration, and the UI says so rather than implying more (spec §0).
+ *
+ * None of these tools has a command that lists the models an account may use,
+ * so only Claude Code ships one. The others start empty and are filled in on
+ * the Providers screen, which is also how a model reaches a provider the
+ * profiles do not know about.
  */
 
 /** Anthropic's Claude Code CLI, in non-interactive streaming JSON mode. */
@@ -111,8 +116,8 @@ export const codexProfile: CliProviderProfileInput = {
     "filesystem",
     "cliAuthentication",
   ],
-  // Left empty on purpose: add the models you actually use in provider
-  // settings rather than shipping a list that silently goes stale.
+  // The tool has no command that lists its models, so none are assumed. Add
+  // the ones your account can use under Providers.
   models: [],
   args: ["exec", "--json"],
   modelArgs: ["--model", "{model}"],
@@ -135,12 +140,43 @@ export const codexProfile: CliProviderProfileInput = {
   unverified: true,
 };
 
-/** Google's Gemini CLI, in non-interactive mode with plain text output. */
+/**
+ * Google's Antigravity CLI (`agy`), in headless mode with plain text output.
+ *
+ * It replaced the Gemini CLI, which Google retired for individual users; the
+ * separate `gemini` profile below stays for the paid plans that keep it.
+ */
+export const antigravityProfile: CliProviderProfileInput = {
+  schemaVersion: 1,
+  id: "antigravity",
+  displayName: "Antigravity",
+  description: "Google's terminal coding agent, run headlessly",
+  website: "https://antigravity.google",
+  command: "agy",
+  versionArgs: ["--version"],
+  auth: {
+    method: "cli",
+    loginHint: "Run `agy` once and complete the sign-in.",
+  },
+  capabilities: ["chat", "streaming", "modelSelection", "cliAuthentication"],
+  // The tool has no command that lists its models, so none are assumed. Add
+  // the ones your account can use under Providers.
+  models: [],
+  args: [],
+  modelArgs: ["--model", "{model}"],
+  promptVia: "arg",
+  promptArgs: ["--print", "{prompt}"],
+  // Plain stdout is the answer; no event format is assumed.
+  output: { format: "text" },
+  unverified: true,
+};
+
+/** Google's Gemini CLI, still available on the paid plans that kept it. */
 export const geminiProfile: CliProviderProfileInput = {
   schemaVersion: 1,
   id: "gemini",
-  displayName: "Gemini",
-  description: "Google's command line AI tool, run non-interactively",
+  displayName: "Gemini CLI",
+  description: "Google's previous command line tool, replaced by Antigravity",
   command: "gemini",
   versionArgs: ["--version"],
   auth: {
@@ -153,7 +189,6 @@ export const geminiProfile: CliProviderProfileInput = {
   modelArgs: ["--model", "{model}"],
   promptVia: "arg",
   promptArgs: ["--prompt", "{prompt}"],
-  // Plain stdout is the answer; no event format is assumed.
   output: { format: "text" },
   unverified: true,
 };
@@ -161,5 +196,6 @@ export const geminiProfile: CliProviderProfileInput = {
 export const builtInCliProfiles: CliProviderProfileInput[] = [
   claudeCodeProfile,
   codexProfile,
+  antigravityProfile,
   geminiProfile,
 ];

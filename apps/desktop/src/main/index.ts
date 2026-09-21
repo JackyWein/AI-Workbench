@@ -74,7 +74,10 @@ app.on("second-instance", () => {
   }
 });
 
-if (!app.requestSingleInstanceLock()) {
+// The startup check runs headlessly against its own user-data directory, so it
+// takes no lock: contending for one would make it quit silently — and exit 0 —
+// while another instance happens to be running, which reads as a pass.
+if (!startupCheckOnly && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.whenReady().then(bootstrap).catch((error: unknown) => {

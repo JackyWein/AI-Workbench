@@ -44,10 +44,18 @@ before it is accepted.
 ## Secrets
 
 No secret is stored in plaintext configuration and no secret is exposed to the
-renderer. The provider configuration carries a `credentialReference`, never a
-key; resolving a reference happens in the main process. The `CredentialManager`
-backed by OS keychains arrives with G4 — until then the application stores no
-credentials at all.
+renderer. The provider configuration and every plugin account carry a
+`credentialReference`, never a key; resolving a reference happens in the main
+process.
+
+The `CredentialManager` encrypts through the operating system's own secret
+storage — the Keychain on macOS, DPAPI on Windows, and the secret service on
+Linux — via Electron's `safeStorage`. Where no such storage is available the
+application **refuses to store the secret** and says why. There is no weaker
+fallback, because a secret a user believes is protected must never sit in the
+clear. The running application is checked against exactly this: connecting an
+account either stores it through the operating system or fails with the reason,
+and what comes back to the renderer never contains the secret.
 
 Logs redact anything named like a secret (`apiKey`, `token`, `accessToken`,
 `refreshToken`, `password`, `secret`, `credential`, `authorization`) at the

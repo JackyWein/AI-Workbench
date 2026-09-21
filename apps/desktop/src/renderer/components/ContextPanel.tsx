@@ -1,5 +1,6 @@
-import type { JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import type {
+  EffectiveSkill,
   MessageUsage,
   ProviderSummary,
   Session,
@@ -7,6 +8,8 @@ import type {
   Workspace,
 } from "@ai-workbench/shared";
 import { formatPath } from "../lib/format.js";
+import { describeError, invoke } from "../lib/client.js";
+import { useWorkbench } from "../store/workbench.js";
 
 interface ContextPanelProps {
   readonly session: Session;
@@ -73,7 +76,89 @@ export function ContextPanel({
           <p className="context__value">{context}</p>
         </div>
       ) : null}
+
+      <SessionSkills sessionId={session.id} />
+      <SessionTools sessionId={session.id} />
     </aside>
+  );
+}
+
+/** What this session actually composes into its instructions (spec §30). */
+function SessionSkills({ sessionId }: { readonly sessionId: string }): JSX.Element | null {
+  const [skills, setSkills] = useState<EffectiveSkill[]>([]);
+
+  useEffect(() => {
+    let current = true;
+    void invoke("skill.effectiveForSession", { sessionId })
+      .then((effective) => {
+        if (current) {
+          setSkills(effective);
+        }
+      })
+      // A skill list that cannot be read must not break the panel.
+      .catch(() => setSkills([]));
+    return () => {
+      current = false;
+    };
+  }, [sessionId]);
+
+  if (skills.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="context__group">
+      <p className="context__label">Skills</p>
+      {skills.map((entry) => (
+        <p className="context__value" key={entry.skill.id}>
+          {entry.skill.name}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+/** Which MCP servers this session may use (spec §38). */
+function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Element | null {
+  const servers = useWorkbench((state) => state.mcpServers);
+  const enabledIds = useWorkbench((state) => state.sessionMcpServerIds);
+  const statuses = useWorkbench((state) => state.mcpStatuses);
+  const refreshMcp = useWorkbench((state) => state.refreshMcp);
+  const setSessionMcpAccess = useWorkbench((state) => state.setSessionMcpAccess);
+  const setError = useWorkbench((state) => state.setError);
+
+  useEffect(() => {
+    void refreshMcp();
+  }, [sessionId, refreshMcp]);
+
+  if (servers.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="context__group">
+      <p className="context__label">MCP servers</p>
+      {servers.map((server) => {
+        const status = statuses.find((entry) => entry.id === server.id);
+        return (
+          <label className="scope-toggle" key={server.id}>
+            <input
+              type="checkbox"
+              checked={enabledIds.includes(server.id)}
+              onChange={(event) => {
+                void setSessionMcpAccess(server.id, event.target.checked).catch(
+                  (error: unknown) => setError(describeError(error)),
+                );
+              }}
+            />
+            <span>{server.name}</span>
+            {status && status.state !== "connected" ? (
+              <span className="row__meta">{status.state}</span>
+            ) : null}
+          </label>
+        );
+      })}
+    </div>
   );
 }
 

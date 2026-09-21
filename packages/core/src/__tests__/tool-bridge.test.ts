@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { McpServerConfig, McpServerStatus } from "@ai-workbench/mcp";
+import type { McpServerConfig, McpServerStatus } from "@ai-workbench/shared";
 import { ToolBridge } from "../tool-bridge.js";
 
 function config(id: string, enabled = true): McpServerConfig {

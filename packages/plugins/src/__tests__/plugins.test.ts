@@ -3,7 +3,7 @@ import {
   parsePlugin,
   type PluginAccount,
   type PluginManifestInput,
-} from "../manifest.js";
+} from "@ai-workbench/shared";
 import { DuplicatePluginError, PluginRegistry } from "../registry.js";
 
 const nullLogger = {

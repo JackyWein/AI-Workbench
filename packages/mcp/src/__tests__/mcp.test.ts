@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { parseMcpServerConfig } from "../config.js";
+import { parseMcpServerConfig } from "@ai-workbench/shared";
 import { McpManager } from "../manager.js";
 
 const nullLogger = {

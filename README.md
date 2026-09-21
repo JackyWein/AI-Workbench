@@ -29,11 +29,29 @@ Providers are pluggable and the core never names one:
 - **Claude Code** — the real CLI, driven non-interactively. Verified end to end:
   detection, streaming answers, account usage reported by the tool itself, and
   conversations resumed across turns and restarts
-- **Codex** and **Gemini** — shipped as profiles built on the same machinery,
-  but not yet verified against those tools, which the app says plainly
+- **Codex**, **Antigravity** and the older **Gemini CLI** — shipped as profiles
+  built on the same machinery, but not yet verified against those tools, which
+  the app says plainly
 
 A command line provider is described by a profile — executable, flags, output
-shape — so adding or fixing one is configuration, not a code change.
+shape — so adding or fixing one is configuration, not a code change. None of
+these tools can print the models an account may use, so only Claude Code ships
+a list; for the others you enter the models you have under **Providers**, and
+they become the session's model picker.
+
+Skills, plugins and MCP servers are part of the application, not of a provider:
+
+- **Skills** are provider-neutral instructions, switched on globally, per
+  workspace or per session, with the narrowest scope winning. They are imported
+  from a folder of Markdown or Claude-style skills and composed into whatever
+  the provider is given for that turn
+- **Plugins** carry access to an external service, and the account behind one is
+  connected once and shared by every plugin of the same service
+- **MCP servers** are configured once and each session decides which of them it
+  may use. A server that will not start is reported with the reason; remote
+  transports are honestly marked unsupported rather than faked
+- **Secrets** go into the operating system's own storage. Where there is none,
+  the application refuses to store them rather than writing them in the clear
 
 See `PROGRESS.md` for what is verified, measured only from acceptance criteria
 that a run of `pnpm verify` actually proves.

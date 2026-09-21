@@ -2,14 +2,21 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   EventBus,
+  McpService,
+  PluginService,
   ProviderConfigService,
   ProviderManager,
   SessionManager,
   SettingsService,
+  SkillService,
+  SqlCredentialStorage,
   UsageService,
   WorkspaceManager,
   createLogger,
 } from "@ai-workbench/core";
+import { CredentialManager } from "@ai-workbench/credentials";
+import { McpManager } from "@ai-workbench/mcp";
+import { ClaudeSkillImporter, MarkdownSkillImporter } from "@ai-workbench/skills";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import {
   CliProviderAdapter,
@@ -18,6 +25,7 @@ import {
 } from "@ai-workbench/provider-cli";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import { TerminalManager } from "@ai-workbench/terminal";
+import { SafeStorageEncryption } from "./safe-storage.js";
 import { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
 import { GitService } from "@ai-workbench/workspace-git";
 import type {
@@ -37,6 +45,12 @@ export interface AppServices {
   readonly sessions: SessionManager;
   readonly usage: UsageService;
   readonly settings: SettingsService;
+  readonly skills: SkillService;
+  readonly plugins: PluginService;
+  readonly mcp: McpService;
+  readonly credentials: CredentialManager;
+  /** Importers offered when the user adds skills from a folder (spec §31). */
+  readonly skillImporters: readonly (ClaudeSkillImporter | MarkdownSkillImporter)[];
   readonly files: WorkspaceFileSystem;
   readonly git: GitService;
   readonly terminals: TerminalManager;
@@ -112,12 +126,43 @@ export async function createServices(
   }
 
   const workspaces = new WorkspaceManager({ db: database.db, events, logger });
+
+  const credentials = new CredentialManager({
+    encryption: new SafeStorageEncryption(),
+    storage: new SqlCredentialStorage(database.db),
+    logger,
+  });
+  logger.child("PLUGIN").info("Secret storage", {
+    available: credentials.isAvailable(),
+    backend: credentials.describeBackend(),
+  });
+
+  const skills = new SkillService({ db: database.db, logger });
+  await skills.load();
+
+  const plugins = new PluginService({ db: database.db, logger, credentials });
+  await plugins.load();
+
+  const mcpManager = new McpManager({ logger, clientVersion: "1.0.0" });
+  const mcp = new McpService({ db: database.db, logger, manager: mcpManager });
+  // Servers the user enabled come up with the application; one that refuses to
+  // start is reported, never thrown (spec §60).
+  const connected = await mcp.connectEnabled();
+  if (connected.length > 0) {
+    logger.child("MCP").info("Configured servers", {
+      total: connected.length,
+      connected: connected.filter((status) => status.state === "connected").length,
+    });
+  }
+
   const sessions = new SessionManager({
     db: database.db,
     events,
     logger,
     providers,
     workspaces,
+    skills,
+    mcp,
   });
   const usage = new UsageService({ providers, events, logger });
   const settings = new SettingsService({ db: database.db, logger });
@@ -162,6 +207,11 @@ export async function createServices(
     sessions,
     usage,
     settings,
+    skills,
+    plugins,
+    mcp,
+    credentials,
+    skillImporters: [new ClaudeSkillImporter(), new MarkdownSkillImporter()],
     files,
     git,
     terminals,
@@ -173,6 +223,7 @@ export async function createServices(
       terminals.closeAll();
       terminalListeners.clear();
       await sessions.shutdown();
+      await mcpManager.disconnectAll();
       await providers.dispose();
       events.clear();
       database.close();

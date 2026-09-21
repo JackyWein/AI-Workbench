@@ -7,7 +7,7 @@ import {
   type PluginScope,
   type PluginScopes,
   type ResolvedPlugin,
-} from "./manifest.js";
+} from "@ai-workbench/shared";
 
 export class DuplicatePluginError extends Error {
   constructor(id: string) {

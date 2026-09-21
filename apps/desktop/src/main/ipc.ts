@@ -21,6 +21,17 @@ export interface RegisterIpcOptions {
   readonly userDataPath: string;
 }
 
+
+/** The services report scope decisions as maps; the contract carries lists. */
+function toAssignments<K extends string>(
+  key: K,
+  decisions: Record<string, boolean>,
+): Array<Record<K, string> & { enabled: boolean }> {
+  return Object.entries(decisions).map(
+    ([id, enabled]) => ({ [key]: id, enabled }) as Record<K, string> & { enabled: boolean },
+  );
+}
+
 /**
  * Registers one validated handler per contract channel (spec §105). Input is
  * parsed with the channel's schema before any service is touched, and errors
@@ -134,6 +145,123 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "terminal.close": (input) => ({
       closed: services.terminals.close(input.terminalId),
     }),
+
+    "skill.list": () => services.skills.list(),
+    "skill.save": (input) => services.skills.save(input),
+    "skill.delete": async (input) => ({
+      deleted: await services.skills.delete(input.id),
+    }),
+    "skill.importFromDirectory": async () => {
+      const window = BrowserWindow.getFocusedWindow();
+      const properties = ["openDirectory"] as const;
+      const result = await (window
+        ? dialog.showOpenDialog(window, { properties: [...properties] })
+        : dialog.showOpenDialog({ properties: [...properties] }));
+      const directory = result.canceled ? null : result.filePaths[0];
+      if (!directory) {
+        return { cancelled: true, imported: [], failed: [] };
+      }
+
+      // Every importer that recognizes the folder contributes; a format that
+      // fails is reported by name rather than failing the whole import.
+      const failed: Array<{ path: string; reason: string }> = [];
+      const inputs = [];
+      for (const importer of services.skillImporters) {
+        try {
+          if (await importer.canImport(directory)) {
+            inputs.push(...(await importer.import(directory)));
+          }
+        } catch (error) {
+          failed.push({
+            path: `${directory} (${importer.displayName})`,
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      const imported = [];
+      for (const skill of inputs) {
+        try {
+          imported.push(await services.skills.save(skill));
+        } catch (error) {
+          failed.push({
+            path: String(skill.id ?? "unnamed skill"),
+            reason: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      return { cancelled: false, imported, failed };
+    },
+    "skill.assign": async (input) => {
+      await services.skills.assign(input);
+      return { assigned: true };
+    },
+    "skill.assignments": async (input) => {
+      const decisions = await services.skills.assignmentsFor(input);
+      return {
+        global: toAssignments("skillId", decisions.global),
+        workspace: toAssignments("skillId", decisions.workspace),
+        session: toAssignments("skillId", decisions.session),
+      };
+    },
+    "skill.effectiveForSession": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      // Without a provider, or with one that cannot say, the list is unfiltered
+      // rather than silently empty.
+      const adapter = session.providerId
+        ? services.providers.get(session.providerId)
+        : undefined;
+      const capabilities = await adapter?.getCapabilities().catch(() => undefined);
+      return services.skills.resolveForSession({
+        sessionId: session.id,
+        workspaceId: session.workspaceId,
+        ...(capabilities ? { capabilities } : {}),
+      });
+    },
+
+    "plugin.list": () => services.plugins.list(),
+    "plugin.save": (input) => services.plugins.save(input),
+    "plugin.assign": async (input) => {
+      await services.plugins.assign(input);
+      return { assigned: true };
+    },
+    "plugin.assignments": async (input) => {
+      const decisions = await services.plugins.assignmentsFor(input);
+      return {
+        global: toAssignments("pluginId", decisions.global),
+        session: toAssignments("pluginId", decisions.session),
+      };
+    },
+    "plugin.resolveForSession": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      return services.plugins.resolveForSession({
+        sessionId: session.id,
+        workspaceId: session.workspaceId,
+      });
+    },
+    "plugin.accounts": () => services.plugins.accounts(),
+    "plugin.connectAccount": (input) => services.plugins.connectAccount(input),
+    "plugin.disconnectAccount": async (input) => ({
+      disconnected: await services.plugins.disconnectAccount(input.id),
+    }),
+
+    "mcp.list": () => services.mcp.list(),
+    "mcp.save": (input) => services.mcp.save(input),
+    "mcp.delete": async (input) => ({
+      deleted: await services.mcp.delete(input.id),
+    }),
+    "mcp.statuses": () => services.mcp.statuses(),
+    "mcp.connect": (input) => services.mcp.connect(input.id),
+    "mcp.disconnect": async (input) => ({
+      disconnected: await services.mcp.disconnect(input.id),
+    }),
+    "mcp.sessionAccess": async (input) => ({
+      serverIds: await services.mcp.enabledForSession(input.sessionId),
+    }),
+    "mcp.setSessionAccess": async (input) => {
+      await services.mcp.setSessionAccess(input.sessionId, input.serverId, input.enabled);
+      return { updated: true };
+    },
 
     "settings.get": () => services.settings.get(),
     "settings.update": (input) => services.settings.update(input),

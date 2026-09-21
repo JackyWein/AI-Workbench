@@ -4,7 +4,10 @@ import {
   MessageSquarePlus,
   Settings,
   Boxes,
+  BookOpen,
   Folder,
+  Puzzle,
+  Server,
 } from "lucide-react";
 import type { Session, Workspace } from "@ai-workbench/shared";
 import { formatPath } from "../lib/format.js";
@@ -145,6 +148,33 @@ export function Sidebar({
         >
           <Boxes size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Providers</span>
+        </button>
+        <button
+          type="button"
+          className="row"
+          aria-current={view === "skills"}
+          onClick={() => setView("skills")}
+        >
+          <BookOpen size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">Skills</span>
+        </button>
+        <button
+          type="button"
+          className="row"
+          aria-current={view === "plugins"}
+          onClick={() => setView("plugins")}
+        >
+          <Puzzle size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">Plugins</span>
+        </button>
+        <button
+          type="button"
+          className="row"
+          aria-current={view === "mcp"}
+          onClick={() => setView("mcp")}
+        >
+          <Server size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">MCP servers</span>
         </button>
         <button
           type="button"

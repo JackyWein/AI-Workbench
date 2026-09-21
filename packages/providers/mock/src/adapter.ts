@@ -34,6 +34,9 @@ interface MockSessionState {
   turns: number;
   /** Cumulative tokens, so context information is real rather than invented. */
   contextTokens: number;
+  /** What the application composed for this turn, kept so /context can show it. */
+  systemInstructions: string;
+  toolNames: string[];
   abort: AbortController | null;
 }
 
@@ -71,6 +74,7 @@ const MOCK_MODELS: ModelInfo[] = [
  *   /error    -> normalized provider error
  *   /tool     -> tool call plus tool result
  *   /slow     -> longer thinking time
+ *   /context  -> repeats the instructions and tools it was actually given
  */
 export class MockProviderAdapter implements AIProviderAdapter {
   readonly metadata: ProviderMetadata = {
@@ -151,6 +155,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
       modelId,
       turns: 0,
       contextTokens: 0,
+      ...describeGiven(config),
       abort: null,
     });
     return { providerSessionId, resumable: true, modelId };
@@ -165,8 +170,12 @@ export class MockProviderAdapter implements AIProviderAdapter {
     const existing = this.#sessions.get(providerSessionId);
     if (existing) {
       existing.abort = null;
-      // A resumed session follows the currently selected model.
+      // A resumed session follows the currently selected model, and the
+      // instructions and tools the application composed for this turn.
       existing.modelId = modelId;
+      const given = describeGiven(config);
+      existing.systemInstructions = given.systemInstructions;
+      existing.toolNames = given.toolNames;
       return { providerSessionId, resumable: true, modelId };
     }
     // A restarted app resumes a session this process has never seen; the mock
@@ -176,6 +185,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
       modelId,
       turns: 0,
       contextTokens: 0,
+      ...describeGiven(config),
       abort: null,
     });
     return { providerSessionId, resumable: true, modelId };
@@ -251,7 +261,9 @@ export class MockProviderAdapter implements AIProviderAdapter {
 
       yield { type: "status", status: "streaming" };
 
-      const reply = buildMockReply(prompt, modelId);
+      const reply = prompt.includes("/context")
+        ? describeSessionContext(state)
+        : buildMockReply(prompt, modelId);
       const chunkSize = modelId === "mock-fast" ? 6 : 3;
       const chunkDelay =
         modelId === "mock-fast"
@@ -388,4 +400,32 @@ function abortError(): Error {
   const error = new Error("Cancelled");
   error.name = "AbortError";
   return error;
+}
+
+/** What the application handed this session, in the shape the state keeps. */
+function describeGiven(config: ProviderSessionConfig): {
+  systemInstructions: string;
+  toolNames: string[];
+} {
+  return {
+    systemInstructions: config.systemInstructions ?? "",
+    toolNames: (config.toolAccess?.hostTools ?? []).map((tool) => tool.name),
+  };
+}
+
+/**
+ * Repeats what the application actually composed for this session, so a check
+ * can prove that skills and tools reached the provider instead of assuming it.
+ */
+function describeSessionContext(state: MockSessionState): string {
+  const instructions = state.systemInstructions.trim();
+  const lines = [
+    instructions.length > 0
+      ? `Instructions received:\n${instructions}`
+      : "Instructions received: none",
+    state.toolNames.length > 0
+      ? `Tools available: ${state.toolNames.join(", ")}`
+      : "Tools available: none",
+  ];
+  return lines.join("\n\n");
 }

@@ -9,10 +9,13 @@ import { CommandPalette } from "./components/CommandPalette.js";
 import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
 import { EmptyState } from "./components/EmptyState.js";
+import { McpView } from "./components/McpView.js";
+import { PluginsView } from "./components/PluginsView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
 import { Sidebar } from "./components/Sidebar.js";
+import { SkillsView } from "./components/SkillsView.js";
 import { WorkspacePanel } from "./components/WorkspacePanel.js";
 
 type AppInfo = { version: string; platform: string; userDataPath: string };
@@ -160,6 +163,9 @@ export function App(): JSX.Element {
         {state.view === "providers" ? (
           <ProvidersView providers={state.providers} configs={state.providerConfigs} />
         ) : null}
+        {state.view === "skills" ? <SkillsView /> : null}
+        {state.view === "plugins" ? <PluginsView /> : null}
+        {state.view === "mcp" ? <McpView /> : null}
         {state.view === "settings" ? (
           <SettingsView settings={state.settings} appInfo={appInfo} />
         ) : null}

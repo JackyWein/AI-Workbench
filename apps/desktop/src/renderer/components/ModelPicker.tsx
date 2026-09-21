@@ -47,8 +47,20 @@ export function ModelPicker({ session, providers }: ModelPickerProps): JSX.Eleme
             void updateSession({ id: session.id, modelId: event.target.value })
           }
           aria-label="Model"
+          // A provider that reports no models leaves the tool to pick one.
+          disabled={provider.models.length === 0}
+          title={
+            provider.models.length === 0
+              ? "This tool does not list its models. Add them under Providers."
+              : undefined
+          }
         >
-          {session.modelId === null ? <option value="">Default model</option> : null}
+          {provider.models.length === 0 ? (
+            <option value="">No models listed</option>
+          ) : null}
+          {session.modelId === null && provider.models.length > 0 ? (
+            <option value="">Default model</option>
+          ) : null}
           {provider.models.map((model) => (
             <option key={model.id} value={model.id}>
               {model.displayName}

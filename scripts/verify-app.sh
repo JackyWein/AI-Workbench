@@ -50,12 +50,21 @@ run_phase() {
   local status=$?
   set -e
 
-  grep -oE '"msg":"(PASS|FAIL)[^"]*"' "$LOG_FILE" | sed 's/"msg":"//; s/"$//' || true
+  local outcomes
+  outcomes="$(grep -oE '"msg":"(PASS|FAIL)[^"]*"' "$LOG_FILE" | sed 's/"msg":"//; s/"$//' || true)"
+  echo "$outcomes"
 
   if [ $status -ne 0 ]; then
     echo "Startup check ($mode) failed with exit $status"
     grep -v 'dbus\|XIO:\|X server\|GPU\|Fontconfig' "$LOG_FILE" | tail -30
     exit $status
+  fi
+
+  # An app that exits cleanly without running a single check has not passed.
+  if [ -z "$outcomes" ]; then
+    echo "Startup check ($mode) reported no outcomes; the application exited early."
+    grep -v 'dbus\|XIO:\|X server\|GPU\|Fontconfig' "$LOG_FILE" | tail -30
+    exit 1
   fi
 }
 

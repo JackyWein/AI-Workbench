@@ -26,6 +26,23 @@ import {
   gitStatusSchema,
   terminalInfoSchema,
 } from "../domain/workspace-tools.js";
+import {
+  effectiveSkillSchema,
+  skillAssignmentInputSchema,
+  skillManifestSchema,
+  skillScopesSchema,
+} from "../domain/skill.js";
+import {
+  pluginAccountSchema,
+  pluginAssignmentInputSchema,
+  pluginManifestSchema,
+  pluginScopesSchema,
+  resolvedPluginSchema,
+} from "../domain/plugin.js";
+import {
+  mcpServerConfigSchema,
+  mcpServerStatusSchema,
+} from "../domain/mcp.js";
 
 /**
  * The single source of truth for privileged main-process operations (spec §105).
@@ -176,6 +193,101 @@ export const ipcContract = {
   "terminal.close": {
     input: z.object({ terminalId: z.string().min(1) }),
     output: z.object({ closed: z.boolean() }),
+  },
+
+  "skill.list": { input: z.void(), output: z.array(skillManifestSchema) },
+  "skill.save": { input: skillManifestSchema, output: skillManifestSchema },
+  "skill.delete": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ deleted: z.boolean() }),
+  },
+  /** Imports skill files the user picks from a directory. */
+  "skill.importFromDirectory": {
+    input: z.void(),
+    output: z.object({
+      cancelled: z.boolean(),
+      imported: z.array(skillManifestSchema),
+      failed: z.array(z.object({ path: z.string(), reason: z.string() })),
+    }),
+  },
+  "skill.assign": {
+    input: skillAssignmentInputSchema,
+    output: z.object({ assigned: z.boolean() }),
+  },
+  "skill.assignments": {
+    input: z.object({
+      workspaceId: z.string().min(1).optional(),
+      sessionId: z.string().min(1).optional(),
+    }),
+    output: skillScopesSchema,
+  },
+  /** What a session actually composes into its system instructions. */
+  "skill.effectiveForSession": {
+    input: z.object({ sessionId: z.string().min(1) }),
+    output: z.array(effectiveSkillSchema),
+  },
+
+  "plugin.list": { input: z.void(), output: z.array(pluginManifestSchema) },
+  "plugin.save": { input: pluginManifestSchema, output: pluginManifestSchema },
+  "plugin.assign": {
+    input: pluginAssignmentInputSchema,
+    output: z.object({ assigned: z.boolean() }),
+  },
+  "plugin.assignments": {
+    input: z.object({
+      workspaceId: z.string().min(1).optional(),
+      sessionId: z.string().min(1).optional(),
+    }),
+    output: pluginScopesSchema,
+  },
+  "plugin.resolveForSession": {
+    input: z.object({ sessionId: z.string().min(1) }),
+    output: z.array(resolvedPluginSchema),
+  },
+  "plugin.accounts": { input: z.void(), output: z.array(pluginAccountSchema) },
+  /**
+   * The secret travels renderer to main once and is encrypted before it is
+   * stored; nothing ever sends it back the other way (spec §90).
+   */
+  "plugin.connectAccount": {
+    input: z.object({
+      accountType: z.string().min(1),
+      label: z.string().min(1).max(200),
+      secret: z.string().min(1).max(10_000),
+    }),
+    output: pluginAccountSchema,
+  },
+  "plugin.disconnectAccount": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ disconnected: z.boolean() }),
+  },
+
+  "mcp.list": { input: z.void(), output: z.array(mcpServerConfigSchema) },
+  "mcp.save": { input: mcpServerConfigSchema, output: mcpServerConfigSchema },
+  "mcp.delete": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ deleted: z.boolean() }),
+  },
+  "mcp.statuses": { input: z.void(), output: z.array(mcpServerStatusSchema) },
+  "mcp.connect": {
+    input: z.object({ id: z.string().min(1) }),
+    output: mcpServerStatusSchema.nullable(),
+  },
+  "mcp.disconnect": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ disconnected: z.boolean() }),
+  },
+  "mcp.sessionAccess": {
+    input: z.object({ sessionId: z.string().min(1) }),
+    output: z.object({ serverIds: z.array(z.string()) }),
+  },
+  "mcp.setSessionAccess": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      serverId: z.string().min(1),
+      enabled: z.boolean(),
+    }),
+    output: z.object({ updated: z.boolean() }),
   },
 
   "settings.get": { input: z.void(), output: appSettingsSchema },

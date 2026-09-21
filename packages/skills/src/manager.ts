@@ -6,7 +6,7 @@ import {
   type SkillManifest,
   type SkillScope,
   type SkillScopes,
-} from "./manifest.js";
+} from "@ai-workbench/shared";
 
 export class DuplicateSkillError extends Error {
   constructor(id: string) {

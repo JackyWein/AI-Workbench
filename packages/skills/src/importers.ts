@@ -1,6 +1,6 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { SkillManifestInput } from "./manifest.js";
+import type { SkillManifestInput } from "@ai-workbench/shared";
 
 /**
  * Importers turn an external skill format into the internal, provider-neutral

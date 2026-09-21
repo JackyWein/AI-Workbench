@@ -43,9 +43,23 @@ export async function runStartupCheck(
   await once(window, "did-finish-load");
 
   const outcomes: CheckOutcome[] = [];
-  const check = async (name: string, script: string): Promise<boolean> => {
+  const check = async (
+    name: string,
+    script: string,
+    timeoutMs = 30_000,
+  ): Promise<boolean> => {
     try {
-      const value: unknown = await window.webContents.executeJavaScript(script);
+      // A check that never settles would hang the whole verification with no
+      // output at all, which is worse than a failure.
+      const value: unknown = await Promise.race([
+        window.webContents.executeJavaScript(script),
+        new Promise((_resolve, reject) =>
+          setTimeout(
+            () => reject(new Error(`timed out after ${timeoutMs}ms`)),
+            timeoutMs,
+          ),
+        ),
+      ]);
       const passed = value === true || (typeof value === "number" && value > 0);
       outcomes.push({ name, passed, detail: String(value) });
       return passed;
@@ -137,6 +151,30 @@ export async function runStartupCheck(
        rows.find(row => row.textContent?.includes('Providers'))?.click();
        return new Promise(resolve => setTimeout(
          () => resolve(document.querySelectorAll('.provider-entry').length), 120));
+     })()`,
+  );
+
+  await check(
+    "a long screen scrolls and leaves the navigation reachable",
+    `(async () => {
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Providers'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+
+       // The window itself must never be the thing that overflows, or the
+       // sidebar's own navigation is pushed out of reach.
+       const app = document.querySelector('.app');
+       if (!app || app.scrollHeight > window.innerHeight + 1) return false;
+
+       const foot = document.querySelector('.sidebar__foot');
+       const bounds = foot?.getBoundingClientRect();
+       if (!bounds || bounds.bottom > window.innerHeight + 1) return false;
+
+       // The screen's own content is what scrolls.
+       const view = document.querySelector('.view');
+       if (!view || view.scrollHeight <= view.clientHeight) return false;
+       view.scrollTop = 80;
+       return view.scrollTop > 0;
      })()`,
   );
 
@@ -260,6 +298,140 @@ export async function runStartupCheck(
            return (document.querySelector('.changes')?.textContent ?? '')
              .includes('not a git repository');
          })()`,
+  );
+
+  // --- skills, plugins and MCP -------------------------------------------
+
+  await check(
+    "a skill switched on for a session reaches the provider",
+    `(async () => {
+       const sessionId = window.__checkSessionId;
+       await window.workbench.invoke('skill.save', {
+         schemaVersion: 1,
+         id: 'check-skill',
+         name: 'Check skill',
+         description: 'Used by the startup check',
+         version: '1.0.0',
+         instructions: 'Always mention check-skill-instruction.',
+         requiredCapabilities: [],
+         tools: [],
+         mcpDependencies: [],
+         metadata: {},
+         source: { kind: 'import' },
+       });
+
+       // Switched on through the Skills screen, the way a user does it.
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Skills'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       const entry = [...document.querySelectorAll('.provider-entry')]
+         .find(node => node.textContent?.includes('Check skill'));
+       if (!entry) return false;
+       const toggle = [...entry.querySelectorAll('.scope-toggle')]
+         .find(node => node.textContent?.includes('This session'))
+         ?.querySelector('input');
+       if (!toggle || toggle.disabled) return false;
+       // The resume run finds it already on, and must not switch it off.
+       if (!toggle.checked) {
+         toggle.click();
+         await new Promise(resolve => setTimeout(resolve, 400));
+       }
+
+       const effective = await window.workbench.invoke(
+         'skill.effectiveForSession', { sessionId });
+       if (!effective.some(item => item.skill.id === 'check-skill')) return false;
+
+       // The provider must actually receive it as instructions, not just the
+       // application believe it does. The answer is read back from the stored
+       // conversation, so this does not depend on event naming.
+       await window.workbench.invoke('session.sendMessage', {
+         sessionId,
+         text: '/context',
+       });
+       const deadline = Date.now() + 15000;
+       while (Date.now() < deadline) {
+         await new Promise(resolve => setTimeout(resolve, 200));
+         const messages = await window.workbench.invoke('message.list', { sessionId });
+         if (messages.some(message => (message.content ?? '')
+             .includes('check-skill-instruction'))) {
+           return true;
+         }
+       }
+       return false;
+     })()`,
+  );
+
+  await check(
+    "an MCP server that cannot start is reported, not thrown",
+    `(async () => {
+       await window.workbench.invoke('mcp.save', {
+         id: 'check-missing',
+         name: 'Check missing server',
+         transport: 'stdio',
+         command: 'definitely-not-an-executable-9f3c',
+         args: [],
+         env: {},
+         enabled: true,
+       });
+       const status = await window.workbench.invoke('mcp.connect', { id: 'check-missing' });
+       if (!status || status.state !== 'failed' || !status.detail) return false;
+
+       // And the screen says so rather than showing it as usable.
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('MCP servers'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 600));
+       const entry = [...document.querySelectorAll('.provider-entry')]
+         .find(node => node.textContent?.includes('Check missing server'));
+       return Boolean(entry && entry.textContent?.includes('Failed'));
+     })()`,
+  );
+
+  await check(
+    "a session can be given access to an MCP server",
+    `(async () => {
+       const sessionId = window.__checkSessionId;
+       await window.workbench.invoke(
+         'mcp.setSessionAccess', { sessionId, serverId: 'check-missing', enabled: true });
+       const access = await window.workbench.invoke('mcp.sessionAccess', { sessionId });
+       return access.serverIds.includes('check-missing');
+     })()`,
+  );
+
+  await check(
+    "connecting an account never falls back to plaintext",
+    `(async () => {
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Plugins'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+
+       // Either the operating system stores the secret, or the attempt is
+       // refused with a reason. Storing it unprotected is not an outcome.
+       try {
+         const account = await window.workbench.invoke('plugin.connectAccount', {
+           accountType: 'check-service',
+           label: 'Check account',
+           secret: 'check-secret-value',
+         });
+         const accounts = await window.workbench.invoke('plugin.accounts', undefined);
+         const stored = accounts.find(entry => entry.id === account.id);
+         // Only a reference is ever handed back to the renderer.
+         return Boolean(stored)
+           && !JSON.stringify(stored).includes('check-secret-value');
+       } catch (error) {
+         return String(error).includes('Secure storage is not available');
+       }
+     })()`,
+  );
+
+  // The remaining checks expect the session's chat again.
+  await check(
+    "returns to the session after the settings screens",
+    `(async () => {
+       [...document.querySelectorAll('.sidebar__scroll .row')]
+         .find(node => node.textContent?.includes('Check session'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       return Boolean(document.querySelector('.composer'));
+     })()`,
   );
 
   // An optional screenshot makes the rendered result reviewable by a human

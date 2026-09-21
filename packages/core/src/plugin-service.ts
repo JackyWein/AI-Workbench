@@ -9,28 +9,21 @@ import {
   type PluginAccountRow,
   type PluginRow,
 } from "@ai-workbench/database";
-import {
-  PluginRegistry,
-  type PluginAccount,
-  type PluginManifest,
-  type PluginManifestInput,
-  type PluginScope,
-  type ResolvedPlugin,
-} from "@ai-workbench/plugins";
-import type { Logger } from "@ai-workbench/shared";
+import { PluginRegistry } from "@ai-workbench/plugins";
+import type {
+  Logger,
+  PluginAccount,
+  PluginAssignmentInput,
+  PluginManifest,
+  PluginManifestInput,
+  ResolvedPlugin,
+} from "@ai-workbench/shared";
 import type { CredentialManager } from "@ai-workbench/credentials";
 
 export interface PluginServiceOptions {
   readonly db: Database;
   readonly logger: Logger;
   readonly credentials: CredentialManager;
-}
-
-export interface PluginAssignmentInput {
-  readonly pluginId: string;
-  readonly scope: Exclude<PluginScope, "agent">;
-  readonly scopeId?: string;
-  readonly enabled: boolean;
 }
 
 /**

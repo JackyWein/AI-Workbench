@@ -9,7 +9,7 @@ import {
   toSkillId,
 } from "../importers.js";
 import { DuplicateSkillError, SkillManager } from "../manager.js";
-import { parseSkill, type SkillManifestInput } from "../manifest.js";
+import { parseSkill, type SkillManifestInput } from "@ai-workbench/shared";
 
 const nullLogger = {
   debug: () => {},

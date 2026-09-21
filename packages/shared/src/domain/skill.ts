@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { providerCapabilitySchema } from "@ai-workbench/shared";
+import { providerCapabilitySchema } from "./provider.js";
 
 /**
  * A skill is provider-neutral instruction material (spec §29). It says what the
@@ -44,19 +44,32 @@ export function parseSkill(input: unknown): SkillManifest {
 export const skillScopeSchema = z.enum(["global", "workspace", "session"]);
 export type SkillScope = z.infer<typeof skillScopeSchema>;
 
-export interface SkillAssignment {
-  readonly skillId: string;
-  readonly enabled: boolean;
-}
+export const skillAssignmentSchema = z.object({
+  skillId: z.string().min(1),
+  enabled: z.boolean(),
+});
+export type SkillAssignment = z.infer<typeof skillAssignmentSchema>;
 
-export interface SkillScopes {
-  readonly global?: readonly SkillAssignment[];
-  readonly workspace?: readonly SkillAssignment[];
-  readonly session?: readonly SkillAssignment[];
-}
+export const skillScopesSchema = z.object({
+  global: z.array(skillAssignmentSchema).optional(),
+  workspace: z.array(skillAssignmentSchema).optional(),
+  session: z.array(skillAssignmentSchema).optional(),
+});
+export type SkillScopes = z.infer<typeof skillScopesSchema>;
 
-export interface EffectiveSkill {
-  readonly skill: SkillManifest;
+export const effectiveSkillSchema = z.object({
+  skill: skillManifestSchema,
   /** The scope that decided the outcome. */
-  readonly decidedBy: SkillScope;
-}
+  decidedBy: skillScopeSchema,
+});
+export type EffectiveSkill = z.infer<typeof effectiveSkillSchema>;
+
+/** Switching a skill on or off at one scope (spec §30). */
+export const skillAssignmentInputSchema = z.object({
+  skillId: z.string().min(1),
+  scope: skillScopeSchema,
+  /** Required for the workspace and session scopes. */
+  scopeId: z.string().min(1).optional(),
+  enabled: z.boolean(),
+});
+export type SkillAssignmentInput = z.infer<typeof skillAssignmentInputSchema>;

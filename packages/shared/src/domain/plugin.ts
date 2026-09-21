@@ -57,17 +57,29 @@ export const pluginScopeSchema = z.enum([
 ]);
 export type PluginScope = z.infer<typeof pluginScopeSchema>;
 
-export interface PluginAssignment {
-  readonly pluginId: string;
-  readonly enabled: boolean;
-}
+export const pluginAssignmentSchema = z.object({
+  pluginId: z.string().min(1),
+  enabled: z.boolean(),
+});
+export type PluginAssignment = z.infer<typeof pluginAssignmentSchema>;
 
-export interface PluginScopes {
-  readonly global?: readonly PluginAssignment[];
-  readonly workspace?: readonly PluginAssignment[];
-  readonly session?: readonly PluginAssignment[];
-  readonly agent?: readonly PluginAssignment[];
-}
+export const pluginScopesSchema = z.object({
+  global: z.array(pluginAssignmentSchema).optional(),
+  workspace: z.array(pluginAssignmentSchema).optional(),
+  session: z.array(pluginAssignmentSchema).optional(),
+  agent: z.array(pluginAssignmentSchema).optional(),
+});
+export type PluginScopes = z.infer<typeof pluginScopesSchema>;
+
+/** Switching a plugin on or off at one scope (spec §35). */
+export const pluginAssignmentInputSchema = z.object({
+  pluginId: z.string().min(1),
+  scope: pluginScopeSchema.exclude(["agent"]),
+  /** Required for the workspace and session scopes. */
+  scopeId: z.string().min(1).optional(),
+  enabled: z.boolean(),
+});
+export type PluginAssignmentInput = z.infer<typeof pluginAssignmentInputSchema>;
 
 /**
  * A connection to an external service, owned by the application rather than by
@@ -85,11 +97,12 @@ export const pluginAccountSchema = z.object({
 });
 export type PluginAccount = z.infer<typeof pluginAccountSchema>;
 
-export interface ResolvedPlugin {
-  readonly plugin: PluginManifest;
-  readonly decidedBy: PluginScope;
+export const resolvedPluginSchema = z.object({
+  plugin: pluginManifestSchema,
+  decidedBy: pluginScopeSchema,
   /** The account serving this plugin, when it needs one. */
-  readonly account: PluginAccount | null;
+  account: pluginAccountSchema.nullable(),
   /** False when the plugin needs an account and none is connected. */
-  readonly usable: boolean;
-}
+  usable: z.boolean(),
+});
+export type ResolvedPlugin = z.infer<typeof resolvedPluginSchema>;

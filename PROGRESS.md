@@ -14,18 +14,20 @@ Weighted contribution = weight x completion.
 | G1 | Functional desktop vertical slice | 15% | 20 | 19 | 95% | 14.25 |
 | G2 | Provider platform | 15% | 20 | 18 | 90% | 13.50 |
 | G3 | Workspace / developer tooling | 10% | 14 | 14 | 100% | 10.00 |
-| G4 | Skills, plugins & MCP | 10% | 15 | 0 | 0% | 0.00 |
+| G4 | Skills, plugins & MCP | 10% | 15 | 14 | 93% | 9.33 |
 | G5 | Autonomous team system | 20% | 28 | 0 | 0% | 0.00 |
 | G6 | Status Island & background runtime | 10% | 22 | 0 | 0% | 0.00 |
-| G7 | UX, security, reliability & performance | 10% | 19 | 11 | 58% | 5.79 |
+| G7 | UX, security, reliability & performance | 10% | 19 | 13 | 68% | 6.84 |
 | G8 | Extensibility, SDK & packaging | 5% | 10 | 1 | 10% | 0.50 |
-| **TOTAL** | | **100%** | **160** | **75** | | **49.04%** |
+| **TOTAL** | | **100%** | **160** | **91** | | **59.42%** |
 
 ## Current focus
 
-**G4 — Skills, plugins and MCP.** The foundation, the vertical slice, the
-provider platform and the developer tooling are done. What remains in G2 is
-verifying the Codex and Gemini profiles against those tools.
+**G5 — the autonomous team system.** Skills, plugins, MCP servers and
+credential storage are in place and reachable from the application. What
+remains in G4 is remote MCP transports, which the application reports as
+unsupported rather than pretending to offer. What remains in G2 is verifying
+the Codex and Antigravity profiles against those tools.
 
 ## How this file is verified
 
@@ -33,15 +35,19 @@ Everything ticked below is proven by `pnpm verify`, which runs:
 
 - `pnpm lint` — ESLint over the workspace
 - `pnpm typecheck` — strict TypeScript over Node and web projects
-- `pnpm test` — 126 unit and integration tests (2 more are skipped by default
+- `pnpm test` — 179 unit and integration tests (2 more are skipped by default
   because they spend real provider quota; see below)
 - `pnpm build` — electron-vite production build
 - `pnpm verify:app` — starts the built application headlessly (Xvfb) and drives
   the real renderer through the preload bridge: a streamed answer, a collapsed
   tool call, a real shell echoing back, the file browser, the git branch and
   changes, the command palette, the usage popover and the settings and
-  providers views. It then runs a second time against the same database to
-  prove a conversation and its provider session survive a restart.
+  providers views. Since this milestone it also proves that a skill switched on
+  for a session reaches the provider as instructions, that an MCP server which
+  cannot start is reported instead of thrown, that a session can be given
+  access to a server, and that connecting an account never falls back to
+  plaintext. It then runs a second time against the same database to prove a
+  conversation and its provider session survive a restart.
 
 Additionally, and deliberately outside the default run:
 
@@ -67,7 +73,12 @@ Last full run: all checks passed.
 - **Codex and Gemini adapters (G2)** ship as profiles built on the same,
   verified machinery, but their flags and event shapes were not run against
   those tools here. They are marked unverified in the application itself, and
-  the criteria stay unticked until someone runs them.
+  the criteria stay unticked until someone runs them. Google replaced the
+  Gemini CLI with the Antigravity CLI (`agy`), so a profile for it ships too,
+  equally unverified; the Gemini profile stays for the plans that kept it.
+  None of these tools has a command that lists the models an account may use,
+  so only Claude Code ships a model list and the others are filled in on the
+  Providers screen.
 - **authentication state reporting (G2)** is ticked for the mechanism, which is
   tested across authenticated, sign-in-required and unknown states. The Claude
   Code profile has no non-interactive auth probe, so for that provider the
@@ -75,9 +86,9 @@ Last full run: all checks passed.
 - **G7** items left open are the judgment and performance ones (polish,
   virtualized chats and logs, full keyboard pass). They belong to the dedicated
   hardening pass, not to this stage.
-- **secrets are not stored in plaintext (G7)** stays open because the
-  application stores no credentials at all yet; it is ticked when the
-  `CredentialManager` exists (G4).
+- **remote MCP transports (G4)** are not implemented. The configuration model
+  accepts them, and the manager reports such a server as `unsupported` with the
+  reason, rather than failing silently or pretending to connect.
 
 ## G0 — Repository / Foundation — 5%
 
@@ -159,21 +170,27 @@ Last full run: all checks passed.
 
 ## G4 — Skills, plugins & MCP — 10%
 
-- [ ] SkillManager implemented
-- [ ] global/workspace/session skill scopes work
-- [ ] effective skill resolution tested
-- [ ] internal provider-neutral skill format exists
-- [ ] at least one skill importer works
-- [ ] PluginRegistry implemented
-- [ ] plugin scope model works
-- [ ] central account model exists
-- [ ] CredentialManager works
-- [ ] MCPManager works
-- [ ] local MCP stdio server can connect
+- [x] SkillManager implemented
+- [x] global/workspace/session skill scopes work
+- [x] effective skill resolution tested
+- [x] internal provider-neutral skill format exists
+- [x] at least one skill importer works
+- [x] PluginRegistry implemented
+- [x] plugin scope model works
+- [x] central account model exists
+- [x] CredentialManager works
+- [x] MCPManager works
+- [x] local MCP stdio server can connect
 - [ ] remote MCP config supported
-- [ ] session MCP selection works
-- [ ] ToolBridge abstraction works
-- [ ] plugin/provider separation remains intact
+- [x] session MCP selection works
+- [x] ToolBridge abstraction works
+- [x] plugin/provider separation remains intact
+
+Not exercised here: a successful encrypt/decrypt round trip through the
+operating system's own secret storage. The container running the checks has no
+secret service, so what was proven is the other half — that the application
+refuses to store a secret at all rather than falling back to plaintext. The
+round trip needs one run on a desktop.
 
 ## G5 — Autonomous team system — 20%
 
@@ -235,10 +252,10 @@ Last full run: all checks passed.
 
 - [x] renderer has no direct Node integration
 - [x] IPC inputs validated
-- [ ] secrets are not stored in plaintext
+- [x] secrets are not stored in plaintext
 - [x] secrets do not appear in logs
 - [x] provider crashes are isolated
-- [ ] MCP crashes are isolated
+- [x] MCP crashes are isolated
 - [x] malformed provider output does not crash app
 - [ ] long chats are performant
 - [ ] long logs are performant

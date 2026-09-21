@@ -138,12 +138,26 @@ Details worth knowing:
 |---|---|
 | Claude Code | Flags checked against `claude --help`; event mapping verified against a recorded live stream that the test suite replays; run end to end against the installed tool |
 | Codex | Starting point, **not verified** against the tool |
-| Gemini | Starting point, **not verified** against the tool |
+| Antigravity | Starting point, **not verified** against the tool. Google's replacement for the Gemini CLI, run as `agy` |
+| Gemini CLI | Starting point, **not verified** against the tool. Kept for the plans that still have it |
 
 An unverified profile says so in the application, on the provider's own screen.
 It is a documented guess at the flags, not a claim that the integration works.
 If a turn fails, correct the executable path and arguments there — the change is
 applied immediately, without restarting.
+
+### Models
+
+A provider reports its own models through `listModels()`. Only Claude Code
+ships a list, because it is the only one of these tools whose models are
+documented alongside the flags; none of them has a command that prints the
+models an account may use, so nothing is guessed on their behalf.
+
+The Providers screen therefore has a model field: one `id` per line, or
+`id = Display name`. What is entered there replaces the profile's list, is
+stored with the provider configuration, and is what the session model picker
+offers. A provider whose list is empty says so instead of showing an empty
+picker, and the tool is left to choose its own default.
 
 Adding an entirely new command line provider is a profile, not a code change.
 

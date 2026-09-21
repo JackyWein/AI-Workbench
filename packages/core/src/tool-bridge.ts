@@ -1,4 +1,4 @@
-import type { McpServerConfig, McpServerStatus, McpTool } from "@ai-workbench/mcp";
+import type { McpServerConfig, McpServerStatus, McpTool } from "@ai-workbench/shared";
 import type { ProviderCapabilities } from "@ai-workbench/shared";
 
 /**
