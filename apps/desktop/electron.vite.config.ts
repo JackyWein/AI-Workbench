@@ -2,17 +2,6 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
 
-const workspacePackages = [
-  "@ai-workbench/shared",
-  "@ai-workbench/core",
-  "@ai-workbench/database",
-  "@ai-workbench/provider-base",
-  "@ai-workbench/provider-mock",
-  "@ai-workbench/provider-cli",
-  "@ai-workbench/transport-cli",
-  "@ai-workbench/ui",
-];
-
 const root = resolve(__dirname, "../..");
 
 /** Workspace packages are consumed as TypeScript source and therefore bundled. */
@@ -37,9 +26,10 @@ export default defineConfig({
   main: {
     resolve: { alias },
     build: {
-      // Runtime dependencies stay external so native modules such as the
-      // SQLite client load from node_modules; workspace sources are bundled.
-      externalizeDeps: { exclude: workspacePackages },
+      // Only real npm dependencies are externalized, so native modules such as
+      // the SQLite client load from node_modules while workspace sources and
+      // every build-time package are bundled into the output.
+      externalizeDeps: true,
       rollupOptions: {
         input: resolve(__dirname, "src/main/index.ts"),
         // CommonJS keeps main and preload on the same module system and lets

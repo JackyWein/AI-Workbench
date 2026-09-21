@@ -1,0 +1,62 @@
+appId: com.aiworkbench.desktop
+productName: AI Workbench
+# The package name is scoped, which is not a usable file name.
+executableName: ai-workbench
+copyright: AI Workbench
+
+directories:
+  output: ../../release
+  buildResources: build
+
+# Everything the application needs at runtime is either bundled into out/ or a
+# real npm dependency; workspace packages are compiled in and never shipped.
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+
+# The SQLite client is a native N-API module and must stay outside the asar
+# archive so the dynamic loader can find it.
+asarUnpack:
+  - "**/*.node"
+  - "node_modules/@libsql/**"
+
+# N-API modules are ABI stable, so there is nothing to rebuild per Electron
+# version. Keeping this off also avoids a rebuild pass that pnpm workspaces
+# make unreliable.
+npmRebuild: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  artifactName: ${productName}-${version}-windows-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  artifactName: ${productName}-${version}-macos-${arch}.${ext}
+
+linux:
+  # Lets desktop environments associate running windows with the launcher entry;
+  # the name itself comes from package.json.
+  syncDesktopName: true
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64]
+  category: Development
+  synopsis: Local desktop environment for multiple AI providers
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}

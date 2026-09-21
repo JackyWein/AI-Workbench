@@ -1,7 +1,7 @@
 {
   "name": "ai-workbench",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Local desktop environment for multiple AI providers, sessions, skills and autonomous teams",
   "engines": {
@@ -17,7 +17,8 @@
     "db:generate": "pnpm --filter @ai-workbench/database generate",
     "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:app",
     "lint": "eslint .",
-    "verify:app": "bash scripts/verify-app.sh"
+    "verify:app": "bash scripts/verify-app.sh",
+    "package": "pnpm --filter @ai-workbench/desktop package"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -34,5 +35,9 @@
       "electron",
       "esbuild"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JackyWein/AI-Workbench.git"
   }
 }
