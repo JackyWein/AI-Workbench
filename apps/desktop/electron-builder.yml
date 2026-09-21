@@ -43,7 +43,9 @@ win:
     - target: portable
       arch: [x64]
   artifactName: ${productName}-${version}-windows-${arch}.${ext}
-  portableArtifactName: ${productName}-${version}-windows-portable-${arch}.${ext}
+
+portable:
+  artifactName: ${productName}-${version}-windows-portable-${arch}.${ext}
 
 nsis:
   oneClick: false

@@ -66,6 +66,18 @@ export function App(): JSX.Element {
       if ((event.ctrlKey || event.metaKey) && event.key === "`") {
         event.preventDefault();
         store.toggleWorkspacePanel("terminal");
+        return;
+      }
+      // Ctrl+Shift+A flips between the clean conversation and the agents'
+      // terminals (also in the palette and on the view toggle's tooltip).
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "a"
+      ) {
+        event.preventDefault();
+        const mode = store.workspaceMode === "terminals" ? "chat" : "terminals";
+        store.setWorkspaceMode(mode);
       }
     };
     window.addEventListener("keydown", onKeyDown);

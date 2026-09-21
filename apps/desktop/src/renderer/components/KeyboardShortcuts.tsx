@@ -17,6 +17,12 @@ const SECTIONS: ReadonlyArray<{
     ],
   },
   {
+    title: "Conversation vs agents",
+    rows: [
+      ["Ctrl/⌘ Shift A", "Flip between clean conversation and agents"],
+    ],
+  },
+  {
     title: "Conversation",
     rows: [
       ["Enter", "Send message"],

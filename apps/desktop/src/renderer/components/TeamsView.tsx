@@ -21,13 +21,16 @@ import { providerLabel } from "../lib/provider-label.js";
 export function TeamsView(): JSX.Element {
   const teams = useWorkbench((state) => state.teams);
   const providers = useWorkbench((state) => state.providers);
+  const workspaces = useWorkbench((state) => state.workspaces);
   const refreshTeams = useWorkbench((state) => state.refreshTeams);
-  const hasWorkspace = useWorkbench((state) => state.activeWorkspaceId !== null);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     void refreshTeams();
   }, [refreshTeams]);
+
+  const homeName = (workspaceId: string): string =>
+    workspaces.find((entry) => entry.id === workspaceId)?.name ?? "Unknown workspace";
 
   return (
     <div className="view">
@@ -37,7 +40,6 @@ export function TeamsView(): JSX.Element {
           <button
             type="button"
             className="quiet-button"
-            disabled={!hasWorkspace}
             onClick={() => setCreating((open) => !open)}
           >
             <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
@@ -45,11 +47,10 @@ export function TeamsView(): JSX.Element {
           </button>
         </div>
 
-        {!hasWorkspace ? (
-          <p className="field__description">
-            A team belongs to a workspace. Select one first.
-          </p>
-        ) : null}
+        <p className="field__description">
+          Teams live globally: create one from any workspace and start new runs
+          on it from here at any time.
+        </p>
 
         {creating ? <NewTeamForm onDone={() => setCreating(false)} /> : null}
 
@@ -61,7 +62,12 @@ export function TeamsView(): JSX.Element {
         ) : (
           <section>
             {teams.map((team) => (
-              <TeamEntry key={team.id} team={team} providers={providers} />
+              <TeamEntry
+                key={team.id}
+                team={team}
+                providers={providers}
+                homeName={homeName(team.workspaceId)}
+              />
             ))}
           </section>
         )}
@@ -79,9 +85,11 @@ const EMPTY_RUNS: TeamRun[] = [];
 function TeamEntry({
   team,
   providers,
+  homeName,
 }: {
   readonly team: TeamDefinition;
   readonly providers: readonly ProviderSummary[];
+  readonly homeName: string;
 }): JSX.Element {
   const runs = useWorkbench((state) => state.teamRuns[team.id] ?? EMPTY_RUNS);
   const openRunId = useWorkbench((state) => state.openRunId);
@@ -113,7 +121,7 @@ function TeamEntry({
         <span className="provider-entry__name">{team.name}</span>
         {/* The compact state the specification asks for (spec §70). */}
         <span className="row__meta">
-          {team.agents.length} agents · {active} active
+          {team.agents.length} agents · {active} active · {homeName}
         </span>
       </div>
 

@@ -5,6 +5,7 @@ import type {
   IslandWidgetId,
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { KeyboardShortcuts } from "./KeyboardShortcuts.js";
 import { UpdateSection } from "./UpdateSection.js";
 
 interface SettingsViewProps {
@@ -24,7 +25,8 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
           <p className="section__label">Status Island</p>
           <p className="field__description">
             A floating companion that keeps showing what is happening while the
-            main window is hidden. Off until you ask for it.
+            main window is hidden. Switch chat and agents with the header toggle
+            or Ctrl+Shift+A.
           </p>
           <IslandSettings settings={settings} />
         </section>
@@ -92,6 +94,11 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
         </section>
 
         <UpdateSection currentVersion={appInfo?.version ?? null} />
+
+        <section>
+          <p className="section__label">Keyboard shortcuts</p>
+          <KeyboardShortcuts />
+        </section>
 
         {appInfo ? (
           <section>

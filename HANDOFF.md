@@ -155,6 +155,11 @@ Perf-Fenster, Bug-Hunt-Fixes (Races, Leaks, Shutdown, Recovery). Bewusst
 offen: Linux-`verify:app`, echte Codex/Gemini-Runs, Ordner-Dialog-Klick,
 PROGRESS-Ticks erst nach Beweisen. Ungeprüft: Mutex-Lost-Updates (Team-Budget),
 Session-Vollzeilen-Races, Plugin→Provider-Bridge, Agent-Scope (siehe Audits).
+Nach dem Commit dazu: Teams global (Liste ohne Filter, Home-Anzeige),
+Chat/Agents-Shortcut Ctrl+Shift+A + Palette + Titel-Hinweise + Shortcuts-Sektion
+in Settings, Sidebar-Löschen + Session-Auto-Namen + Workspace-Dedup, Island
+Default-an + Self-Heal + Click-Cycle, Builder-Portable-Name, UpdateSection- und
+MCP-Test-Fixes.
 
 ## What to do first
 

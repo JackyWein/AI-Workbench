@@ -89,13 +89,13 @@ export function CommandPalette(): JSX.Element | null {
       },
       {
         id: "view.agents",
-        label: "Show agents in terminals",
+        label: "Show agents in terminals (Ctrl+Shift+A)",
         group: "Go to",
         run: () => store.getState().setWorkspaceMode("terminals"),
       },
       {
         id: "view.chat",
-        label: "Show clean conversation",
+        label: "Show clean conversation (Ctrl+Shift+A)",
         group: "Go to",
         run: () => store.getState().setWorkspaceMode("chat"),
       },

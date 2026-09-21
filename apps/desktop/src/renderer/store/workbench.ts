@@ -868,11 +868,10 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   },
 
   async refreshTeams() {
-    const workspaceId = get().activeWorkspaceId;
     try {
-      const teams = await invoke("team.list", {
-        ...(workspaceId ? { workspaceId } : {}),
-      });
+      // Teams live globally: once created they stay available everywhere and
+      // new goals can start on them from any workspace.
+      const teams = await invoke("team.list", {});
       const runs = await Promise.all(
         teams.map(async (team) => [team.id, await invoke("team.listRuns", { teamId: team.id })] as const),
       );
@@ -885,6 +884,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async createTeam(input) {
     const workspaceId = get().activeWorkspaceId;
     if (!workspaceId) {
+      set({ error: "Select a workspace first — it becomes the new team's home." });
       return;
     }
     try {

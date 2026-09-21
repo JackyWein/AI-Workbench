@@ -72,6 +72,7 @@ export function ModeToggle(): JSX.Element {
         className="quiet-button"
         aria-pressed={workspaceMode === "chat"}
         onClick={() => setWorkspaceMode("chat")}
+        title="Clean conversation (Ctrl+Shift+A)"
       >
         <MessageSquare size={12} strokeWidth={1.75} aria-hidden="true" />
         Chat
@@ -81,6 +82,7 @@ export function ModeToggle(): JSX.Element {
         className="quiet-button"
         aria-pressed={workspaceMode === "terminals"}
         onClick={() => setWorkspaceMode("terminals")}
+        title="Agents in terminals (Ctrl+Shift+A)"
       >
         <Terminal size={12} strokeWidth={1.75} aria-hidden="true" />
         Agents
