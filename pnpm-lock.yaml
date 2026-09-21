@@ -69,12 +69,24 @@ importers:
       '@ai-workbench/provider-base':
         specifier: workspace:*
         version: link:../../packages/providers/base
+      '@ai-workbench/provider-claude':
+        specifier: workspace:*
+        version: link:../../packages/providers/claude
       '@ai-workbench/provider-cli':
         specifier: workspace:*
         version: link:../../packages/providers/cli
+      '@ai-workbench/provider-codex':
+        specifier: workspace:*
+        version: link:../../packages/providers/codex
+      '@ai-workbench/provider-gemini':
+        specifier: workspace:*
+        version: link:../../packages/providers/gemini
       '@ai-workbench/provider-mock':
         specifier: workspace:*
         version: link:../../packages/providers/mock
+      '@ai-workbench/provider-opencode':
+        specifier: workspace:*
+        version: link:../../packages/providers/opencode
       '@ai-workbench/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -253,6 +265,28 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
+  packages/providers/claude:
+    dependencies:
+      '@ai-workbench/provider-base':
+        specifier: workspace:*
+        version: link:../base
+      '@ai-workbench/provider-cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@ai-workbench/transport-cli':
+        specifier: workspace:*
+        version: link:../transports/cli
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@ai-workbench/test-support':
+        specifier: workspace:*
+        version: link:../../test-support
+
   packages/providers/cli:
     dependencies:
       '@ai-workbench/provider-base':
@@ -268,6 +302,53 @@ importers:
         specifier: ^3.25.76
         version: 3.25.76
 
+  packages/providers/codex:
+    dependencies:
+      '@ai-workbench/provider-base':
+        specifier: workspace:*
+        version: link:../base
+      '@ai-workbench/provider-cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@ai-workbench/transport-cli':
+        specifier: workspace:*
+        version: link:../transports/cli
+      smol-toml:
+        specifier: ^1.4.2
+        version: 1.8.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@ai-workbench/test-support':
+        specifier: workspace:*
+        version: link:../../test-support
+
+  packages/providers/gemini:
+    dependencies:
+      '@ai-workbench/provider-base':
+        specifier: workspace:*
+        version: link:../base
+      '@ai-workbench/provider-cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@ai-workbench/transport-cli':
+        specifier: workspace:*
+        version: link:../transports/cli
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@ai-workbench/test-support':
+        specifier: workspace:*
+        version: link:../../test-support
+
   packages/providers/mock:
     dependencies:
       '@ai-workbench/provider-base':
@@ -276,6 +357,31 @@ importers:
       '@ai-workbench/shared':
         specifier: workspace:*
         version: link:../../shared
+
+  packages/providers/opencode:
+    dependencies:
+      '@ai-workbench/provider-base':
+        specifier: workspace:*
+        version: link:../base
+      '@ai-workbench/provider-cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../../shared
+      '@ai-workbench/transport-cli':
+        specifier: workspace:*
+        version: link:../transports/cli
+      jsonc-parser:
+        specifier: ^3.3.1
+        version: 3.3.1
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@ai-workbench/test-support':
+        specifier: workspace:*
+        version: link:../../test-support
 
   packages/providers/transports/cli:
     dependencies:
@@ -2448,6 +2554,9 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
+  jsonc-parser@3.3.1:
+    resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
+
   jsonfile@4.0.0:
     resolution: {integrity: sha512-m6F1R3z8jjlf2imQHS2Qez5sjKWQzbuuhuJ/FKYFRZvPE3PuHcSMVZzfsLhGVOkfd20obL5SWEBew5ShlquNxg==}
 
@@ -2970,6 +3079,10 @@ packages:
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
     engines: {node: '>=10'}
+
+  smol-toml@1.8.0:
+    resolution: {integrity: sha512-kCZr2V3ch9i00x8zXRhjUNVcjG9ijES5dDudkXvUVCT5QlJNQWElSJdZqyPemffHoLNUYwOcou0Fy+ojN0uHSQ==}
+    engines: {node: '>= 18'}
 
   sonic-boom@4.2.1:
     resolution: {integrity: sha512-w6AxtubXa2wTXAUsZMMWERrsIRAdrK0Sc+FUytWvYAhBJLyuI4llrMIC1DtlNSdI99EI86KZum2MMq3EAZlF9Q==}
@@ -5370,6 +5483,8 @@ snapshots:
 
   json5@2.2.3: {}
 
+  jsonc-parser@3.3.1: {}
+
   jsonfile@4.0.0:
     optionalDependencies:
       graceful-fs: 4.2.11
@@ -5914,6 +6029,8 @@ snapshots:
   simple-update-notifier@2.0.0:
     dependencies:
       semver: 7.8.5
+
+  smol-toml@1.8.0: {}
 
   sonic-boom@4.2.1:
     dependencies:

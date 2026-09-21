@@ -1,6 +1,7 @@
 import type {
   Logger,
   ModelInfo,
+  PermissionMode,
   ProviderCapabilities,
   ProviderConfig,
 } from "@ai-workbench/shared";
@@ -16,6 +17,12 @@ export interface ProviderContext {
    * secret ever reaching the renderer (spec §57).
    */
   readonly resolveCredential?: (reference: string) => Promise<string | null>;
+  /**
+   * Tells the application the adapter learned something new on its own — a
+   * model list, usage or sign-in state read in the background — so the UI can
+   * refresh without polling.
+   */
+  readonly notifyChanged?: () => void;
 }
 
 /**
@@ -53,6 +60,10 @@ export interface ProviderSessionConfig {
   readonly systemInstructions?: string;
   /** Resolved by the tool bridge before the session is created. */
   readonly toolAccess?: ProviderToolAccess;
+  /** A reasoning effort the model reported it accepts. */
+  readonly reasoningEffort?: string;
+  /** Mapped by the adapter onto the tool's own permission system (spec §54). */
+  readonly permissionMode?: PermissionMode;
   readonly settings?: Record<string, unknown>;
 }
 
@@ -67,6 +78,8 @@ export interface ProviderSessionHandle {
   readonly sessionId: string;
   readonly providerSessionId: string;
   readonly modelId?: string;
+  readonly reasoningEffort?: string;
+  readonly permissionMode?: PermissionMode;
 }
 
 export interface AgentMessage {
@@ -90,6 +103,57 @@ export interface AuthResult {
 export interface ProviderModelList {
   readonly models: ModelInfo[];
   readonly defaultModelId?: string;
+}
+
+/** Starting the provider's own interactive interface in a terminal. */
+export interface InteractiveLaunchRequest {
+  readonly workingDirectory: string;
+  readonly modelId?: string;
+  readonly reasoningEffort?: string;
+  readonly permissionMode?: PermissionMode;
+  readonly systemInstructions?: string;
+  readonly toolAccess?: ProviderToolAccess;
+}
+
+export interface InteractiveLaunch {
+  /** Absolute path of the executable. */
+  readonly command: string;
+  readonly args: string[];
+  /** Merged over the application's environment by whoever starts it. */
+  readonly env: Record<string, string>;
+  readonly cwd: string;
+}
+
+/** A skill the tool's own configuration already has (spec §31). */
+export interface ImportableSkill {
+  /** Directory that holds the skill's SKILL.md. */
+  readonly path: string;
+  readonly name: string;
+  readonly description: string;
+  /** Where it was found, e.g. "user skills" or "plugin fallow". */
+  readonly source: string;
+}
+
+/**
+ * An MCP server the tool is configured with. Values of `env` and `headers`
+ * may be secrets: they stay in the main process and are moved into secure
+ * storage when imported, never shown or stored in plain text.
+ */
+export interface ImportableMcpServer {
+  readonly name: string;
+  readonly source: string;
+  readonly transport: "stdio" | "http" | "sse";
+  readonly command?: string;
+  readonly args: readonly string[];
+  readonly env: Readonly<Record<string, string>>;
+  readonly url?: string;
+  readonly headers: Readonly<Record<string, string>>;
+  readonly cwd?: string;
+}
+
+export interface ProviderImportables {
+  readonly skills: readonly ImportableSkill[];
+  readonly mcpServers: readonly ImportableMcpServer[];
 }
 
 export type { ProviderCapabilities };

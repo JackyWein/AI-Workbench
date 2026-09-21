@@ -104,8 +104,17 @@ export class ProviderRegistry {
       auth: auth ?? { state: "unknown", detail: "Authentication check failed" },
       capabilities: capabilities ?? { supported: [] },
       models: models ?? [],
+      modelsUpdatedAt: this.#modelsUpdatedAt(adapter),
       usage: usage ?? null,
     };
+  }
+
+  #modelsUpdatedAt(adapter: AIProviderAdapter): Date | null {
+    try {
+      return adapter.getModelsUpdatedAt?.() ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async #safe<T>(

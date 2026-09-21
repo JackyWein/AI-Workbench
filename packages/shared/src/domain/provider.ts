@@ -27,6 +27,10 @@ export const providerCapabilitySchema = z.enum([
   "reasoningModes",
   "contextInformation",
   "backgroundWork",
+  /** The tool has its own interactive interface that can run in a terminal. */
+  "interactiveTerminal",
+  /** Several accounts of the tool can be used side by side. */
+  "accounts",
 ]);
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 
@@ -73,6 +77,21 @@ export const providerMetadataSchema = z.object({
   notice: z.string().optional(),
   authMethods: z.array(authMethodSchema),
   transportTypes: z.array(providerTransportTypeSchema),
+  /**
+   * The provider this entry belongs to. Every account of one tool shares a
+   * family, so the UI can group them; for a single-account provider it is the
+   * provider id itself.
+   */
+  family: z.string().min(1).optional(),
+  /** Set when this entry is one account of a tool that has several. */
+  account: z
+    .object({
+      id: z.string().min(1),
+      label: z.string().min(1),
+      /** The tool's configuration home for this account; null is its default. */
+      home: z.string().nullable(),
+    })
+    .optional(),
 });
 export type ProviderMetadata = z.infer<typeof providerMetadataSchema>;
 
@@ -106,6 +125,8 @@ export const authStatusSchema = z.object({
   state: authStateSchema,
   method: authMethodSchema.optional(),
   accountLabel: z.string().optional(),
+  /** The subscription or plan the tool reports, shown as the tool names it. */
+  plan: z.string().optional(),
   detail: z.string().optional(),
 });
 export type AuthStatus = z.infer<typeof authStatusSchema>;
@@ -117,8 +138,54 @@ export const modelInfoSchema = z.object({
   contextWindow: z.number().int().positive().optional(),
   capabilities: z.array(providerCapabilitySchema).optional(),
   isDefault: z.boolean().optional(),
+  /**
+   * Reasoning effort levels this model accepts, named as the provider names
+   * them. Absent means the model has no selectable effort.
+   */
+  reasoningEfforts: z.array(z.string().min(1)).optional(),
+  defaultReasoningEffort: z.string().min(1).optional(),
+  /** The provider can serve this model in a faster mode. */
+  supportsFastMode: z.boolean().optional(),
+  /** Groups a long list, for example by the upstream provider of a model. */
+  group: z.string().min(1).optional(),
+  /**
+   * Where the entry came from: reported by the tool itself, shipped with the
+   * profile, or entered by the user. Only "provider" is a verified fact.
+   */
+  source: z.enum(["provider", "profile", "user"]).optional(),
 });
 export type ModelInfo = z.infer<typeof modelInfoSchema>;
+
+/**
+ * How much a provider may do on its own, mapped by each adapter onto the tool's
+ * native permission or sandbox system (spec §54). The application never
+ * bypasses that system; it only chooses one of the modes the tool offers.
+ *
+ * - default   the tool's own configuration decides
+ * - readOnly  read and plan, change nothing
+ * - edit      change files in the working directory
+ * - full      run without asking; only for trusted, isolated work
+ */
+export const permissionModeSchema = z.enum(["default", "readOnly", "edit", "full"]);
+export type PermissionMode = z.infer<typeof permissionModeSchema>;
+
+/** Per-session runtime choices, stored in `Session.settings`. */
+export const sessionRuntimeSettingsSchema = z.object({
+  reasoningEffort: z.string().min(1).optional(),
+  permissionMode: permissionModeSchema.optional(),
+});
+export type SessionRuntimeSettings = z.infer<typeof sessionRuntimeSettingsSchema>;
+
+/** Reads the runtime choices out of a session's free-form settings. */
+export function readSessionRuntimeSettings(
+  settings: Record<string, unknown>,
+): SessionRuntimeSettings {
+  const parsed = sessionRuntimeSettingsSchema.safeParse({
+    reasoningEffort: settings["reasoningEffort"],
+    permissionMode: settings["permissionMode"],
+  });
+  return parsed.success ? parsed.data : {};
+}
 
 /** Everything the renderer needs about one provider, in one payload. */
 export const providerSummarySchema = z.object({
@@ -127,6 +194,8 @@ export const providerSummarySchema = z.object({
   auth: authStatusSchema,
   capabilities: providerCapabilitiesSchema,
   models: z.array(modelInfoSchema),
+  /** When the model list was last read from the tool itself, if ever. */
+  modelsUpdatedAt: z.date().nullable().default(null),
   usage: providerUsageSnapshotSchema.nullable(),
 });
 export type ProviderSummary = z.infer<typeof providerSummarySchema>;

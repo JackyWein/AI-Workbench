@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import type { Logger } from "@ai-workbench/shared";
 import { AsyncQueue, LineAssembler } from "./lines.js";
+import { resolveSpawnTarget } from "./windows.js";
 
 export interface CliSpawnOptions {
   readonly executablePath: string;
@@ -8,8 +9,13 @@ export interface CliSpawnOptions {
   readonly cwd?: string;
   /** Merged over the inherited environment. */
   readonly env?: Record<string, string>;
-  /** Written to stdin, which is then closed. */
+  /**
+   * Written to stdin, which is then closed. Without it stdin is closed at once:
+   * some tools wait for more input for as long as stdin stays open.
+   */
   readonly stdin?: string;
+  /** Keeps stdin open for `write`, for a conversation over stdio. */
+  readonly keepStdinOpen?: boolean;
   readonly timeoutMs?: number;
   /** Grace period between SIGTERM and SIGKILL. */
   readonly killGraceMs?: number;
@@ -60,11 +66,13 @@ export function startCli(options: CliSpawnOptions): CliRun {
 
   let child: ChildProcessWithoutNullStreams;
   try {
-    child = spawn(options.executablePath, options.args, {
+    const target = resolveSpawnTarget(options.executablePath, options.args);
+    child = spawn(target.command, target.args, {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      env: { ...process.env, ...options.env },
+      env: { ...process.env, ...options.env, ...target.env },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      windowsVerbatimArguments: target.windowsVerbatimArguments,
     });
   } catch (error) {
     const failure = new CliSpawnError(options.executablePath, error);
@@ -151,11 +159,13 @@ export function startCli(options: CliSpawnOptions): CliRun {
     });
   });
 
+  child.stdin.on("error", () => {
+    // A CLI may exit before reading stdin; that is not our failure.
+  });
   if (options.stdin !== undefined) {
-    child.stdin.on("error", () => {
-      // A CLI may exit before reading stdin; that is not our failure.
-    });
     child.stdin.end(options.stdin);
+  } else if (!options.keepStdinOpen) {
+    child.stdin.end();
   }
 
   return {

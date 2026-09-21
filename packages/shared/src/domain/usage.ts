@@ -17,6 +17,13 @@ export const usageLimitSchema = z.object({
   total: z.number().nonnegative().optional(),
   unit: usageUnitSchema,
   resetsAt: z.date().optional(),
+  /**
+   * The reset time exactly as the provider wrote it, kept when it could not be
+   * turned into a date without guessing.
+   */
+  resetsText: z.string().optional(),
+  /** Length of the window this limit counts over, when the provider says. */
+  windowMinutes: z.number().int().positive().optional(),
 });
 export type UsageLimit = z.infer<typeof usageLimitSchema>;
 
@@ -48,6 +55,8 @@ export const providerUsageSnapshotSchema = z.object({
   source: usageSourceSchema,
   /** Why usage is unavailable, when it is. Shown verbatim, never invented. */
   note: z.string().optional(),
+  /** The plan the limits belong to, as the provider names it. */
+  plan: z.string().optional(),
 });
 export type ProviderUsageSnapshot = z.infer<typeof providerUsageSnapshotSchema>;
 

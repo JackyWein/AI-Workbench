@@ -11,7 +11,6 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -19,30 +18,79 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true,
-
     "noEmit": true,
     "allowJs": false,
     "baseUrl": ".",
     "paths": {
-      "@ai-workbench/shared": ["./packages/shared/src/index.ts"],
-      "@ai-workbench/core": ["./packages/core/src/index.ts"],
-      "@ai-workbench/database": ["./packages/database/src/index.ts"],
-      "@ai-workbench/provider-base": ["./packages/providers/base/src/index.ts"],
-      "@ai-workbench/provider-mock": ["./packages/providers/mock/src/index.ts"],
-      "@ai-workbench/provider-cli": ["./packages/providers/cli/src/index.ts"],
-      "@ai-workbench/transport-cli": ["./packages/providers/transports/cli/src/index.ts"],
-      "@ai-workbench/workspace-fs": ["./packages/workspace-fs/src/index.ts"],
-      "@ai-workbench/workspace-git": ["./packages/workspace-git/src/index.ts"],
-      "@ai-workbench/credentials": ["./packages/credentials/src/index.ts"],
-      "@ai-workbench/mcp": ["./packages/mcp/src/index.ts"],
-      "@ai-workbench/plugins": ["./packages/plugins/src/index.ts"],
-      "@ai-workbench/skills": ["./packages/skills/src/index.ts"],
-      "@ai-workbench/status": ["./packages/status/src/index.ts"],
-      "@ai-workbench/team": ["./packages/team/src/index.ts"],
-      "@ai-workbench/terminal": ["./packages/terminal/src/index.ts"],
-      "@ai-workbench/test-support": ["./packages/test-support/src/index.ts"],
-      "@ai-workbench/ui": ["./packages/ui/src/index.ts"],
-      "@ai-workbench/ui/*": ["./packages/ui/src/*"]
+      "@ai-workbench/shared": [
+        "./packages/shared/src/index.ts"
+      ],
+      "@ai-workbench/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@ai-workbench/database": [
+        "./packages/database/src/index.ts"
+      ],
+      "@ai-workbench/provider-base": [
+        "./packages/providers/base/src/index.ts"
+      ],
+      "@ai-workbench/provider-mock": [
+        "./packages/providers/mock/src/index.ts"
+      ],
+      "@ai-workbench/provider-cli": [
+        "./packages/providers/cli/src/index.ts"
+      ],
+      "@ai-workbench/transport-cli": [
+        "./packages/providers/transports/cli/src/index.ts"
+      ],
+      "@ai-workbench/workspace-fs": [
+        "./packages/workspace-fs/src/index.ts"
+      ],
+      "@ai-workbench/workspace-git": [
+        "./packages/workspace-git/src/index.ts"
+      ],
+      "@ai-workbench/credentials": [
+        "./packages/credentials/src/index.ts"
+      ],
+      "@ai-workbench/mcp": [
+        "./packages/mcp/src/index.ts"
+      ],
+      "@ai-workbench/plugins": [
+        "./packages/plugins/src/index.ts"
+      ],
+      "@ai-workbench/skills": [
+        "./packages/skills/src/index.ts"
+      ],
+      "@ai-workbench/status": [
+        "./packages/status/src/index.ts"
+      ],
+      "@ai-workbench/team": [
+        "./packages/team/src/index.ts"
+      ],
+      "@ai-workbench/terminal": [
+        "./packages/terminal/src/index.ts"
+      ],
+      "@ai-workbench/test-support": [
+        "./packages/test-support/src/index.ts"
+      ],
+      "@ai-workbench/ui": [
+        "./packages/ui/src/index.ts"
+      ],
+      "@ai-workbench/ui/*": [
+        "./packages/ui/src/*"
+      ],
+      "@ai-workbench/provider-claude": [
+        "./packages/providers/claude/src/index.ts"
+      ],
+      "@ai-workbench/provider-codex": [
+        "./packages/providers/codex/src/index.ts"
+      ],
+      "@ai-workbench/provider-opencode": [
+        "./packages/providers/opencode/src/index.ts"
+      ],
+      "@ai-workbench/provider-gemini": [
+        "./packages/providers/gemini/src/index.ts"
+      ]
     }
   }
 }

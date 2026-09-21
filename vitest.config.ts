@@ -12,6 +12,10 @@ export default defineConfig({
       "@ai-workbench/provider-base": resolve(root, "packages/providers/base/src/index.ts"),
       "@ai-workbench/provider-mock": resolve(root, "packages/providers/mock/src/index.ts"),
       "@ai-workbench/provider-cli": resolve(root, "packages/providers/cli/src/index.ts"),
+      "@ai-workbench/provider-claude": resolve(root, "packages/providers/claude/src/index.ts"),
+      "@ai-workbench/provider-codex": resolve(root, "packages/providers/codex/src/index.ts"),
+      "@ai-workbench/provider-opencode": resolve(root, "packages/providers/opencode/src/index.ts"),
+      "@ai-workbench/provider-gemini": resolve(root, "packages/providers/gemini/src/index.ts"),
       "@ai-workbench/transport-cli": resolve(
         root,
         "packages/providers/transports/cli/src/index.ts",

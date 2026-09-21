@@ -77,6 +77,80 @@ export const cliAuthSchema = z.object({
 });
 export type CliAuth = z.infer<typeof cliAuthSchema>;
 
+/** Arguments per permission mode (spec §54); a missing mode adds nothing. */
+export const permissionArgsSchema = z
+  .object({
+    default: z.array(z.string()).optional(),
+    readOnly: z.array(z.string()).optional(),
+    edit: z.array(z.string()).optional(),
+    full: z.array(z.string()).optional(),
+  })
+  .default({});
+export type PermissionArgs = z.infer<typeof permissionArgsSchema>;
+
+/**
+ * How the MCP servers a session may use reach the tool (spec §36, §38).
+ *
+ * - json-arg          one argument holding `{"mcpServers": {...}}`, the format
+ *                     most tools share; `{mcpConfig}` in `args` is replaced
+ * - config-overrides  one `flag root.<id>.<key>=<value>` pair per setting,
+ *                     values written as TOML
+ * - env-json          a variable holding `{"<root>": {...}}` in the tool's own
+ *                     configuration format
+ */
+export const cliMcpSchema = z
+  .discriminatedUnion("via", [
+    z.object({ via: z.literal("none") }),
+    z.object({ via: z.literal("json-arg"), args: z.array(z.string()).min(1) }),
+    z.object({
+      via: z.literal("config-overrides"),
+      flag: z.string().min(1),
+      root: z.string().min(1),
+    }),
+    z.object({
+      via: z.literal("env-json"),
+      variable: z.string().min(1),
+      root: z.string().min(1),
+    }),
+    /** The provider's extension formats the servers itself (`mcpLaunch`). */
+    z.object({ via: z.literal("extension") }),
+  ])
+  .default({ via: "none" });
+export type CliMcp = z.infer<typeof cliMcpSchema>;
+
+/** The tool's own interactive interface, run in a terminal (spec §26). */
+export const cliInteractiveSchema = z.object({
+  /** Always-present arguments; model and effort arguments are shared. */
+  args: z.array(z.string()).default([]),
+  /** Overrides the headless permission arguments where they differ. */
+  permissionArgs: permissionArgsSchema.optional(),
+  /** Overrides the headless instruction arguments where they differ. */
+  instructionArgs: z.array(z.string()).optional(),
+});
+export type CliInteractive = z.infer<typeof cliInteractiveSchema>;
+
+/**
+ * Separate accounts of one tool. Each account is a configuration home the tool
+ * is pointed at with an environment variable, so signing in, settings and
+ * history stay apart the way the tool itself keeps them apart.
+ */
+export const cliAccountsSchema = z.object({
+  /** Environment variable that selects the configuration home. */
+  homeVariable: z.string().min(1),
+  /** The home the tool uses when the variable is unset. ~ expands. */
+  defaultHome: z.string().min(1),
+  /**
+   * Patterns for further homes that already exist, e.g. "~/.tool-*". Only the
+   * last path segment may contain a "*".
+   */
+  detect: z.array(z.string()).default([]),
+  /** A home only counts as an account when one of these files exists in it. */
+  markers: z.array(z.string()).default([]),
+  /** Arguments that start the tool's own sign-in for the selected home. */
+  loginArgs: z.array(z.string()).default([]),
+});
+export type CliAccounts = z.infer<typeof cliAccountsSchema>;
+
 export const cliProviderProfileSchema = z.object({
   /** Bumped when the profile shape changes, so profiles can be migrated. */
   schemaVersion: z.literal(1),
@@ -86,6 +160,13 @@ export const cliProviderProfileSchema = z.object({
   website: z.string().url().optional(),
   /** Executable looked up on PATH unless a path is configured. */
   command: z.string().min(1),
+  /**
+   * Where the tool is commonly installed when it is not on PATH, tried in
+   * order. `~`, `%VAR%` and `$VAR` expand; missing variables skip the entry.
+   */
+  knownLocations: z.array(z.string()).default([]),
+  /** A key the UI turns into the tool's logo; never a behaviour switch. */
+  icon: z.string().optional(),
   versionArgs: z.array(z.string()).default(["--version"]),
   auth: cliAuthSchema.default({ method: "cli" }),
   capabilities: z.array(providerCapabilitySchema),
@@ -95,6 +176,15 @@ export const cliProviderProfileSchema = z.object({
   args: z.array(z.string()).default([]),
   /** Added when a model is selected. Supports {model}. */
   modelArgs: z.array(z.string()).default([]),
+  /** Added when a reasoning effort is selected. Supports {effort}. */
+  effortArgs: z.array(z.string()).default([]),
+  permissionArgs: permissionArgsSchema,
+  /**
+   * How the session's effective skill instructions reach the tool (spec §30).
+   * Supports {systemInstructions}. Empty means the tool cannot take them.
+   */
+  instructionArgs: z.array(z.string()).default([]),
+  mcp: cliMcpSchema,
   /** Added when continuing a provider session. Supports {providerSessionId}. */
   resumeArgs: z.array(z.string()).default([]),
   /**
@@ -106,6 +196,11 @@ export const cliProviderProfileSchema = z.object({
   promptVia: z.enum(["stdin", "arg"]).default("stdin"),
   /** Used when promptVia is "arg". Supports {prompt}. */
   promptArgs: z.array(z.string()).default(["{prompt}"]),
+  /**
+   * Appended after everything else, e.g. "-" for tools that read the prompt
+   * from stdin only when told to.
+   */
+  trailingArgs: z.array(z.string()).default([]),
 
   output: cliOutputSchema,
   env: z.record(z.string()).default({}),
@@ -132,6 +227,9 @@ export const cliProviderProfileSchema = z.object({
    * so the UI can say so instead of implying more confidence than we have.
    */
   unverified: z.boolean().default(false),
+  /** Present when the tool can run as a terminal agent. */
+  interactive: cliInteractiveSchema.optional(),
+  accounts: cliAccountsSchema.optional(),
 });
 
 export type CliProviderProfile = z.infer<typeof cliProviderProfileSchema>;
@@ -183,23 +281,31 @@ function readSegments(value: unknown, segments: string[]): unknown {
   return readSegments((value as Record<string, unknown>)[segment], rest);
 }
 
-/** Replaces {placeholders}; returns null when any placeholder is unresolved. */
+/**
+ * Replaces {placeholders}; returns null when any placeholder is unresolved.
+ *
+ * `{name:json}` writes the value as a JSON string literal, which is also a
+ * valid TOML basic string — how a multi-line value is passed to a tool that
+ * parses its option values.
+ */
 export function substitute(
   args: string[],
   values: Record<string, string | undefined>,
 ): string[] | null {
   const result: string[] = [];
   for (const arg of args) {
-    let replaced = arg;
     let unresolved = false;
-    replaced = replaced.replace(/\{(\w+)\}/g, (_match, key: string) => {
-      const value = values[key];
-      if (value === undefined || value === "") {
-        unresolved = true;
-        return "";
-      }
-      return value;
-    });
+    const replaced = arg.replace(
+      /\{(\w+)(?::(\w+))?\}/g,
+      (_match, key: string, filter: string | undefined) => {
+        const value = values[key];
+        if (value === undefined || value === "") {
+          unresolved = true;
+          return "";
+        }
+        return filter === "json" ? JSON.stringify(value) : value;
+      },
+    );
     if (unresolved) {
       return null;
     }

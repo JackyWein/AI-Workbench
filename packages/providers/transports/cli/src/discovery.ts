@@ -1,10 +1,11 @@
 import { access, constants, stat } from "node:fs/promises";
 import { delimiter, isAbsolute, join, resolve } from "node:path";
+import { expandPath } from "./paths.js";
 import { execCli } from "./process.js";
 
 export interface ExecutableLocation {
   readonly path: string;
-  readonly source: "configured" | "path";
+  readonly source: "configured" | "path" | "known";
 }
 
 /**
@@ -17,6 +18,11 @@ export async function findExecutable(
   options: {
     readonly configuredPath?: string | undefined;
     readonly env?: NodeJS.ProcessEnv;
+    /**
+     * Where the tool is commonly installed when it is not on PATH, tried after
+     * PATH. Entries may use ~, %VAR% and $VAR.
+     */
+    readonly knownLocations?: readonly string[];
   } = {},
 ): Promise<ExecutableLocation | null> {
   const env = options.env ?? process.env;
@@ -39,12 +45,21 @@ export async function findExecutable(
       ? (env["PATHEXT"] ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
       : [""];
 
-  for (const directory of (env["PATH"] ?? "").split(delimiter).filter(Boolean)) {
+  // A file without an extension is only runnable on Windows through a shell,
+  // so the extensions come first; the bare name is the Unix case.
+  for (const directory of (env["PATH"] ?? env["Path"] ?? "").split(delimiter).filter(Boolean)) {
     for (const extension of extensions) {
       const candidate = join(directory, `${command}${extension}`);
       if (await isExecutableFile(candidate)) {
         return { path: candidate, source: "path" };
       }
+    }
+  }
+
+  for (const location of options.knownLocations ?? []) {
+    const candidate = expandPath(location, env);
+    if (candidate && (await isExecutableFile(resolve(candidate)))) {
+      return { path: resolve(candidate), source: "known" };
     }
   }
 
@@ -81,12 +96,14 @@ export async function probeVersion(
   executablePath: string,
   args: string[] = ["--version"],
   timeoutMs = 5000,
+  env?: Record<string, string>,
 ): Promise<VersionProbe> {
   try {
     const { stdout, exit } = await execCli({
       executablePath,
       args,
       timeoutMs,
+      ...(env === undefined ? {} : { env }),
     });
     const raw = (stdout || exit.stderr).trim();
     return {

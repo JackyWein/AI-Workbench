@@ -11,7 +11,10 @@ import type {
   AgentMessage,
   AuthRequest,
   AuthResult,
+  InteractiveLaunch,
+  InteractiveLaunchRequest,
   ProviderContext,
+  ProviderImportables,
   ProviderSessionConfig,
   ProviderSessionHandle,
   ProviderSessionInfo,
@@ -35,7 +38,12 @@ export interface AIProviderAdapter {
   logout?(): Promise<void>;
 
   getCapabilities(): Promise<ProviderCapabilities>;
+  /** May answer from a cache; see `refreshModels`. */
   listModels(): Promise<ModelInfo[]>;
+  /** Asks the tool again which models it offers, bypassing any cache. */
+  refreshModels?(): Promise<ModelInfo[]>;
+  /** When the model list was last read from the tool itself; null if never. */
+  getModelsUpdatedAt?(): Date | null;
 
   createSession(config: ProviderSessionConfig): Promise<ProviderSessionInfo>;
   resumeSession?(
@@ -52,6 +60,15 @@ export interface AIProviderAdapter {
   destroySession(session: ProviderSessionHandle): Promise<void>;
 
   getUsage?(): Promise<ProviderUsageSnapshot>;
+
+  /**
+   * How to start the tool's own interactive interface for a terminal agent.
+   * Present only when the `interactiveTerminal` capability is.
+   */
+  describeInteractiveLaunch?(request: InteractiveLaunchRequest): Promise<InteractiveLaunch>;
+
+  /** Skills and MCP servers the tool is already configured with (spec §31). */
+  discoverImportables?(request: { workspacePath?: string }): Promise<ProviderImportables>;
 }
 
 export function supportsCapability(

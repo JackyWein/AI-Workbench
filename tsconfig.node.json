@@ -1,8 +1,12 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2023"],
-    "types": ["node"]
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "node"
+    ]
   },
   "include": [
     "packages/shared/src/**/*.ts",
@@ -11,6 +15,10 @@
     "packages/providers/base/src/**/*.ts",
     "packages/providers/mock/src/**/*.ts",
     "packages/providers/cli/src/**/*.ts",
+    "packages/providers/gemini/src/**/*.ts",
+    "packages/providers/opencode/src/**/*.ts",
+    "packages/providers/codex/src/**/*.ts",
+    "packages/providers/claude/src/**/*.ts",
     "packages/credentials/src/**/*.ts",
     "packages/mcp/src/**/*.ts",
     "packages/plugins/src/**/*.ts",

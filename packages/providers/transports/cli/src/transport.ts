@@ -7,6 +7,8 @@ export interface CliTransportOptions {
   /** Executable name looked up on PATH, e.g. "some-cli". */
   readonly command: string;
   readonly configuredPath?: string | undefined;
+  /** Common install locations tried after PATH; ~, %VAR% and $VAR expand. */
+  readonly knownLocations?: readonly string[];
   readonly baseArgs?: string[];
   readonly env?: Record<string, string>;
   readonly defaultTimeoutMs?: number;
@@ -43,9 +45,17 @@ export class CliTransport {
     }
     const found = await findExecutable(this.#options.command, {
       configuredPath: this.#options.configuredPath,
+      ...(this.#options.knownLocations === undefined
+        ? {}
+        : { knownLocations: this.#options.knownLocations }),
     });
     this.#resolvedPath = found?.path ?? null;
     return this.#resolvedPath;
+  }
+
+  /** The environment every run of this transport gets on top of the inherited one. */
+  get env(): Readonly<Record<string, string>> {
+    return this.#options.env ?? {};
   }
 
   async version(args: string[] = ["--version"]): Promise<VersionProbe | null> {
@@ -53,7 +63,7 @@ export class CliTransport {
     if (!executablePath) {
       return null;
     }
-    return probeVersion(executablePath, args);
+    return probeVersion(executablePath, args, 5000, this.#options.env);
   }
 
   /** A cheap liveness probe: does the executable run at all? */
