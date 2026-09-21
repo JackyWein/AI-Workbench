@@ -26,6 +26,7 @@ import {
 } from "@ai-workbench/provider-cli";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import { TerminalManager } from "@ai-workbench/terminal";
+import { StatusAttentionService } from "@ai-workbench/status";
 import { SafeStorageEncryption } from "./safe-storage.js";
 import { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
 import { GitService } from "@ai-workbench/workspace-git";
@@ -50,6 +51,7 @@ export interface AppServices {
   readonly plugins: PluginService;
   readonly mcp: McpService;
   readonly teams: TeamManager;
+  readonly attention: StatusAttentionService;
   readonly credentials: CredentialManager;
   /** Importers offered when the user adds skills from a folder (spec §31). */
   readonly skillImporters: readonly (ClaudeSkillImporter | MarkdownSkillImporter)[];
@@ -159,6 +161,13 @@ export async function createServices(
 
   const teams = new TeamManager({ db: database.db, events, logger, providers });
 
+  const settings = new SettingsService({ db: database.db, logger });
+  const storedSettings = await settings.get();
+  const attention = new StatusAttentionService({
+    logger,
+    preferences: storedSettings.statusIsland,
+  });
+
   const sessions = new SessionManager({
     db: database.db,
     events,
@@ -169,7 +178,6 @@ export async function createServices(
     mcp,
   });
   const usage = new UsageService({ providers, events, logger });
-  const settings = new SettingsService({ db: database.db, logger });
 
   const files = new WorkspaceFileSystem({ logger });
   const git = new GitService({ logger });
@@ -215,6 +223,7 @@ export async function createServices(
     plugins,
     mcp,
     teams,
+    attention,
     credentials,
     skillImporters: [new ClaudeSkillImporter(), new MarkdownSkillImporter()],
     files,

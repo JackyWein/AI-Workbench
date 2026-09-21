@@ -8,6 +8,7 @@ import {
   type IpcOutput,
 } from "@ai-workbench/shared";
 import { toProviderConfigOverrides, type AppServices } from "./services.js";
+import type { IslandController } from "./island-controller.js";
 
 type Handler<C extends IpcChannel> = (
   input: IpcInput<C>,
@@ -19,6 +20,7 @@ export interface RegisterIpcOptions {
   readonly services: AppServices;
   readonly appVersion: string;
   readonly userDataPath: string;
+  readonly island: IslandController;
 }
 
 
@@ -39,7 +41,7 @@ function toAssignments<K extends string>(
  * renderer.
  */
 export function registerIpcHandlers(options: RegisterIpcOptions): void {
-  const { services } = options;
+  const { services, island } = options;
   const logger = services.logger.child("IPC");
 
   const handlers: Handlers = {
@@ -281,6 +283,15 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "team.resumeRun": (input) => services.teams.resumeRun(input.runId),
     "team.pauseRun": (input) => services.teams.pauseRun(input.runId),
     "team.cancelRun": (input) => services.teams.cancelRun(input.runId),
+
+    "statusIsland.getState": () => island.refresh(),
+    "statusIsland.setPreferences": (input) => island.setPreferences(input),
+    "statusIsland.show": () => ({ visible: island.show() }),
+    "statusIsland.hide": () => ({ visible: island.hide() }),
+    "statusIsland.pinWidget": (input) => island.pin(input.widget),
+    "statusIsland.cycle": (input) => island.cycle(input.direction),
+    "statusIsland.open": (input) => ({ opened: island.open(input) }),
+    "statusIsland.dismiss": () => island.dismiss(),
 
     "settings.get": () => services.settings.get(),
     "settings.update": (input) => services.settings.update(input),

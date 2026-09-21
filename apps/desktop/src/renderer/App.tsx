@@ -40,7 +40,14 @@ export function App(): JSX.Element {
     const detach = attachEventStream();
     void state.initialize();
     void invoke("app.getInfo", undefined).then(setAppInfo);
-    return detach;
+    // The Status Island can ask the window to go somewhere (spec §98).
+    const detachNavigate = window.workbench.onNavigate((target) => {
+      void useWorkbench.getState().goTo(target);
+    });
+    return () => {
+      detach();
+      detachNavigate();
+    };
     // Runs once: the store and the event stream are module-level singletons.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

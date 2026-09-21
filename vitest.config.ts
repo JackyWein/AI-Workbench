@@ -22,6 +22,7 @@ export default defineConfig({
       "@ai-workbench/mcp": resolve(root, "packages/mcp/src/index.ts"),
       "@ai-workbench/plugins": resolve(root, "packages/plugins/src/index.ts"),
       "@ai-workbench/skills": resolve(root, "packages/skills/src/index.ts"),
+      "@ai-workbench/status": resolve(root, "packages/status/src/index.ts"),
       "@ai-workbench/team": resolve(root, "packages/team/src/index.ts"),
       "@ai-workbench/terminal": resolve(root, "packages/terminal/src/index.ts"),
       "@ai-workbench/test-support": resolve(root, "packages/test-support/src/index.ts"),
@@ -32,5 +33,13 @@ export default defineConfig({
     environment: "node",
     include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
     reporters: ["default"],
+    /*
+     * These are integration tests: they open databases, spawn shells and run
+     * command line tools. A Windows CI runner takes seconds over what a Linux
+     * one does in milliseconds, so the budget is set for the slowest machine
+     * the suite has to pass on rather than the fastest.
+     */
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
   },
 });

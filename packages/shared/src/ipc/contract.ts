@@ -44,6 +44,12 @@ import {
   mcpServerStatusSchema,
 } from "../domain/mcp.js";
 import {
+  islandPreferencesSchema,
+  islandStateSchema,
+  islandTargetSchema,
+  islandWidgetIdSchema,
+} from "../domain/status-island.js";
+import {
   createTeamInputSchema,
   teamDefinitionSchema,
   teamRunSchema,
@@ -342,6 +348,28 @@ export const ipcContract = {
     output: teamRunSchema,
   },
 
+  "statusIsland.getState": { input: z.void(), output: islandStateSchema },
+  "statusIsland.setPreferences": {
+    input: islandPreferencesSchema.partial(),
+    output: islandStateSchema,
+  },
+  "statusIsland.show": { input: z.void(), output: z.object({ visible: z.boolean() }) },
+  "statusIsland.hide": { input: z.void(), output: z.object({ visible: z.boolean() }) },
+  "statusIsland.pinWidget": {
+    input: z.object({ widget: islandWidgetIdSchema.nullable() }),
+    output: islandStateSchema,
+  },
+  "statusIsland.cycle": {
+    input: z.object({ direction: z.union([z.literal(1), z.literal(-1)]).default(1) }),
+    output: islandStateSchema,
+  },
+  /** Brings the main window forward at the place an island entry is about. */
+  "statusIsland.open": {
+    input: islandTargetSchema,
+    output: z.object({ opened: z.boolean() }),
+  },
+  "statusIsland.dismiss": { input: z.void(), output: islandStateSchema },
+
   "settings.get": { input: z.void(), output: appSettingsSchema },
   "settings.update": {
     input: updateSettingsInputSchema,
@@ -363,6 +391,12 @@ export function isIpcChannel(value: string): value is IpcChannel {
 
 /** Single push channel from main to renderer, carrying AppEvent payloads. */
 export const APP_EVENT_CHANNEL = "workbench:event" as const;
+
+/** Island state, pushed to the island window only. */
+export const ISLAND_STATE_CHANNEL = "workbench:island" as const;
+
+/** Where the island asked the main window to go (spec §98). */
+export const ISLAND_NAVIGATE_CHANNEL = "workbench:navigate" as const;
 
 /** Shape of an error crossing the IPC boundary. */
 export const ipcErrorSchema = z.object({

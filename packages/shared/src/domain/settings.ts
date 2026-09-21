@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  defaultIslandPreferences,
+  islandPreferencesSchema,
+} from "./status-island.js";
 
 export const themeSchema = z.enum(["system", "dark", "light"]);
 export type Theme = z.infer<typeof themeSchema>;
@@ -13,6 +17,8 @@ export const appSettingsSchema = z.object({
   /** Developer Mode exposes raw normalized events and logs (spec §111). */
   developerMode: z.boolean(),
   defaultProviderId: z.string().min(1).nullable(),
+  /** The floating companion window, off until the user asks for it (spec §95). */
+  statusIsland: islandPreferencesSchema,
 });
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 
@@ -21,6 +27,7 @@ export const defaultAppSettings: AppSettings = {
   density: "comfortable",
   developerMode: false,
   defaultProviderId: null,
+  statusIsland: defaultIslandPreferences,
 };
 
 export const updateSettingsInputSchema = appSettingsSchema.partial();

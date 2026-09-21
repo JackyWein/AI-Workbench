@@ -81,6 +81,12 @@ importers:
       '@ai-workbench/skills':
         specifier: workspace:*
         version: link:../../packages/skills
+      '@ai-workbench/status':
+        specifier: workspace:*
+        version: link:../../packages/status
+      '@ai-workbench/team':
+        specifier: workspace:*
+        version: link:../../packages/team
       '@ai-workbench/terminal':
         specifier: workspace:*
         version: link:../../packages/terminal
@@ -302,6 +308,12 @@ importers:
       '@ai-workbench/test-support':
         specifier: workspace:*
         version: link:../test-support
+
+  packages/status:
+    dependencies:
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../shared
 
   packages/team:
     dependencies:

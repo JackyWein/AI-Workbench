@@ -1,0 +1,133 @@
+@import "@ai-workbench/ui/tokens.css";
+
+/*
+ * The island is a floating companion, not a window: the page itself is
+ * transparent and only the pill is painted (spec §95).
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#island {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.island {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface-overlay) 88%, transparent);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-popover);
+  /* The whole pill is the drag handle (spec §95). */
+  -webkit-app-region: drag;
+  transition: border-radius 140ms ease;
+}
+
+.island[data-expanded="true"] {
+  border-radius: var(--radius-lg);
+  align-items: stretch;
+  padding: var(--space-4) var(--space-5);
+}
+
+.island__line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 20px;
+}
+
+.island__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+  flex: none;
+}
+
+.island__dot[data-tone="active"] {
+  background: var(--running);
+}
+
+.island__dot[data-tone="attention"] {
+  background: var(--warning);
+}
+
+.island__dot[data-tone="error"] {
+  background: var(--danger);
+}
+
+.island__dot[data-tone="done"] {
+  background: var(--success);
+}
+
+.island__title {
+  font-size: var(--text-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.island__detail {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.island__bar {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-active);
+  overflow: hidden;
+}
+
+.island__bar-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.island__actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  /* Buttons must stay clickable inside a draggable region. */
+  -webkit-app-region: no-drag;
+}
+
+.island__button {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  background: var(--surface-active);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+}
+
+.island__button:hover {
+  background: var(--surface-selected);
+}
+
+.island__button--quiet {
+  background: transparent;
+  color: var(--text-secondary);
+}

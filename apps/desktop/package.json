@@ -28,6 +28,8 @@
     "@ai-workbench/provider-mock": "workspace:*",
     "@ai-workbench/shared": "workspace:*",
     "@ai-workbench/skills": "workspace:*",
+    "@ai-workbench/status": "workspace:*",
+    "@ai-workbench/team": "workspace:*",
     "@ai-workbench/terminal": "workspace:*",
     "@ai-workbench/transport-cli": "workspace:*",
     "@ai-workbench/ui": "workspace:*",

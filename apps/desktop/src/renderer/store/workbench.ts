@@ -15,6 +15,8 @@ import type {
   SessionStatus,
   SkillManifest,
   SkillScopes,
+  IslandPreferences,
+  IslandTarget,
   TeamDefinition,
   TeamRun,
   TeamRunSnapshot,
@@ -126,6 +128,11 @@ interface WorkbenchState {
     secret: string;
   }): Promise<void>;
   disconnectAccount(id: string): Promise<void>;
+
+  setIslandPreferences(patch: Partial<IslandPreferences>): Promise<void>;
+  cycleIslandWidget(direction: 1 | -1): Promise<void>;
+  /** Opens the place an island entry is about (spec §98). */
+  goTo(target: IslandTarget): Promise<void>;
 
   refreshTeams(): Promise<void>;
   createTeam(input: {
@@ -536,6 +543,42 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     } catch (error) {
       set({ error: describeError(error) });
     }
+  },
+
+  async setIslandPreferences(patch) {
+    try {
+      const state = await invoke("statusIsland.setPreferences", patch);
+      set((current) => ({
+        settings: { ...current.settings, statusIsland: state.preferences },
+      }));
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async cycleIslandWidget(direction) {
+    try {
+      const state = await invoke("statusIsland.cycle", { direction });
+      set((current) => ({
+        settings: { ...current.settings, statusIsland: state.preferences },
+      }));
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async goTo(target) {
+    if (target.sessionId) {
+      await get().selectSession(target.sessionId);
+      return;
+    }
+    if (target.runId) {
+      set({ view: "teams" });
+      await get().refreshTeams();
+      await get().openTeamRun(target.runId);
+      return;
+    }
+    set({ view: target.view });
   },
 
   async refreshTeams() {

@@ -24,6 +24,8 @@ const alias = {
   "@ai-workbench/mcp": resolve(root, "packages/mcp/src/index.ts"),
   "@ai-workbench/plugins": resolve(root, "packages/plugins/src/index.ts"),
   "@ai-workbench/skills": resolve(root, "packages/skills/src/index.ts"),
+  "@ai-workbench/team": resolve(root, "packages/team/src/index.ts"),
+  "@ai-workbench/status": resolve(root, "packages/status/src/index.ts"),
   "@ai-workbench/terminal": resolve(root, "packages/terminal/src/index.ts"),
   "@ai-workbench/ui": resolve(root, "packages/ui/src/index.ts"),
   "@renderer": resolve(__dirname, "src/renderer"),
@@ -59,11 +61,18 @@ export default defineConfig({
     },
   },
   renderer: {
+    // The main window and the Status Island are two pages of one build, so the
+    // island gets the same tokens and the same bundler without a second app.
     root: resolve(__dirname, "src/renderer"),
     plugins: [react()],
     resolve: { alias },
     build: {
-      rollupOptions: { input: resolve(__dirname, "src/renderer/index.html") },
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, "src/renderer/index.html"),
+          island: resolve(__dirname, "src/renderer/island/index.html"),
+        },
+      },
     },
   },
 });
