@@ -1,6 +1,6 @@
 import type { JSX } from "react";
 import type { ProviderSummary, Session } from "@ai-workbench/shared";
-import { providerLabel } from "../lib/provider-label.js";
+import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
 import { useWorkbench } from "../store/workbench.js";
 
 interface ModelPickerProps {
@@ -19,7 +19,7 @@ export function ModelPicker({ session, providers }: ModelPickerProps): JSX.Eleme
   const setSessionRuntime = useWorkbench((state) => state.setSessionRuntime);
   const provider = providers.find((entry) => entry.metadata.id === session.providerId);
   const visibleProviders = providers.filter(
-    (entry) => entry.enabled || entry.metadata.id === session.providerId,
+    (entry) => isPickableProvider(entry) || entry.metadata.id === session.providerId,
   );
   const canSelectModel =
     provider?.capabilities.supported.includes("modelSelection") ?? false;

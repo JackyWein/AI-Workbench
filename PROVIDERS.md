@@ -152,11 +152,16 @@ applied immediately, without restarting.
 A provider reports its own models through `listModels()`. Claude Code ships a
 list because its models are documented alongside the flags. A profile can also
 declare `modelsArgs`: a command whose stdout lists one model id per line
-(`opencode models` is the first of these tools to offer one). The adapter runs
+(`opencode models`; `agy models` uses `id\tDisplay` per line for the same
+parser). The adapter runs
 it in the background at startup, parses it with `parseModelLines`, caches it
 in `models.json` and re-reads it via `refreshModels()`; a failing command
 leaves the previous list alone. An extension hook (`discoverModels`) covers
-tools whose list needs code rather than a command.
+tools whose list needs code rather than a command. Usage works the same way
+via `usageArgs` plus a `usageFormat` parser (`opencode-stats` reads
+`opencode stats --json` into token and cost limits); effort levels via
+`effortOptions` (Antigravity's `low|medium|high`), which also drive the
+`reasoningModes` capability and the effort picker.
 
 Every other tool without such a command starts empty, and nothing is guessed
 on its behalf.

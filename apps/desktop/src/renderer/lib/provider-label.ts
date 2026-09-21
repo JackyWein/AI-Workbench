@@ -16,3 +16,19 @@ export function providerLabel(provider: ProviderSummary): string {
 export function familyOf(provider: ProviderSummary): string {
   return provider.metadata.family ?? provider.metadata.id;
 }
+
+/**
+ * Whether a provider can be picked for new work (sessions, teams, agent
+ * tiles). Hidden providers and ones proven missing stay out of every picker;
+ * "unknown" stays in because absence cannot be proven. The Providers screen
+ * lists everything so paths can still be configured.
+ */
+export function isPickableProvider(provider: ProviderSummary): boolean {
+  if (!provider.enabled) {
+    return false;
+  }
+  return (
+    provider.installation.state !== "notInstalled" &&
+    provider.installation.state !== "unsupported"
+  );
+}

@@ -9,7 +9,7 @@ import type {
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { Logo } from "./Logo.js";
-import { providerLabel } from "../lib/provider-label.js";
+import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
 
 /**
  * The team screen (spec §70, §94).
@@ -563,10 +563,10 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
   const [saving, setSaving] = useState(false);
 
   // Providers load after the form mounts; agents without a choice inherit the
-  // first available one instead of staying empty. Hidden providers are never
-  // offered for new agents.
+  // first available one instead of staying empty. Hidden providers and ones
+  // proven missing are never offered for new agents.
   const firstProviderId =
-    providers.find((entry) => entry.enabled)?.metadata.id ?? "";
+    providers.find((entry) => isPickableProvider(entry))?.metadata.id ?? "";
   useEffect(() => {
     if (firstProviderId.length === 0) {
       return;
@@ -647,6 +647,12 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
             onChange={(event) => setName(event.target.value)}
           />
         </label>
+        {firstProviderId.length === 0 ? (
+          <p className="field__description" role="note">
+            No installed providers right now — install a tool or re-enable one
+            under Providers to staff this team.
+          </p>
+        ) : null}
         {agents.map((agent, index) => (
           <AgentDraftRow
             key={agent.key}
@@ -733,7 +739,7 @@ function AgentDraftRow({
             onChange={(event) => onPatch({ providerId: event.target.value })}
           >
             {providers
-              .filter((entry) => entry.enabled || entry.metadata.id === agent.providerId)
+              .filter((entry) => isPickableProvider(entry) || entry.metadata.id === agent.providerId)
               .map((entry) => (
                 <option key={entry.metadata.id} value={entry.metadata.id}>
                   {providerLabel(entry)}

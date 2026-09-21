@@ -5,7 +5,7 @@ import { useWorkbench } from "../store/workbench.js";
 import { ActivityTrace } from "./ActivityTrace.js";
 import { Logo } from "./Logo.js";
 import { XtermPane } from "./XtermPane.js";
-import { providerLabel } from "../lib/provider-label.js";
+import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
 
 interface AgentsViewProps {
   readonly workspaceId: string;
@@ -98,7 +98,7 @@ export function ModeToggle(): JSX.Element {
 function launchableProviders(providers: readonly ProviderSummary[]): ProviderSummary[] {
   return providers.filter(
     (provider) =>
-      provider.enabled &&
+      isPickableProvider(provider) &&
       provider.capabilities.supported.includes("interactiveTerminal"),
   );
 }
