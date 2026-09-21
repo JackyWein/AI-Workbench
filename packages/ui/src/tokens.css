@@ -7,40 +7,47 @@
  * counterpart, not an afterthought.
  */
 
+/*
+ * The palette is graphite with a slight blue cast. Colour is kept for meaning:
+ * one periwinkle accent for selection and focus, teal for what is live, and
+ * the tools' own logos — so eight agents side by side stay easy to tell apart
+ * without the interface competing with them.
+ */
 :root {
   /* Surfaces: quiet neutrals, separated by luminance rather than borders. */
-  --surface-base: #0e0f11;
-  --surface-raised: #141619;
-  --surface-overlay: #1b1e22;
-  --surface-sunken: #0a0b0d;
+  --surface-base: #111215;
+  --surface-raised: #16171b;
+  --surface-overlay: #1c1e23;
+  --surface-sunken: #0c0d0f;
   /* Backing for a quoted user turn; must stay legible in both themes. */
-  --surface-message: #17191d;
-  --surface-hover: rgba(255, 255, 255, 0.04);
+  --surface-message: #1a1c20;
+  --surface-hover: rgba(255, 255, 255, 0.045);
   --surface-active: rgba(255, 255, 255, 0.07);
-  --surface-selected: rgba(255, 255, 255, 0.09);
+  --surface-selected: rgba(255, 255, 255, 0.085);
 
   /* Text */
-  --text-primary: #e8eaed;
-  --text-secondary: #a8aeb6;
-  --text-muted: #6f767f;
-  --text-inverted: #16181b;
+  --text-primary: #ecedf0;
+  --text-secondary: #a3a7b0;
+  --text-muted: #6b707a;
+  --text-inverted: #121317;
 
   /* Lines: thin separators instead of heavy borders (spec §72). */
-  --border-subtle: rgba(255, 255, 255, 0.07);
-  --border-strong: rgba(255, 255, 255, 0.14);
-  --border-focus: #6ea8fe;
+  --border-subtle: rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --border-focus: #8c9dff;
 
   /* Semantic colour, used sparingly (spec §74). */
-  --accent: #6ea8fe;
-  --accent-quiet: rgba(110, 168, 254, 0.16);
-  --success: #6bcf8e;
-  --warning: #e0b75a;
-  --danger: #e57373;
-  --running: #6ea8fe;
+  --accent: #8c9dff;
+  --accent-quiet: rgba(140, 157, 255, 0.16);
+  --success: #5fcf95;
+  --warning: #e5b65c;
+  --danger: #ef7b72;
+  --running: #5bc8a7;
+  --live: #5bc8a7;
 
   /* Translucency is reserved for floating surfaces (spec §71). */
-  --overlay-backdrop: rgba(8, 9, 10, 0.55);
-  --overlay-blur: 18px;
+  --overlay-backdrop: rgba(8, 9, 11, 0.55);
+  --overlay-blur: 20px;
 
   /* Spacing scale */
   --space-1: 2px;
@@ -53,25 +60,28 @@
   --space-8: 48px;
 
   /* Radii */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 11px;
+  --radius-xl: 14px;
   --radius-pill: 999px;
 
   /* Shadows: only for floating surfaces. */
-  --shadow-overlay: 0 12px 32px rgba(0, 0, 0, 0.45);
-  --shadow-popover: 0 8px 24px rgba(0, 0, 0, 0.38);
+  --shadow-overlay: 0 18px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
   /* Typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Roboto",
-    "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", "JetBrains Mono",
-    Menlo, Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", "Inter", "Roboto", "Helvetica Neue", Arial, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "Segoe UI Variable Display", "Segoe UI", "Inter", "Roboto", sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", ui-monospace, SFMono-Regular, "SF Mono",
+    "JetBrains Mono", Menlo, Consolas, monospace;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-md: 13px;
   --text-lg: 15px;
-  --text-xl: 18px;
+  --text-xl: 20px;
   --line-tight: 1.35;
   --line-body: 1.6;
 
@@ -90,38 +100,41 @@
 
   /* Layout */
   --sidebar-width: 244px;
-  --context-width: 236px;
-  --header-height: 44px;
+  --context-width: 264px;
+  --header-height: 46px;
+  --tile-header-height: 34px;
 }
 
 :root[data-theme="light"] {
-  --surface-base: #fbfbfc;
+  --surface-base: #f6f6f8;
   --surface-raised: #ffffff;
   --surface-overlay: #ffffff;
-  --surface-sunken: #f1f2f4;
-  --surface-message: #eef0f3;
-  --surface-hover: rgba(15, 18, 22, 0.04);
-  --surface-active: rgba(15, 18, 22, 0.07);
-  --surface-selected: rgba(15, 18, 22, 0.08);
+  --surface-sunken: #eeeff2;
+  --surface-message: #eceef2;
+  --surface-hover: rgba(17, 19, 26, 0.045);
+  --surface-active: rgba(17, 19, 26, 0.07);
+  --surface-selected: rgba(17, 19, 26, 0.08);
 
-  --text-primary: #16181b;
-  --text-secondary: #4d545c;
-  --text-muted: #7b828b;
+  --text-primary: #16171b;
+  --text-secondary: #4b505a;
+  --text-muted: #7c818b;
   --text-inverted: #ffffff;
 
-  --border-subtle: rgba(15, 18, 22, 0.09);
-  --border-strong: rgba(15, 18, 22, 0.18);
+  --border-subtle: rgba(17, 19, 26, 0.09);
+  --border-strong: rgba(17, 19, 26, 0.18);
+  --border-focus: #4a5fd9;
 
-  --accent: #2f6fd0;
-  --accent-quiet: rgba(47, 111, 208, 0.12);
-  --success: #2e8b57;
-  --warning: #a97400;
-  --danger: #c0392b;
-  --running: #2f6fd0;
+  --accent: #4a5fd9;
+  --accent-quiet: rgba(74, 95, 217, 0.12);
+  --success: #218a57;
+  --warning: #a36f00;
+  --danger: #c43d31;
+  --running: #16977a;
+  --live: #16977a;
 
-  --overlay-backdrop: rgba(240, 241, 243, 0.6);
-  --shadow-overlay: 0 12px 32px rgba(15, 18, 22, 0.14);
-  --shadow-popover: 0 8px 24px rgba(15, 18, 22, 0.12);
+  --overlay-backdrop: rgba(238, 239, 242, 0.6);
+  --shadow-overlay: 0 18px 48px rgba(17, 19, 26, 0.16), 0 0 0 1px rgba(17, 19, 26, 0.05);
+  --shadow-popover: 0 10px 30px rgba(17, 19, 26, 0.12), 0 0 0 1px rgba(17, 19, 26, 0.04);
 }
 
 :root[data-density="compact"] {

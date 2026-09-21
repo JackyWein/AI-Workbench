@@ -99,8 +99,23 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
         summary: await services.providers.describe(input.providerId),
       };
     },
+    "provider.rescanModels": async (input) => {
+      const adapter = services.providers.get(input.providerId);
+      if (!adapter) {
+        throw new Error(`Provider "${input.providerId}" is not registered`);
+      }
+      await adapter.refreshModels?.();
+      return services.providers.describe(input.providerId);
+    },
     "provider.getUsage": () => services.usage.get(),
     "provider.refreshUsage": () => services.usage.refresh(),
+
+    "account.list": () => services.accounts.list(),
+    "account.detect": () => services.accounts.detect(),
+    "account.add": (input) => services.accounts.add(input),
+    "account.remove": async (input) => ({
+      removed: await services.accounts.remove(input.id),
+    }),
 
     "files.list": async (input) => {
       const session = await services.sessions.require(input.sessionId);
@@ -147,6 +162,25 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "terminal.close": (input) => ({
       closed: services.terminals.close(input.terminalId),
     }),
+
+    "terminal.reattach": (input) => ({
+      exists: services.terminals.has(input.terminalId),
+      scrollback: services.terminals.scrollback(input.terminalId),
+    }),
+
+    "agentTerminal.list": (input) => services.agentTerminals.list(input.workspaceId),
+    "agentTerminal.launch": (input) => services.agentTerminals.launch(input),
+    "agentTerminal.start": (input) =>
+      services.agentTerminals.start(input.id, {
+        ...(input.cols === undefined ? {} : { cols: input.cols }),
+        ...(input.rows === undefined ? {} : { rows: input.rows }),
+      }),
+    "agentTerminal.stop": (input) => services.agentTerminals.stop(input.id),
+    "agentTerminal.remove": async (input) => ({
+      removed: await services.agentTerminals.remove(input.id),
+    }),
+    "agentTerminal.update": (input) => services.agentTerminals.update(input),
+    "agentTerminal.login": (input) => services.agentTerminals.startLogin(input),
 
     "skill.list": () => services.skills.list(),
     "skill.save": (input) => services.skills.save(input),

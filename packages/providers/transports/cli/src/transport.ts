@@ -20,6 +20,13 @@ export interface CliInvocation {
   readonly cwd?: string | undefined;
   readonly stdin?: string | undefined;
   readonly timeoutMs?: number | undefined;
+  /**
+   * Variables for this run only, merged over the transport's own — how a turn
+   * hands its MCP servers to a tool that reads them from the environment.
+   */
+  readonly env?: Readonly<Record<string, string>> | undefined;
+  /** Keeps stdin open for `CliRun.write`, for a conversation over stdio. */
+  readonly keepStdinOpen?: boolean | undefined;
 }
 
 /**
@@ -78,7 +85,7 @@ export class CliTransport {
       executablePath,
       args: [...(this.#options.baseArgs ?? []), ...invocation.args],
       ...(invocation.cwd === undefined ? {} : { cwd: invocation.cwd }),
-      ...(this.#options.env === undefined ? {} : { env: this.#options.env }),
+      ...this.#envFor(invocation),
       ...(invocation.stdin === undefined ? {} : { stdin: invocation.stdin }),
       timeoutMs: invocation.timeoutMs ?? this.#options.defaultTimeoutMs ?? 30_000,
     });
@@ -99,8 +106,9 @@ export class CliTransport {
       executablePath,
       args,
       ...(invocation.cwd === undefined ? {} : { cwd: invocation.cwd }),
-      ...(this.#options.env === undefined ? {} : { env: this.#options.env }),
+      ...this.#envFor(invocation),
       ...(invocation.stdin === undefined ? {} : { stdin: invocation.stdin }),
+      ...(invocation.keepStdinOpen ? { keepStdinOpen: true } : {}),
       ...(invocation.timeoutMs === undefined
         ? this.#options.defaultTimeoutMs === undefined
           ? {}
@@ -108,6 +116,14 @@ export class CliTransport {
         : { timeoutMs: invocation.timeoutMs }),
       logger: this.#logger,
     });
+  }
+
+  /** The transport's environment with the invocation's own variables on top. */
+  #envFor(invocation: CliInvocation): { env?: Record<string, string> } {
+    if (invocation.env === undefined) {
+      return this.#options.env === undefined ? {} : { env: this.#options.env };
+    }
+    return { env: { ...this.#options.env, ...invocation.env } };
   }
 
   async #requirePath(): Promise<string> {

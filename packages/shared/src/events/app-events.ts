@@ -3,6 +3,8 @@ import { workspaceSchema } from "../domain/workspace.js";
 import { sessionSchema, sessionStatusSchema } from "../domain/session.js";
 import { chatMessageSchema } from "../domain/message.js";
 import { aggregatedUsageSchema } from "../domain/usage.js";
+import { providerSummarySchema } from "../domain/provider.js";
+import { agentTerminalSchema } from "../domain/agent-terminal.js";
 import { teamEventSchema } from "../domain/team.js";
 import {
   normalizedProviderErrorSchema,
@@ -59,6 +61,23 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("provider.usage.updated"),
     usage: aggregatedUsageSchema,
+  }),
+  /**
+   * A provider learned something on its own — its models, sign-in or limits
+   * read in the background — so the UI can update without polling.
+   */
+  z.object({
+    type: z.literal("provider.updated"),
+    summary: providerSummarySchema,
+  }),
+  /** Provider entries were added or removed, e.g. an account was connected. */
+  z.object({ type: z.literal("provider.list.changed") }),
+
+  z.object({ type: z.literal("agentTerminal.changed"), terminal: agentTerminalSchema }),
+  z.object({
+    type: z.literal("agentTerminal.removed"),
+    id: z.string(),
+    workspaceId: z.string(),
   }),
 
   // Team events reach the UI on the same channel as everything else, so the

@@ -11,8 +11,8 @@ export const motion = {
 
 export const layout = {
   sidebarWidth: 244,
-  contextWidth: 236,
-  headerHeight: 44,
+  contextWidth: 264,
+  headerHeight: 46,
 } as const;
 
 export type ThemePreference = "system" | "dark" | "light";
@@ -27,3 +27,5 @@ export function resolveTheme(
   }
   return preference;
 }
+
+export { LOGOS, type LogoDefinition } from "./logos.js";

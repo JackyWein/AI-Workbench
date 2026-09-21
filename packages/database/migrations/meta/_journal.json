@@ -29,6 +29,20 @@
       "when": 1789998513270,
       "tag": "0003_teams",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1790014641657,
+      "tag": "0004_provider-accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1790015001450,
+      "tag": "0005_agent-terminals",
+      "breakpoints": true
     }
   ]
 }

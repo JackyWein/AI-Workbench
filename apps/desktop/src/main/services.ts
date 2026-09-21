@@ -1,9 +1,11 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  AgentTerminalService,
   EventBus,
   McpService,
   PluginService,
+  ProviderAccountService,
   ProviderConfigService,
   ProviderManager,
   SessionManager,
@@ -25,6 +27,7 @@ import {
   parseProfile,
 } from "@ai-workbench/provider-cli";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
+import { resolveInteractiveCommand } from "@ai-workbench/transport-cli";
 import { TerminalManager } from "@ai-workbench/terminal";
 import { StatusAttentionService } from "@ai-workbench/status";
 import { SafeStorageEncryption } from "./safe-storage.js";
@@ -43,6 +46,7 @@ export interface AppServices {
   readonly database: DatabaseHandle;
   readonly providers: ProviderManager;
   readonly providerConfigs: ProviderConfigService;
+  readonly accounts: ProviderAccountService;
   readonly workspaces: WorkspaceManager;
   readonly sessions: SessionManager;
   readonly usage: UsageService;
@@ -58,6 +62,8 @@ export interface AppServices {
   readonly files: WorkspaceFileSystem;
   readonly git: GitService;
   readonly terminals: TerminalManager;
+  /** Providers' own interactive interfaces running in terminals. */
+  readonly agentTerminals: AgentTerminalService;
   /** Subscribes to terminal output; returns an unsubscribe function. */
   onTerminalEvent(listener: (event: TerminalEvent) => void): () => void;
   dispose(): Promise<void>;
@@ -109,9 +115,19 @@ export async function createServices(
 
   const events = new EventBus();
 
+  // Late-bound: usage is created after the providers it aggregates.
+  let usageRef: UsageService | null = null;
   const providers = new ProviderManager({
     logger,
     stateDirectory: join(options.userDataPath, "providers"),
+    onProviderChanged: (summary) => {
+      events.publish({ type: "provider.updated", summary });
+      // New limits read in the background reach the usage popover too.
+      if (usageRef && summary.usage) {
+        usageRef.invalidate();
+        void usageRef.refresh();
+      }
+    },
   });
 
   const providerConfigs = new ProviderConfigService({ db: database.db, logger });
@@ -128,6 +144,17 @@ export async function createServices(
     const adapter = new CliProviderAdapter(parseProfile(profile));
     await providers.register(adapter, overridesFor(adapter.metadata.id));
   }
+
+  // Further accounts of tools that keep several side by side (spec §39).
+  const accounts = new ProviderAccountService({
+    db: database.db,
+    events,
+    logger,
+    providers,
+    accountsDirectory: join(options.userDataPath, "accounts"),
+    configFor: overridesFor,
+  });
+  await accounts.restore();
 
   const workspaces = new WorkspaceManager({ db: database.db, events, logger });
 
@@ -178,6 +205,7 @@ export async function createServices(
     mcp,
   });
   const usage = new UsageService({ providers, events, logger });
+  usageRef = usage;
 
   const files = new WorkspaceFileSystem({ logger });
   const git = new GitService({ logger });
@@ -195,11 +223,33 @@ export async function createServices(
     }
   };
 
+  // Late-bound: agent terminals are created after the terminals they run in.
+  let agentTerminalsRef: AgentTerminalService | null = null;
   const terminals = new TerminalManager({
     logger,
     onData: (terminalId, chunk) => emitTerminal({ type: "data", terminalId, chunk }),
-    onExit: (terminalId, exitCode) =>
-      emitTerminal({ type: "exit", terminalId, exitCode }),
+    onExit: (terminalId, exitCode) => {
+      emitTerminal({ type: "exit", terminalId, exitCode });
+      agentTerminalsRef?.handleExit(terminalId, exitCode);
+    },
+  });
+
+  const agentTerminals = new AgentTerminalService({
+    db: database.db,
+    events,
+    logger,
+    providers,
+    workspaces,
+    terminals,
+    resolveCommand: (launch) => resolveInteractiveCommand(launch),
+  });
+  agentTerminalsRef = agentTerminals;
+
+  // A deleted workspace must not leave its agents running.
+  events.on("workspace.deleted", (event) => {
+    if (event.type === "workspace.deleted") {
+      agentTerminals.stopAll(event.workspaceId);
+    }
   });
 
   // A deleted session must not leave shells running.
@@ -215,6 +265,7 @@ export async function createServices(
     database,
     providers,
     providerConfigs,
+    accounts,
     workspaces,
     sessions,
     usage,
@@ -229,11 +280,13 @@ export async function createServices(
     files,
     git,
     terminals,
+    agentTerminals,
     onTerminalEvent: (listener) => {
       terminalListeners.add(listener);
       return () => terminalListeners.delete(listener);
     },
     dispose: async () => {
+      agentTerminals.stopAll();
       terminals.closeAll();
       terminalListeners.clear();
       // A run in flight is paused rather than orphaned (spec §132).

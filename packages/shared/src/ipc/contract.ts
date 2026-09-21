@@ -17,6 +17,16 @@ import {
 } from "../domain/provider.js";
 import { aggregatedUsageSchema } from "../domain/usage.js";
 import {
+  agentTerminalSchema,
+  launchAgentTerminalInputSchema,
+  updateAgentTerminalInputSchema,
+} from "../domain/agent-terminal.js";
+import {
+  addProviderAccountInputSchema,
+  detectedProviderAccountSchema,
+  providerAccountSchema,
+} from "../domain/account.js";
+import {
   appSettingsSchema,
   updateSettingsInputSchema,
 } from "../domain/settings.js";
@@ -137,10 +147,24 @@ export const ipcContract = {
       summary: providerSummarySchema,
     }),
   },
+  /** Asks the tool again which models it offers, bypassing the cache. */
+  "provider.rescanModels": {
+    input: z.object({ providerId: z.string().min(1) }),
+    output: providerSummarySchema,
+  },
   "provider.getUsage": { input: z.void(), output: aggregatedUsageSchema },
   "provider.refreshUsage": {
     input: z.void(),
     output: aggregatedUsageSchema,
+  },
+
+  "account.list": { input: z.void(), output: z.array(providerAccountSchema) },
+  /** Configuration homes on this machine that are not connected yet. */
+  "account.detect": { input: z.void(), output: z.array(detectedProviderAccountSchema) },
+  "account.add": { input: addProviderAccountInputSchema, output: providerAccountSchema },
+  "account.remove": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ removed: z.boolean() }),
   },
 
   "files.list": {
@@ -205,6 +229,45 @@ export const ipcContract = {
   "terminal.close": {
     input: z.object({ terminalId: z.string().min(1) }),
     output: z.object({ closed: z.boolean() }),
+  },
+
+  /** Rejoins a running terminal by id and returns what it printed so far. */
+  "terminal.reattach": {
+    input: z.object({ terminalId: z.string().min(1) }),
+    output: z.object({ exists: z.boolean(), scrollback: z.string() }),
+  },
+
+  "agentTerminal.list": {
+    input: z.object({ workspaceId: z.string().min(1) }),
+    output: z.array(agentTerminalSchema),
+  },
+  "agentTerminal.launch": { input: launchAgentTerminalInputSchema, output: agentTerminalSchema },
+  "agentTerminal.start": {
+    input: z.object({
+      id: z.string().min(1),
+      cols: z.number().int().positive().max(1000).optional(),
+      rows: z.number().int().positive().max(1000).optional(),
+    }),
+    output: agentTerminalSchema,
+  },
+  "agentTerminal.stop": {
+    input: z.object({ id: z.string().min(1) }),
+    output: agentTerminalSchema,
+  },
+  "agentTerminal.remove": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ removed: z.boolean() }),
+  },
+  "agentTerminal.update": { input: updateAgentTerminalInputSchema, output: agentTerminalSchema },
+  /** Opens a provider's own sign-in for one of its accounts in a terminal. */
+  "agentTerminal.login": {
+    input: z.object({
+      workspaceId: z.string().min(1),
+      providerId: z.string().min(1),
+      cols: z.number().int().positive().max(1000).optional(),
+      rows: z.number().int().positive().max(1000).optional(),
+    }),
+    output: agentTerminalSchema,
   },
 
   "skill.list": { input: z.void(), output: z.array(skillManifestSchema) },

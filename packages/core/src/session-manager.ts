@@ -7,6 +7,7 @@ import {
   type ProviderSessionHandle,
   type ProviderToolAccess,
 } from "@ai-workbench/provider-base";
+import { readSessionRuntimeSettings } from "@ai-workbench/shared";
 import type {
   ChatMessage,
   CreateSessionInput,
@@ -570,6 +571,9 @@ export class SessionManager {
     const capabilities = await this.#safeCapabilities(adapter);
     const systemInstructions = await this.#buildSystemInstructions(session, capabilities);
     const toolAccess = await this.#buildToolAccess(session, capabilities);
+    // Effort and permission are chosen per session and apply from the next
+    // turn on, without starting a new provider conversation.
+    const runtime = readSessionRuntimeSettings(session.settings);
 
     const config = {
       sessionId: session.id,
@@ -577,6 +581,8 @@ export class SessionManager {
       ...(session.modelId ? { modelId: session.modelId } : {}),
       ...(systemInstructions ? { systemInstructions } : {}),
       ...(toolAccess ? { toolAccess } : {}),
+      ...(runtime.reasoningEffort ? { reasoningEffort: runtime.reasoningEffort } : {}),
+      ...(runtime.permissionMode ? { permissionMode: runtime.permissionMode } : {}),
     };
 
     let info = null;
@@ -622,6 +628,8 @@ export class SessionManager {
         sessionId: session.id,
         providerSessionId: info.providerSessionId,
         ...(info.modelId ? { modelId: info.modelId } : {}),
+        ...(runtime.reasoningEffort ? { reasoningEffort: runtime.reasoningEffort } : {}),
+        ...(runtime.permissionMode ? { permissionMode: runtime.permissionMode } : {}),
       },
     };
   }

@@ -6,6 +6,7 @@ import {
   primaryKey,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 /**
@@ -118,6 +119,46 @@ export const providerConfigs = sqliteTable("provider_configs", {
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+/**
+ * Further accounts of a tool that keeps several side by side. The tool's own
+ * default home is never stored: it is always present as the provider itself.
+ */
+export const providerAccounts = sqliteTable(
+  "provider_accounts",
+  {
+    id: text("id").primaryKey(),
+    family: text("family").notNull(),
+    label: text("label").notNull(),
+    home: text("home").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [uniqueIndex("provider_accounts_family_home").on(table.family, table.home)],
+);
+
+/**
+ * Terminal agents of a workspace: which tool, account, model and effort each
+ * tile runs. The process itself is not persisted; after a restart a tile is
+ * stopped until the person starts it again.
+ */
+export const agentTerminals = sqliteTable(
+  "agent_terminals",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    purpose: text("purpose").notNull(),
+    providerId: text("provider_id"),
+    label: text("label").notNull(),
+    modelId: text("model_id"),
+    reasoningEffort: text("reasoning_effort"),
+    permissionMode: text("permission_mode"),
+    workingDirectory: text("working_directory").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (table) => [index("agent_terminals_workspace").on(table.workspaceId)],
+);
 
 /** Provider-neutral skill material (spec §29). */
 export const skills = sqliteTable("skills", {
@@ -308,6 +349,8 @@ export type NewChatMessageRow = typeof chatMessages.$inferInsert;
 export type SettingRow = typeof settings.$inferSelect;
 export type ProviderConfigRow = typeof providerConfigs.$inferSelect;
 export type NewProviderConfigRow = typeof providerConfigs.$inferInsert;
+export type ProviderAccountRow = typeof providerAccounts.$inferSelect;
+export type AgentTerminalRow = typeof agentTerminals.$inferSelect;
 export type SkillRow = typeof skills.$inferSelect;
 export type NewSkillRow = typeof skills.$inferInsert;
 export type PluginRow = typeof plugins.$inferSelect;

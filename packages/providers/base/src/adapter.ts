@@ -69,6 +69,40 @@ export interface AIProviderAdapter {
 
   /** Skills and MCP servers the tool is already configured with (spec §31). */
   discoverImportables?(request: { workspacePath?: string }): Promise<ProviderImportables>;
+
+  /**
+   * How to start the tool's own sign-in for this entry's account, run in a
+   * terminal so the person signs in with the tool itself (spec §14). Null when
+   * the tool has no command for it.
+   */
+  describeLogin?(): Promise<InteractiveLaunch | null>;
+}
+
+/** One account of a tool, as the application hands it to a factory. */
+export interface ProviderAccountRef {
+  readonly id: string;
+  readonly label: string;
+  /** The tool's configuration home; null is the tool's own default. */
+  readonly home: string | null;
+}
+
+/**
+ * Creates the entries of one provider family. The application registers the
+ * default entry and one per connected account without knowing anything about
+ * the tool, which keeps accounts provider-independent (spec §3).
+ */
+export interface ProviderFactory {
+  /** Id of the family; also the id of its default entry. */
+  readonly family: string;
+  readonly displayName: string;
+  /** Present when the tool can keep separate accounts side by side. */
+  readonly accounts?: {
+    /** Configuration homes of further accounts that already exist here. */
+    detect(): Promise<string[]>;
+    /** Whether a home is the tool's default one, which is always present. */
+    isDefaultHome(home: string): boolean;
+  };
+  create(account?: ProviderAccountRef): AIProviderAdapter;
 }
 
 export function supportsCapability(

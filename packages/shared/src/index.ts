@@ -2,6 +2,8 @@ export * from "./domain/workspace.js";
 export * from "./domain/session.js";
 export * from "./domain/message.js";
 export * from "./domain/provider.js";
+export * from "./domain/account.js";
+export * from "./domain/agent-terminal.js";
 export * from "./domain/usage.js";
 export * from "./domain/settings.js";
 export * from "./domain/workspace-tools.js";

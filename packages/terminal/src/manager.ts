@@ -18,6 +18,16 @@ export interface CreateTerminalOptions {
   readonly cols?: number;
   readonly rows?: number;
   readonly shell?: string;
+  /**
+   * A program to run instead of the shell, with its arguments — how a tool's
+   * own interactive interface runs in a terminal. Already resolved to an
+   * executable by the caller; nothing here goes through a shell.
+   */
+  readonly command?: {
+    readonly file: string;
+    /** An array, or one command line that is already quoted for cmd.exe. */
+    readonly args: readonly string[] | string;
+  };
   readonly env?: Record<string, string>;
 }
 
@@ -72,7 +82,9 @@ export class TerminalManager {
   constructor(options: TerminalManagerOptions) {
     this.#options = options;
     this.#logger = options.logger.child("TERMINAL");
-    this.#maxTerminals = options.maxTerminals ?? 12;
+    // Agent terminals and shells share the budget; a grid of agents per
+    // workspace needs room without letting a runaway loop open hundreds.
+    this.#maxTerminals = options.maxTerminals ?? 24;
     this.#scrollbackLimit = options.scrollbackLimit ?? 200_000;
   }
 
@@ -81,12 +93,13 @@ export class TerminalManager {
       throw new TerminalLimitError(this.#maxTerminals);
     }
 
-    const shell = options.shell ?? defaultShell();
+    const shell = options.command?.file ?? options.shell ?? defaultShell();
     const cols = options.cols ?? 80;
     const rows = options.rows ?? 24;
     const id = randomUUID();
 
-    const pty = spawn(shell, [], {
+    const args = options.command?.args ?? [];
+    const pty = spawn(shell, typeof args === "string" ? args : [...args], {
       name: "xterm-256color",
       cols,
       rows,

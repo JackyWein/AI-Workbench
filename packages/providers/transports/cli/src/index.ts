@@ -5,3 +5,4 @@ export * from "./transport.js";
 export * from "./json-rpc.js";
 export * from "./paths.js";
 export * from "./windows.js";
+export * from "./interactive.js";

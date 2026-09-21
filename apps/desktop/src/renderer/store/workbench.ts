@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import type {
+  AddProviderAccountInput,
+  AgentTerminal,
+  LaunchAgentTerminalInput,
+  UpdateAgentTerminalInput,
   AggregatedUsage,
   AppEvent,
+  DetectedProviderAccount,
+  PermissionMode,
+  ProviderAccount,
   AppSettings,
   ChatMessage,
   McpServerConfig,
@@ -36,6 +43,38 @@ export type MainView =
   | "teams"
   | "settings";
 export type WorkspaceTab = "terminal" | "files" | "changes";
+/** The clean conversation, or the workspace's agents in their own terminals. */
+export type WorkspaceMode = "chat" | "terminals";
+
+const UI_STORAGE_KEY = "ai-workbench.ui";
+
+interface StoredUi {
+  readonly workspaceMode?: WorkspaceMode;
+  readonly inspectorOpen?: boolean;
+}
+
+/** View preferences that only concern this window; never domain state. */
+function readStoredUi(): StoredUi {
+  try {
+    const raw = window.localStorage.getItem(UI_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as StoredUi) : {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredUi(patch: StoredUi): void {
+  try {
+    window.localStorage.setItem(
+      UI_STORAGE_KEY,
+      JSON.stringify({ ...readStoredUi(), ...patch }),
+    );
+  } catch {
+    // A preference that cannot be remembered is not worth an error.
+  }
+}
+
+const storedUi = typeof window === "undefined" ? {} : readStoredUi();
 
 interface WorkbenchState {
   ready: boolean;
@@ -45,6 +84,9 @@ interface WorkbenchState {
   sessions: Session[];
   providers: ProviderSummary[];
   providerConfigs: Record<string, StoredProviderConfig>;
+  /** Further accounts of tools that keep several (spec §39). */
+  accounts: ProviderAccount[];
+  detectedAccounts: DetectedProviderAccount[];
   usage: AggregatedUsage | null;
   settings: AppSettings;
 
@@ -72,6 +114,11 @@ interface WorkbenchState {
   paletteOpen: boolean;
   workspacePanelOpen: boolean;
   workspaceTab: WorkspaceTab;
+  workspaceMode: WorkspaceMode;
+  /** The slim session inspector on the right (spec §80). */
+  inspectorOpen: boolean;
+  /** Terminal agents per workspace. */
+  agentTerminals: Record<string, AgentTerminal[]>;
 
   messages: Record<string, ChatMessage[]>;
   status: Record<string, SessionStatus>;
@@ -84,6 +131,19 @@ interface WorkbenchState {
   setWorkspacePanelOpen(open: boolean): void;
   toggleWorkspacePanel(tab?: WorkspaceTab): void;
   setWorkspaceTab(tab: WorkspaceTab): void;
+  setWorkspaceMode(mode: WorkspaceMode): void;
+  setInspectorOpen(open: boolean): void;
+
+  refreshAgentTerminals(workspaceId?: string): Promise<void>;
+  launchAgentTerminal(
+    input: Omit<LaunchAgentTerminalInput, "workspaceId">,
+  ): Promise<AgentTerminal | null>;
+  startAgentTerminal(id: string, size?: { cols: number; rows: number }): Promise<void>;
+  stopAgentTerminal(id: string): Promise<void>;
+  removeAgentTerminal(id: string): Promise<void>;
+  updateAgentTerminal(input: UpdateAgentTerminalInput): Promise<void>;
+  /** Opens a provider's own sign-in in the workspace's terminals. */
+  startProviderLogin(providerId: string): Promise<void>;
 
   selectWorkspace(id: string | null): Promise<void>;
   selectSession(id: string | null): Promise<void>;
@@ -106,6 +166,16 @@ interface WorkbenchState {
 
   refreshUsage(): Promise<void>;
   refreshProviders(): Promise<void>;
+  /** Asks a tool again which models it offers. */
+  rescanModels(providerId: string): Promise<void>;
+  refreshAccounts(): Promise<void>;
+  addAccount(input: AddProviderAccountInput): Promise<ProviderAccount | null>;
+  removeAccount(id: string): Promise<void>;
+  /** Effort and permission for the active session; null clears a choice. */
+  setSessionRuntime(input: {
+    reasoningEffort?: string | null;
+    permissionMode?: PermissionMode | null;
+  }): Promise<void>;
 
   refreshSkills(): Promise<void>;
   importSkills(): Promise<void>;
@@ -189,6 +259,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   sessions: [],
   providers: [],
   providerConfigs: {},
+  accounts: [],
+  detectedAccounts: [],
   usage: null,
   settings: defaultAppSettings,
 
@@ -212,6 +284,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   paletteOpen: false,
   workspacePanelOpen: false,
   workspaceTab: "terminal",
+  workspaceMode: storedUi.workspaceMode ?? "chat",
+  inspectorOpen: storedUi.inspectorOpen ?? false,
+  agentTerminals: {},
 
   messages: {},
   status: {},
@@ -250,6 +325,99 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setWorkspacePanelOpen: (workspacePanelOpen) => set({ workspacePanelOpen }),
   setWorkspaceTab: (workspaceTab) => set({ workspaceTab, workspacePanelOpen: true }),
+  setWorkspaceMode: (workspaceMode) => {
+    writeStoredUi({ workspaceMode });
+    set({ workspaceMode, view: "chat" });
+    if (workspaceMode === "terminals") {
+      void get().refreshAgentTerminals();
+    }
+  },
+  setInspectorOpen: (inspectorOpen) => {
+    writeStoredUi({ inspectorOpen });
+    set({ inspectorOpen });
+  },
+
+  async refreshAgentTerminals(workspaceId) {
+    const id = workspaceId ?? get().activeWorkspaceId;
+    if (!id) {
+      return;
+    }
+    try {
+      const list = await invoke("agentTerminal.list", { workspaceId: id });
+      set((state) => ({ agentTerminals: { ...state.agentTerminals, [id]: list } }));
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async launchAgentTerminal(input) {
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) {
+      return null;
+    }
+    try {
+      const terminal = await invoke("agentTerminal.launch", { ...input, workspaceId });
+      await get().refreshAgentTerminals(workspaceId);
+      if (terminal.state === "failed" && terminal.detail) {
+        set({ error: terminal.detail });
+      }
+      return terminal;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return null;
+    }
+  },
+
+  async startAgentTerminal(id, size) {
+    try {
+      const terminal = await invoke("agentTerminal.start", { id, ...(size ?? {}) });
+      if (terminal.state === "failed" && terminal.detail) {
+        set({ error: terminal.detail });
+      }
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async stopAgentTerminal(id) {
+    try {
+      await invoke("agentTerminal.stop", { id });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async removeAgentTerminal(id) {
+    try {
+      await invoke("agentTerminal.remove", { id });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async updateAgentTerminal(input) {
+    try {
+      await invoke("agentTerminal.update", input);
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async startProviderLogin(providerId) {
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) {
+      set({ error: "Open a workspace first; the sign-in runs in its terminals." });
+      return;
+    }
+    try {
+      await invoke("agentTerminal.login", { workspaceId, providerId });
+      writeStoredUi({ workspaceMode: "terminals" });
+      set({ workspaceMode: "terminals", view: "chat" });
+      await get().refreshAgentTerminals(workspaceId);
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
   toggleWorkspacePanel: (tab) =>
     set((state) => ({
       workspacePanelOpen: tab && !state.workspacePanelOpen ? true : !state.workspacePanelOpen,
@@ -261,6 +429,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     if (!id) {
       return;
     }
+    void get().refreshAgentTerminals(id);
     try {
       const sessions = await invoke("session.list", { workspaceId: id });
       set({ sessions });
@@ -402,6 +571,72 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       const providers = await invoke("provider.refresh", undefined);
       set({ providers });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async rescanModels(providerId) {
+    try {
+      const summary = await invoke("provider.rescanModels", { providerId });
+      set((state) => ({
+        providers: state.providers.map((provider) =>
+          provider.metadata.id === summary.metadata.id ? summary : provider,
+        ),
+      }));
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async refreshAccounts() {
+    try {
+      const [accounts, detectedAccounts] = await Promise.all([
+        invoke("account.list", undefined),
+        invoke("account.detect", undefined),
+      ]);
+      set({ accounts, detectedAccounts });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async addAccount(input) {
+    try {
+      const account = await invoke("account.add", input);
+      await get().refreshAccounts();
+      return account;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return null;
+    }
+  },
+
+  async removeAccount(id) {
+    try {
+      await invoke("account.remove", { id });
+      await get().refreshAccounts();
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async setSessionRuntime(input) {
+    const session = get().sessions.find((entry) => entry.id === get().activeSessionId);
+    if (!session) {
+      return;
+    }
+    const settings: Record<string, unknown> = { ...session.settings };
+    for (const key of ["reasoningEffort", "permissionMode"] as const) {
+      const value = input[key];
+      if (value === null) {
+        delete settings[key];
+      } else if (value !== undefined) {
+        settings[key] = value;
+      }
+    }
+    try {
+      await invoke("session.update", { id: session.id, settings });
     } catch (error) {
       set({ error: describeError(error) });
     }
@@ -868,6 +1103,44 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         break;
       case "provider.usage.updated":
         set({ usage: event.usage });
+        break;
+      case "provider.updated":
+        set((state) => ({
+          providers: state.providers.some(
+            (provider) => provider.metadata.id === event.summary.metadata.id,
+          )
+            ? state.providers.map((provider) =>
+                provider.metadata.id === event.summary.metadata.id ? event.summary : provider,
+              )
+            : [...state.providers, event.summary],
+        }));
+        break;
+      case "provider.list.changed":
+        void get().refreshProviders();
+        break;
+      case "agentTerminal.changed":
+        set((state) => {
+          const list = state.agentTerminals[event.terminal.workspaceId] ?? [];
+          const exists = list.some((entry) => entry.id === event.terminal.id);
+          return {
+            agentTerminals: {
+              ...state.agentTerminals,
+              [event.terminal.workspaceId]: exists
+                ? list.map((entry) => (entry.id === event.terminal.id ? event.terminal : entry))
+                : [...list, event.terminal],
+            },
+          };
+        });
+        break;
+      case "agentTerminal.removed":
+        set((state) => ({
+          agentTerminals: {
+            ...state.agentTerminals,
+            [event.workspaceId]: (state.agentTerminals[event.workspaceId] ?? []).filter(
+              (entry) => entry.id !== event.id,
+            ),
+          },
+        }));
         break;
       case "team.event": {
         // The run's own state is the source of truth, so a team event refreshes

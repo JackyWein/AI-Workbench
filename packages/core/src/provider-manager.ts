@@ -3,7 +3,9 @@ import { join } from "node:path";
 import {
   ProviderRegistry,
   type AIProviderAdapter,
+  type ProviderAccountRef,
   type ProviderContext,
+  type ProviderFactory,
 } from "@ai-workbench/provider-base";
 import type {
   Logger,
@@ -16,6 +18,18 @@ export interface ProviderManagerOptions {
   /** Root directory where each adapter gets its own state folder. */
   readonly stateDirectory: string;
   readonly resolveCredential?: (reference: string) => Promise<string | null>;
+  /**
+   * Called with a fresh summary when a provider learned something on its own,
+   * such as its model list or limits read in the background.
+   */
+  readonly onProviderChanged?: (summary: ProviderSummary) => void;
+}
+
+/** A configuration home of a tool that could become another account. */
+export interface AccountCandidate {
+  readonly family: string;
+  readonly toolName: string;
+  readonly home: string;
 }
 
 /**
@@ -30,6 +44,8 @@ export class ProviderManager {
   readonly #initialized = new Set<string>();
   /** Last configuration applied per provider, so it can be re-applied. */
   readonly #configs = new Map<string, Partial<ProviderConfig>>();
+  readonly #factories = new Map<string, ProviderFactory>();
+  readonly #pendingUpdates = new Map<string, NodeJS.Timeout>();
 
   constructor(options: ProviderManagerOptions) {
     this.#options = options;
@@ -49,6 +65,89 @@ export class ProviderManager {
     this.registry.register(adapter);
     this.#configs.set(adapter.metadata.id, config ?? {});
     await this.#initialize(adapter);
+  }
+
+  /**
+   * Registers a provider family: its default entry now, and one entry per
+   * account later through `addAccount`. The manager never learns what the
+   * tool is; the factory knows how to make its entries.
+   */
+  async registerFactory(
+    factory: ProviderFactory,
+    config?: Partial<ProviderConfig>,
+  ): Promise<void> {
+    this.#factories.set(factory.family, factory);
+    await this.register(factory.create(), config);
+  }
+
+  factories(): ProviderFactory[] {
+    return [...this.#factories.values()];
+  }
+
+  /** Registers the entry of one more account of a family. */
+  async addAccount(
+    family: string,
+    account: ProviderAccountRef,
+    config?: Partial<ProviderConfig>,
+  ): Promise<AIProviderAdapter> {
+    const factory = this.#factories.get(family);
+    if (!factory?.accounts) {
+      throw new Error(`"${family}" does not support separate accounts`);
+    }
+    const adapter = factory.create(account);
+    if (this.registry.has(adapter.metadata.id)) {
+      return this.registry.require(adapter.metadata.id);
+    }
+    await this.register(adapter, config);
+    return adapter;
+  }
+
+  /** Removes an account entry; the account's files are left untouched. */
+  async removeAccount(providerId: string): Promise<boolean> {
+    const adapter = this.registry.get(providerId);
+    if (!adapter?.metadata.account) {
+      return false;
+    }
+    try {
+      await adapter.dispose();
+    } catch (error) {
+      this.#logger.warn("Provider disposal failed", {
+        providerId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    this.#initialized.delete(providerId);
+    this.#configs.delete(providerId);
+    return this.registry.unregister(providerId);
+  }
+
+  /**
+   * Existing configuration homes of every family that supports accounts,
+   * leaving out each tool's default home and anything listed in `known`.
+   */
+  async detectAccounts(known: ReadonlySet<string>): Promise<AccountCandidate[]> {
+    const candidates: AccountCandidate[] = [];
+    for (const factory of this.#factories.values()) {
+      if (!factory.accounts) {
+        continue;
+      }
+      let homes: string[] = [];
+      try {
+        homes = await factory.accounts.detect();
+      } catch (error) {
+        this.#logger.warn("Account detection failed", {
+          family: factory.family,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      for (const home of homes) {
+        if (factory.accounts.isDefaultHome(home) || known.has(normalizeHome(home))) {
+          continue;
+        }
+        candidates.push({ family: factory.family, toolName: factory.displayName, home });
+      }
+    }
+    return candidates;
   }
 
   /**
@@ -75,8 +174,50 @@ export class ProviderManager {
     await this.#initialize(adapter);
   }
 
+  /**
+   * Coalesces bursts of background discoveries into one update per provider,
+   * so a tool reporting models, sign-in and limits at once refreshes the UI
+   * once rather than three times.
+   */
+  #scheduleUpdate(providerId: string): void {
+    if (!this.#options.onProviderChanged || this.#pendingUpdates.has(providerId)) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      this.#pendingUpdates.delete(providerId);
+      const adapter = this.registry.get(providerId);
+      if (!adapter) {
+        return;
+      }
+      void this.registry
+        .describe(adapter)
+        .then((summary) => this.#options.onProviderChanged?.(summary))
+        .catch((error: unknown) =>
+          this.#logger.warn("Provider update could not be described", {
+            providerId,
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+    }, 250);
+    timer.unref?.();
+    this.#pendingUpdates.set(providerId, timer);
+  }
+
+  /**
+   * Starts a provider over with its current configuration, dropping whatever
+   * it cached — used after the person signed in with the tool itself.
+   */
+  async reinitialize(providerId: string): Promise<void> {
+    await this.reconfigure(providerId, this.#configs.get(providerId) ?? {});
+    this.#scheduleUpdate(providerId);
+  }
+
   async #initialize(adapter: AIProviderAdapter): Promise<void> {
-    const stateDirectory = join(this.#options.stateDirectory, adapter.metadata.id);
+    // Account ids contain characters that are awkward in folder names.
+    const stateDirectory = join(
+      this.#options.stateDirectory,
+      adapter.metadata.id.replace(/[^A-Za-z0-9._-]/g, "_"),
+    );
     await mkdir(stateDirectory, { recursive: true });
 
     const context: ProviderContext = {
@@ -86,6 +227,7 @@ export class ProviderManager {
       ...(this.#options.resolveCredential
         ? { resolveCredential: this.#options.resolveCredential }
         : {}),
+      notifyChanged: () => this.#scheduleUpdate(adapter.metadata.id),
     };
 
     try {
@@ -123,6 +265,10 @@ export class ProviderManager {
   }
 
   async dispose(): Promise<void> {
+    for (const timer of this.#pendingUpdates.values()) {
+      clearTimeout(timer);
+    }
+    this.#pendingUpdates.clear();
     for (const adapter of this.registry.list()) {
       try {
         await adapter.dispose();
@@ -135,6 +281,14 @@ export class ProviderManager {
     }
     this.#initialized.clear();
   }
+}
+
+/** Compares configuration homes the way the file system does. */
+export function normalizeHome(home: string): string {
+  const trimmed = home.replace(/[\\/]+$/, "");
+  return process.platform === "win32"
+    ? trimmed.replace(/\//g, "\\").toLowerCase()
+    : trimmed;
 }
 
 function buildConfig(
