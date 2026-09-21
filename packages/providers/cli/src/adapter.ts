@@ -19,6 +19,7 @@ import {
   type ProviderSessionInfo,
 } from "@ai-workbench/provider-base";
 import { CliTransport, type CliRun } from "@ai-workbench/transport-cli";
+import type { CliProviderExtensions } from "./extensions.js";
 import {
   readPath,
   substitute,
@@ -26,6 +27,22 @@ import {
   type JsonRule,
   type UsageLimitRule,
 } from "./profile.js";
+
+/** One account of a tool that keeps several side by side. */
+export interface CliAccount {
+  /** Stable id; the provider entry becomes `<profile id>@<account id>`. */
+  readonly id: string;
+  readonly label: string;
+  /** The tool's configuration home for this account; null is its default. */
+  readonly home: string | null;
+}
+
+export interface CliAdapterOptions {
+  /** Provider-specific knowledge that is code rather than profile data. */
+  readonly extensions?: CliProviderExtensions;
+  /** Present when this entry is one of several accounts of the tool. */
+  readonly account?: CliAccount;
+}
 
 /** Marks a session the CLI has not assigned its own id to yet. */
 const PENDING_PREFIX = "pending:";
@@ -64,8 +81,11 @@ export class CliProviderAdapter implements AIProviderAdapter {
    */
   #lastUsage: ProviderUsageSnapshot | null = null;
 
-  constructor(profile: CliProviderProfile) {
+  readonly #options: CliAdapterOptions;
+
+  constructor(profile: CliProviderProfile, options: CliAdapterOptions = {}) {
     this.#profile = profile;
+    this.#options = options;
 
     if (profile.capabilities.includes("usage")) {
       this.getUsage = async (): Promise<ProviderUsageSnapshot> =>
