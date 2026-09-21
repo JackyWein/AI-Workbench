@@ -8,6 +8,7 @@ export * from "./domain/workspace-tools.js";
 export * from "./domain/skill.js";
 export * from "./domain/plugin.js";
 export * from "./domain/mcp.js";
+export * from "./domain/team.js";
 export * from "./events/provider-events.js";
 export * from "./events/app-events.js";
 export * from "./ipc/contract.js";

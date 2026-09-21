@@ -17,6 +17,7 @@ import {
   type ProviderSessionInfo,
 } from "@ai-workbench/provider-base";
 import { buildMockReply, chunkText } from "./reply.js";
+import { buildTeamReply, looksLikeTeamPrompt } from "./team-reply.js";
 
 export interface MockProviderOptions {
   /** Delay between streamed chunks. Tests set 0. */
@@ -263,7 +264,11 @@ export class MockProviderAdapter implements AIProviderAdapter {
 
       const reply = prompt.includes("/context")
         ? describeSessionContext(state)
-        : buildMockReply(prompt, modelId);
+        : // A team prompt gets a team answer, so Team Mode can be exercised
+          // end to end without spending an account (spec §20).
+          looksLikeTeamPrompt(prompt)
+          ? buildTeamReply(prompt)
+          : buildMockReply(prompt, modelId);
       const chunkSize = modelId === "mock-fast" ? 6 : 3;
       const chunkDelay =
         modelId === "mock-fast"

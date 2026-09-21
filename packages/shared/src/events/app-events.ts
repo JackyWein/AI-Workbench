@@ -3,6 +3,7 @@ import { workspaceSchema } from "../domain/workspace.js";
 import { sessionSchema, sessionStatusSchema } from "../domain/session.js";
 import { chatMessageSchema } from "../domain/message.js";
 import { aggregatedUsageSchema } from "../domain/usage.js";
+import { teamEventSchema } from "../domain/team.js";
 import {
   normalizedProviderErrorSchema,
   providerEventSchema,
@@ -59,6 +60,10 @@ export const appEventSchema = z.discriminatedUnion("type", [
     type: z.literal("provider.usage.updated"),
     usage: aggregatedUsageSchema,
   }),
+
+  // Team events reach the UI on the same channel as everything else, so the
+  // renderer has one stream to follow (spec §50).
+  z.object({ type: z.literal("team.event"), event: teamEventSchema }),
 ]);
 export type AppEvent = z.infer<typeof appEventSchema>;
 export type AppEventType = AppEvent["type"];

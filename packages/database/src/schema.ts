@@ -316,3 +316,162 @@ export type PluginAccountRow = typeof pluginAccounts.$inferSelect;
 export type McpServerRow = typeof mcpServers.$inferSelect;
 export type NewMcpServerRow = typeof mcpServers.$inferInsert;
 export type CredentialRow = typeof credentials.$inferSelect;
+
+/**
+ * Teams and their runs (spec §40, §53). A run is persisted as it happens, so a
+ * restart restores the task graph, the mail, the decisions and the artifacts
+ * rather than starting over.
+ */
+export const teams = sqliteTable("teams", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  leadAgentId: text("lead_agent_id"),
+  settings: text("settings", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'`),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const teamAgents = sqliteTable("team_agents", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id")
+    .notNull()
+    .references(() => teams.id, { onDelete: "cascade" }),
+  displayName: text("display_name").notNull(),
+  providerId: text("provider_id").notNull(),
+  modelId: text("model_id"),
+  role: text("role").notNull().default(""),
+  workingDirectory: text("working_directory").notNull(),
+  skills: text("skills", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  plugins: text("plugins", { mode: "json" }).$type<string[]>().notNull().default(sql`'[]'`),
+  mcpServers: text("mcp_servers", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  settings: text("settings", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'`),
+  position: integer("position").notNull().default(0),
+});
+
+export const teamRuns = sqliteTable("team_runs", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id")
+    .notNull()
+    .references(() => teams.id, { onDelete: "cascade" }),
+  workspaceId: text("workspace_id")
+    .notNull()
+    .references(() => workspaces.id, { onDelete: "cascade" }),
+  goal: text("goal").notNull(),
+  status: text("status").notNull(),
+  stopReason: text("stop_reason"),
+  outcome: text("outcome"),
+  sharedState: text("shared_state", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'`),
+  limits: text("limits", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'`),
+  agentCalls: integer("agent_calls").notNull().default(0),
+  failures: integer("failures").notNull().default(0),
+  messageCount: integer("message_count").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+});
+
+export const teamTasks = sqliteTable("team_tasks", {
+  id: text("id").primaryKey(),
+  runId: text("run_id")
+    .notNull()
+    .references(() => teamRuns.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  status: text("status").notNull(),
+  createdBy: text("created_by").notNull(),
+  assignedTo: text("assigned_to"),
+  parentTaskId: text("parent_task_id"),
+  dependencies: text("dependencies", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  priority: integer("priority").notNull().default(0),
+  depth: integer("depth").notNull().default(0),
+  delegations: integer("delegations").notNull().default(0),
+  result: text("result"),
+  artifacts: text("artifacts", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  error: text("error"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }),
+  completedAt: integer("completed_at", { mode: "timestamp_ms" }),
+});
+
+export const teamMessages = sqliteTable("team_messages", {
+  id: text("id").primaryKey(),
+  runId: text("run_id")
+    .notNull()
+    .references(() => teamRuns.id, { onDelete: "cascade" }),
+  fromAgent: text("from_agent").notNull(),
+  toAgent: text("to_agent").notNull(),
+  type: text("type").notNull(),
+  content: text("content").notNull(),
+  taskId: text("task_id"),
+  readAt: integer("read_at", { mode: "timestamp_ms" }),
+  timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const teamDecisions = sqliteTable("team_decisions", {
+  id: text("id").primaryKey(),
+  runId: text("run_id")
+    .notNull()
+    .references(() => teamRuns.id, { onDelete: "cascade" }),
+  author: text("author").notNull(),
+  title: text("title").notNull(),
+  reason: text("reason").notNull().default(""),
+  decision: text("decision").notNull(),
+  relatedTasks: text("related_tasks", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
+});
+
+export const teamArtifacts = sqliteTable("team_artifacts", {
+  id: text("id").primaryKey(),
+  runId: text("run_id")
+    .notNull()
+    .references(() => teamRuns.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  type: text("type").notNull(),
+  path: text("path"),
+  content: text("content"),
+  createdBy: text("created_by").notNull(),
+  taskId: text("task_id"),
+  metadata: text("metadata", { mode: "json" })
+    .$type<Record<string, unknown>>()
+    .notNull()
+    .default(sql`'{}'`),
+  timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
+});
+
+export type TeamRow = typeof teams.$inferSelect;
+export type NewTeamRow = typeof teams.$inferInsert;
+export type TeamAgentRow = typeof teamAgents.$inferSelect;
+export type NewTeamAgentRow = typeof teamAgents.$inferInsert;
+export type TeamRunRow = typeof teamRuns.$inferSelect;
+export type NewTeamRunRow = typeof teamRuns.$inferInsert;
+export type TeamTaskRow = typeof teamTasks.$inferSelect;
+export type TeamMessageRow = typeof teamMessages.$inferSelect;
+export type TeamDecisionRow = typeof teamDecisions.$inferSelect;
+export type TeamArtifactRow = typeof teamArtifacts.$inferSelect;

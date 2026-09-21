@@ -127,18 +127,21 @@ describe("TerminalManager", () => {
     const info = manager.create({ sessionId: "s1", cwd: directory, shell });
 
     manager.write(info.id, exitWithCode);
+    // A terminal closed by an earlier test can report its exit late, so this
+    // waits for the one belonging to this terminal rather than for any exit.
     await waitFor(
-      () => String(exits.length),
-      (value) => value !== "0",
+      () => exits.map((exit) => exit.id).join(","),
+      (value) => value.includes(info.id),
     );
 
     // ConPTY does not forward the shell's own exit code, so only POSIX can
     // assert the value. What the manager owes on every platform is the same:
     // report the exit for that terminal, with a code, and forget it.
-    expect(exits[0]?.id).toBe(info.id);
-    expect(typeof exits[0]?.code).toBe("number");
+    const exit = exits.find((entry) => entry.id === info.id);
+    expect(exit).toBeDefined();
+    expect(typeof exit?.code).toBe("number");
     if (!isWindows) {
-      expect(exits[0]?.code).toBe(7);
+      expect(exit?.code).toBe(7);
     }
     expect(manager.has(info.id)).toBe(false);
   });

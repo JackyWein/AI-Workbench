@@ -37,6 +37,7 @@
       "@ai-workbench/mcp": ["./packages/mcp/src/index.ts"],
       "@ai-workbench/plugins": ["./packages/plugins/src/index.ts"],
       "@ai-workbench/skills": ["./packages/skills/src/index.ts"],
+      "@ai-workbench/team": ["./packages/team/src/index.ts"],
       "@ai-workbench/terminal": ["./packages/terminal/src/index.ts"],
       "@ai-workbench/test-support": ["./packages/test-support/src/index.ts"],
       "@ai-workbench/ui": ["./packages/ui/src/index.ts"],

@@ -22,6 +22,7 @@ export default defineConfig({
       "@ai-workbench/mcp": resolve(root, "packages/mcp/src/index.ts"),
       "@ai-workbench/plugins": resolve(root, "packages/plugins/src/index.ts"),
       "@ai-workbench/skills": resolve(root, "packages/skills/src/index.ts"),
+      "@ai-workbench/team": resolve(root, "packages/team/src/index.ts"),
       "@ai-workbench/terminal": resolve(root, "packages/terminal/src/index.ts"),
       "@ai-workbench/test-support": resolve(root, "packages/test-support/src/index.ts"),
       "@ai-workbench/ui": resolve(root, "packages/ui/src/index.ts"),

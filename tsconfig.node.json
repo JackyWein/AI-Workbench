@@ -15,6 +15,7 @@
     "packages/mcp/src/**/*.ts",
     "packages/plugins/src/**/*.ts",
     "packages/skills/src/**/*.ts",
+    "packages/team/src/**/*.ts",
     "packages/terminal/src/**/*.ts",
     "packages/test-support/src/**/*.ts",
     "packages/workspace-fs/src/**/*.ts",

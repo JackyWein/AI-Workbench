@@ -175,6 +175,9 @@ importers:
       '@ai-workbench/skills':
         specifier: workspace:*
         version: link:../skills
+      '@ai-workbench/team':
+        specifier: workspace:*
+        version: link:../team
       '@ai-workbench/workspace-fs':
         specifier: workspace:*
         version: link:../workspace-fs
@@ -292,6 +295,25 @@ importers:
       '@ai-workbench/shared':
         specifier: workspace:*
         version: link:../shared
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@ai-workbench/test-support':
+        specifier: workspace:*
+        version: link:../test-support
+
+  packages/team:
+    dependencies:
+      '@ai-workbench/provider-base':
+        specifier: workspace:*
+        version: link:../providers/base
+      '@ai-workbench/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@3.25.76)
       zod:
         specifier: ^3.25.76
         version: 3.25.76

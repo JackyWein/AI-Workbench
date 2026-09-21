@@ -16,6 +16,7 @@
     "@ai-workbench/provider-base": "workspace:*",
     "@ai-workbench/shared": "workspace:*",
     "@ai-workbench/skills": "workspace:*",
+    "@ai-workbench/team": "workspace:*",
     "@ai-workbench/workspace-fs": "workspace:*",
     "drizzle-orm": "^0.45.0",
     "pino": "^9.6.0"

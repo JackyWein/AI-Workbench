@@ -8,6 +8,8 @@ export * from "./provider-manager.js";
 export * from "./plugin-service.js";
 export * from "./session-manager.js";
 export * from "./skill-service.js";
+export * from "./team-manager.js";
+export * from "./team-store.js";
 export * from "./tool-bridge.js";
 export * from "./settings-service.js";
 export * from "./usage-service.js";
