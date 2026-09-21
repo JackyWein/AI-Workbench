@@ -104,7 +104,7 @@ describe("provider failure isolation", () => {
     await sessions.shutdown();
     await providers.dispose();
     database.close();
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   async function sessionWith(providerId: string): Promise<string> {
@@ -212,6 +212,6 @@ describe("logging", () => {
     expect(contents).not.toContain("also-secret");
     expect(contents).toContain("[redacted]");
 
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 });

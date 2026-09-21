@@ -176,23 +176,33 @@ describe("executable discovery", () => {
   });
 
   afterEach(async () => {
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   it("finds an executable on PATH", async () => {
-    const executable = join(directory, "demo-cli");
-    await writeFile(executable, "#!/bin/sh\necho hi\n");
-    await chmod(executable, 0o755);
+    // Windows decides by extension (PATHEXT), POSIX by the executable bit.
+    const isWindows = process.platform === "win32";
+    const fileName = isWindows ? "demo-cli.cmd" : "demo-cli";
+    const executable = join(directory, fileName);
+    await writeFile(executable, isWindows ? "@echo hi\r\n" : "#!/bin/sh\necho hi\n");
+    if (!isWindows) {
+      await chmod(executable, 0o755);
+    }
 
-    const found = await findExecutable("demo-cli", { env: { PATH: directory } });
+    const found = await findExecutable("demo-cli", {
+      env: { PATH: directory, PATHEXT: ".COM;.EXE;.BAT;.CMD" },
+    });
     expect(found).toEqual({ path: executable, source: "path" });
   });
 
-  it("ignores a file on PATH that is not executable", async () => {
-    await writeFile(join(directory, "demo-cli"), "not executable");
-    const found = await findExecutable("demo-cli", { env: { PATH: directory } });
-    expect(found).toBeNull();
-  });
+  it.skipIf(process.platform === "win32")(
+    "ignores a file on PATH that is not executable",
+    async () => {
+      await writeFile(join(directory, "demo-cli"), "not executable");
+      const found = await findExecutable("demo-cli", { env: { PATH: directory } });
+      expect(found).toBeNull();
+    },
+  );
 
   it("returns null when the command is nowhere on PATH", async () => {
     expect(await findExecutable("definitely-not-here", { env: { PATH: directory } })).toBeNull();

@@ -31,6 +31,9 @@
       "@ai-workbench/provider-mock": ["./packages/providers/mock/src/index.ts"],
       "@ai-workbench/provider-cli": ["./packages/providers/cli/src/index.ts"],
       "@ai-workbench/transport-cli": ["./packages/providers/transports/cli/src/index.ts"],
+      "@ai-workbench/workspace-fs": ["./packages/workspace-fs/src/index.ts"],
+      "@ai-workbench/workspace-git": ["./packages/workspace-git/src/index.ts"],
+      "@ai-workbench/terminal": ["./packages/terminal/src/index.ts"],
       "@ai-workbench/ui": ["./packages/ui/src/index.ts"],
       "@ai-workbench/ui/*": ["./packages/ui/src/*"]
     }

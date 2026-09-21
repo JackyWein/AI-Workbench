@@ -17,10 +17,14 @@ import {
   parseProfile,
 } from "@ai-workbench/provider-cli";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
+import { TerminalManager } from "@ai-workbench/terminal";
+import { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
+import { GitService } from "@ai-workbench/workspace-git";
 import type {
   Logger,
   ProviderConfig,
   StoredProviderConfig,
+  TerminalEvent,
 } from "@ai-workbench/shared";
 
 export interface AppServices {
@@ -33,6 +37,11 @@ export interface AppServices {
   readonly sessions: SessionManager;
   readonly usage: UsageService;
   readonly settings: SettingsService;
+  readonly files: WorkspaceFileSystem;
+  readonly git: GitService;
+  readonly terminals: TerminalManager;
+  /** Subscribes to terminal output; returns an unsubscribe function. */
+  onTerminalEvent(listener: (event: TerminalEvent) => void): () => void;
   dispose(): Promise<void>;
 }
 
@@ -113,6 +122,36 @@ export async function createServices(
   const usage = new UsageService({ providers, events, logger });
   const settings = new SettingsService({ db: database.db, logger });
 
+  const files = new WorkspaceFileSystem({ logger });
+  const git = new GitService({ logger });
+
+  // Terminal output is pushed rather than polled, so listeners register here
+  // and the IPC layer forwards to whichever windows exist.
+  const terminalListeners = new Set<(event: TerminalEvent) => void>();
+  const emitTerminal = (event: TerminalEvent): void => {
+    for (const listener of terminalListeners) {
+      try {
+        listener(event);
+      } catch {
+        // One broken listener must not stop the others.
+      }
+    }
+  };
+
+  const terminals = new TerminalManager({
+    logger,
+    onData: (terminalId, chunk) => emitTerminal({ type: "data", terminalId, chunk }),
+    onExit: (terminalId, exitCode) =>
+      emitTerminal({ type: "exit", terminalId, exitCode }),
+  });
+
+  // A deleted session must not leave shells running.
+  events.on("session.deleted", (event) => {
+    if (event.type === "session.deleted") {
+      terminals.closeAll(event.sessionId);
+    }
+  });
+
   return {
     logger,
     events,
@@ -123,7 +162,16 @@ export async function createServices(
     sessions,
     usage,
     settings,
+    files,
+    git,
+    terminals,
+    onTerminalEvent: (listener) => {
+      terminalListeners.add(listener);
+      return () => terminalListeners.delete(listener);
+    },
     dispose: async () => {
+      terminals.closeAll();
+      terminalListeners.clear();
       await sessions.shutdown();
       await providers.dispose();
       events.clear();

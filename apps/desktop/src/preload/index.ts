@@ -1,11 +1,13 @@
 import { contextBridge, ipcRenderer } from "electron";
 import {
   APP_EVENT_CHANNEL,
+  TERMINAL_EVENT_CHANNEL,
   isIpcChannel,
   type AppEvent,
   type IpcChannel,
   type IpcInput,
   type IpcOutput,
+  type TerminalEvent,
 } from "@ai-workbench/shared";
 
 /**
@@ -28,6 +30,19 @@ const api = {
     ipcRenderer.on(APP_EVENT_CHANNEL, handler);
     return () => {
       ipcRenderer.removeListener(APP_EVENT_CHANNEL, handler);
+    };
+  },
+
+  onTerminalEvent(listener: (event: TerminalEvent) => void): () => void {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: TerminalEvent,
+    ): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(TERMINAL_EVENT_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(TERMINAL_EVENT_CHANNEL, handler);
     };
   },
 };

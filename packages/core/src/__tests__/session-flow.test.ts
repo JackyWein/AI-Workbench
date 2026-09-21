@@ -95,7 +95,7 @@ describe("session vertical slice", () => {
 
   afterEach(async () => {
     await app.dispose();
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   it("creates a workspace and a session with sensible defaults", async () => {
@@ -191,7 +191,7 @@ describe("session vertical slice", () => {
       expect(stored.at(-1)?.status).toBe("cancelled");
     } finally {
       await slowApp.dispose();
-      await rm(slowDirectory, { recursive: true, force: true });
+      await rm(slowDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 
@@ -239,7 +239,7 @@ describe("session vertical slice", () => {
       await waitForMessage(busyApp.events, messageId);
     } finally {
       await busyApp.dispose();
-      await rm(busyDirectory, { recursive: true, force: true });
+      await rm(busyDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     }
   });
 

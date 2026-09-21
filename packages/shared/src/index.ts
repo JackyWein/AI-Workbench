@@ -4,6 +4,7 @@ export * from "./domain/message.js";
 export * from "./domain/provider.js";
 export * from "./domain/usage.js";
 export * from "./domain/settings.js";
+export * from "./domain/workspace-tools.js";
 export * from "./events/provider-events.js";
 export * from "./events/app-events.js";
 export * from "./ipc/contract.js";

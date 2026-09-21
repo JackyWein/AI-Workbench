@@ -1,5 +1,5 @@
 {
-  "name": "@ai-workbench/core",
+  "name": "@ai-workbench/workspace-git",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,11 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@ai-workbench/database": "workspace:*",
-    "@ai-workbench/provider-base": "workspace:*",
     "@ai-workbench/shared": "workspace:*",
-    "@ai-workbench/workspace-fs": "workspace:*",
-    "drizzle-orm": "^0.45.0",
-    "pino": "^9.6.0"
+    "@ai-workbench/transport-cli": "workspace:*"
   }
 }

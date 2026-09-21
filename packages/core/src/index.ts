@@ -1,7 +1,6 @@
 export * from "./event-bus.js";
 export * from "./ids.js";
 export * from "./logger.js";
-export * from "./paths.js";
 export * from "./provider-config-service.js";
 export * from "./provider-manager.js";
 export * from "./session-manager.js";

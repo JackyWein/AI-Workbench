@@ -1,0 +1,181 @@
+import { randomUUID } from "node:crypto";
+import { spawn, type IPty } from "node-pty";
+import type { Logger } from "@ai-workbench/shared";
+
+export interface TerminalInfo {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly cwd: string;
+  readonly shell: string;
+  readonly cols: number;
+  readonly rows: number;
+}
+
+export interface CreateTerminalOptions {
+  readonly sessionId: string;
+  /** Already validated against the session's workspace by the caller. */
+  readonly cwd: string;
+  readonly cols?: number;
+  readonly rows?: number;
+  readonly shell?: string;
+  readonly env?: Record<string, string>;
+}
+
+export interface TerminalManagerOptions {
+  readonly logger: Logger;
+  readonly onData: (terminalId: string, chunk: string) => void;
+  readonly onExit: (terminalId: string, exitCode: number) => void;
+  /** Maximum number of live terminals, to bound resource use. */
+  readonly maxTerminals?: number;
+}
+
+interface TerminalState {
+  readonly info: TerminalInfo;
+  readonly pty: IPty;
+  cols: number;
+  rows: number;
+}
+
+export class TerminalLimitError extends Error {
+  constructor(limit: number) {
+    super(`At most ${limit} terminals can be open at once`);
+    this.name = "TerminalLimitError";
+  }
+}
+
+export class TerminalNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Terminal "${id}" does not exist`);
+    this.name = "TerminalNotFoundError";
+  }
+}
+
+/**
+ * Real terminals backed by node-pty (spec §26). A terminal belongs to a session
+ * and starts in its working directory; its lifetime is independent of whether
+ * the UI is showing it, so a long command keeps running when the tab changes.
+ */
+export class TerminalManager {
+  readonly #terminals = new Map<string, TerminalState>();
+  readonly #options: TerminalManagerOptions;
+  readonly #logger: Logger;
+  readonly #maxTerminals: number;
+
+  constructor(options: TerminalManagerOptions) {
+    this.#options = options;
+    this.#logger = options.logger.child("TERMINAL");
+    this.#maxTerminals = options.maxTerminals ?? 12;
+  }
+
+  create(options: CreateTerminalOptions): TerminalInfo {
+    if (this.#terminals.size >= this.#maxTerminals) {
+      throw new TerminalLimitError(this.#maxTerminals);
+    }
+
+    const shell = options.shell ?? defaultShell();
+    const cols = options.cols ?? 80;
+    const rows = options.rows ?? 24;
+    const id = randomUUID();
+
+    const pty = spawn(shell, [], {
+      name: "xterm-256color",
+      cols,
+      rows,
+      cwd: options.cwd,
+      env: {
+        ...(process.env as Record<string, string>),
+        ...options.env,
+        TERM: "xterm-256color",
+      },
+    });
+
+    const info: TerminalInfo = {
+      id,
+      sessionId: options.sessionId,
+      cwd: options.cwd,
+      shell,
+      cols,
+      rows,
+    };
+    this.#terminals.set(id, { info, pty, cols, rows });
+
+    pty.onData((chunk) => this.#options.onData(id, chunk));
+    pty.onExit(({ exitCode }) => {
+      this.#terminals.delete(id);
+      this.#logger.debug("Terminal exited", { terminalId: id, exitCode });
+      this.#options.onExit(id, exitCode);
+    });
+
+    this.#logger.info("Terminal started", {
+      terminalId: id,
+      sessionId: options.sessionId,
+      shell,
+    });
+    return info;
+  }
+
+  write(id: string, data: string): void {
+    this.#require(id).pty.write(data);
+  }
+
+  resize(id: string, cols: number, rows: number): void {
+    const state = this.#require(id);
+    const safeCols = Math.max(1, Math.min(1000, Math.floor(cols)));
+    const safeRows = Math.max(1, Math.min(1000, Math.floor(rows)));
+    if (state.cols === safeCols && state.rows === safeRows) {
+      return;
+    }
+    state.cols = safeCols;
+    state.rows = safeRows;
+    state.pty.resize(safeCols, safeRows);
+  }
+
+  close(id: string): boolean {
+    const state = this.#terminals.get(id);
+    if (!state) {
+      return false;
+    }
+    this.#terminals.delete(id);
+    try {
+      state.pty.kill();
+    } catch (error) {
+      this.#logger.warn("Terminal could not be killed", {
+        terminalId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return true;
+  }
+
+  list(sessionId?: string): TerminalInfo[] {
+    return [...this.#terminals.values()]
+      .map((state) => ({ ...state.info, cols: state.cols, rows: state.rows }))
+      .filter((info) => sessionId === undefined || info.sessionId === sessionId);
+  }
+
+  has(id: string): boolean {
+    return this.#terminals.has(id);
+  }
+
+  /** Closes every terminal; used when a session is deleted or the app quits. */
+  closeAll(sessionId?: string): void {
+    for (const info of this.list(sessionId)) {
+      this.close(info.id);
+    }
+  }
+
+  #require(id: string): TerminalState {
+    const state = this.#terminals.get(id);
+    if (!state) {
+      throw new TerminalNotFoundError(id);
+    }
+    return state;
+  }
+}
+
+function defaultShell(): string {
+  if (process.platform === "win32") {
+    return process.env["COMSPEC"] ?? "powershell.exe";
+  }
+  return process.env["SHELL"] ?? "/bin/bash";
+}

@@ -120,7 +120,7 @@ describe("command line provider end to end", () => {
 
   afterEach(async () => {
     await app.dispose();
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   it("streams an answer and adopts the session id the CLI assigns", async () => {

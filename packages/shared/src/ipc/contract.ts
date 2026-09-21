@@ -20,6 +20,12 @@ import {
   appSettingsSchema,
   updateSettingsInputSchema,
 } from "../domain/settings.js";
+import {
+  directoryEntrySchema,
+  fileContentsSchema,
+  gitStatusSchema,
+  terminalInfoSchema,
+} from "../domain/workspace-tools.js";
 
 /**
  * The single source of truth for privileged main-process operations (spec §105).
@@ -106,6 +112,58 @@ export const ipcContract = {
   "provider.refreshUsage": {
     input: z.void(),
     output: aggregatedUsageSchema,
+  },
+
+  "files.list": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      path: z.string().max(4096).default(""),
+    }),
+    output: z.array(directoryEntrySchema),
+  },
+  "files.read": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      path: z.string().min(1).max(4096),
+    }),
+    output: fileContentsSchema,
+  },
+
+  "git.status": {
+    input: z.object({ sessionId: z.string().min(1) }),
+    output: gitStatusSchema,
+  },
+
+  "terminal.list": {
+    input: z.object({ sessionId: z.string().min(1) }),
+    output: z.array(terminalInfoSchema),
+  },
+  "terminal.create": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      cols: z.number().int().positive().max(1000).optional(),
+      rows: z.number().int().positive().max(1000).optional(),
+    }),
+    output: terminalInfoSchema,
+  },
+  "terminal.write": {
+    input: z.object({
+      terminalId: z.string().min(1),
+      data: z.string().max(100_000),
+    }),
+    output: z.object({ written: z.boolean() }),
+  },
+  "terminal.resize": {
+    input: z.object({
+      terminalId: z.string().min(1),
+      cols: z.number().int().positive().max(1000),
+      rows: z.number().int().positive().max(1000),
+    }),
+    output: z.object({ resized: z.boolean() }),
+  },
+  "terminal.close": {
+    input: z.object({ terminalId: z.string().min(1) }),
+    output: z.object({ closed: z.boolean() }),
   },
 
   "settings.get": { input: z.void(), output: appSettingsSchema },

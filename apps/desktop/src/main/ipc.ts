@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import {
   APP_EVENT_CHANNEL,
+  TERMINAL_EVENT_CHANNEL,
   ipcContract,
   type IpcChannel,
   type IpcInput,
@@ -88,6 +89,43 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "provider.getUsage": () => services.usage.get(),
     "provider.refreshUsage": () => services.usage.refresh(),
 
+    "files.list": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      return services.files.list(session.workingDirectory, input.path);
+    },
+    "files.read": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      return services.files.readText(session.workingDirectory, input.path);
+    },
+
+    "git.status": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      return services.git.status(session.workingDirectory);
+    },
+
+    "terminal.list": (input) => services.terminals.list(input.sessionId),
+    "terminal.create": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      return services.terminals.create({
+        sessionId: session.id,
+        // The working directory is the session's, already inside its workspace.
+        cwd: session.workingDirectory,
+        ...(input.cols === undefined ? {} : { cols: input.cols }),
+        ...(input.rows === undefined ? {} : { rows: input.rows }),
+      });
+    },
+    "terminal.write": (input) => {
+      services.terminals.write(input.terminalId, input.data);
+      return { written: true };
+    },
+    "terminal.resize": (input) => {
+      services.terminals.resize(input.terminalId, input.cols, input.rows);
+      return { resized: true };
+    },
+    "terminal.close": (input) => ({
+      closed: services.terminals.close(input.terminalId),
+    }),
+
     "settings.get": () => services.settings.get(),
     "settings.update": (input) => services.settings.update(input),
   };
@@ -116,14 +154,20 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     });
   }
 
-  // One push channel carries every domain event to whichever windows exist.
-  services.events.subscribe((event) => {
+  const broadcast = (channel: string, payload: unknown): void => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) {
-        window.webContents.send(APP_EVENT_CHANNEL, event);
+        window.webContents.send(channel, payload);
       }
     }
-  });
+  };
+
+  // One push channel carries every domain event to whichever windows exist.
+  services.events.subscribe((event) => broadcast(APP_EVENT_CHANNEL, event));
+
+  // Terminal bytes go on their own channel, so a busy shell cannot drown the
+  // domain events the rest of the application depends on.
+  services.onTerminalEvent((event) => broadcast(TERMINAL_EVENT_CHANNEL, event));
 }
 
 export function removeIpcHandlers(): void {

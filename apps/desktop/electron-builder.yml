@@ -26,6 +26,10 @@ asarUnpack:
 # make unreliable.
 npmRebuild: false
 
+# Uploading is the release workflow's job; electron-builder would otherwise try
+# to publish by itself as soon as it detects a CI environment.
+publish: null
+
 win:
   target:
     - target: nsis

@@ -13,6 +13,7 @@
   "dependencies": {
     "@libsql/client": "^0.15.0",
     "drizzle-orm": "^0.45.0",
+    "node-pty": "^1.1.0",
     "pino": "^9.6.0",
     "zod": "^3.25.76"
   },
@@ -23,8 +24,11 @@
     "@ai-workbench/provider-cli": "workspace:*",
     "@ai-workbench/provider-mock": "workspace:*",
     "@ai-workbench/shared": "workspace:*",
+    "@ai-workbench/terminal": "workspace:*",
     "@ai-workbench/transport-cli": "workspace:*",
     "@ai-workbench/ui": "workspace:*",
+    "@ai-workbench/workspace-fs": "workspace:*",
+    "@ai-workbench/workspace-git": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",

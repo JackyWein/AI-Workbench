@@ -18,6 +18,9 @@ const alias = {
     root,
     "packages/providers/transports/cli/src/index.ts",
   ),
+  "@ai-workbench/workspace-fs": resolve(root, "packages/workspace-fs/src/index.ts"),
+  "@ai-workbench/workspace-git": resolve(root, "packages/workspace-git/src/index.ts"),
+  "@ai-workbench/terminal": resolve(root, "packages/terminal/src/index.ts"),
   "@ai-workbench/ui": resolve(root, "packages/ui/src/index.ts"),
   "@renderer": resolve(__dirname, "src/renderer"),
 };

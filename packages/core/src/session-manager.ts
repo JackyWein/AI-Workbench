@@ -19,8 +19,8 @@ import type {
   UpdateSessionInput,
 } from "@ai-workbench/shared";
 import type { EventBus } from "./event-bus.js";
+import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
 import { createId } from "./ids.js";
-import { resolveInsideRoot } from "./paths.js";
 import type { ProviderManager } from "./provider-manager.js";
 import type { WorkspaceManager } from "./workspace-manager.js";
 

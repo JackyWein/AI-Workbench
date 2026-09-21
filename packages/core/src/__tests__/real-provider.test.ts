@@ -97,7 +97,7 @@ describe.skipIf(!enabled)("installed provider CLI, end to end", () => {
 
   afterEach(async () => {
     await app.dispose();
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
   });
 
   it("detects the installed tool", async () => {

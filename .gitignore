@@ -2,6 +2,8 @@ node_modules/
 dist/
 out/
 build/
+# The application icon is generated but committed, so CI can package it.
+!apps/desktop/build/
 release/
 coverage/
 *.log
