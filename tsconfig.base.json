@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "noEmit": true,
+    "allowJs": false,
+    "baseUrl": ".",
+    "paths": {
+      "@ai-workbench/shared": ["./packages/shared/src/index.ts"],
+      "@ai-workbench/core": ["./packages/core/src/index.ts"],
+      "@ai-workbench/database": ["./packages/database/src/index.ts"],
+      "@ai-workbench/provider-base": ["./packages/providers/base/src/index.ts"],
+      "@ai-workbench/provider-mock": ["./packages/providers/mock/src/index.ts"],
+      "@ai-workbench/ui": ["./packages/ui/src/index.ts"],
+      "@ai-workbench/ui/*": ["./packages/ui/src/*"]
+    }
+  }
+}

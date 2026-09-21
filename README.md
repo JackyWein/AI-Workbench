@@ -4,7 +4,7 @@ AI Workbench is a planned local desktop environment for running multiple AI prov
 
 The authoritative specification is:
 
-- `AI_WORKBENCH_MASTER_SPEC.md`
+- `AI_WORKBENCH.md`
 
 Coding-agent instructions:
 

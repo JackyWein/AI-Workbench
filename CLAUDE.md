@@ -1,6 +1,6 @@
 # CLAUDE.md — AI Workbench
 
-Read `AI_WORKBENCH_MASTER_SPEC.md` before making architectural or implementation changes.
+Read `AI_WORKBENCH.md` before making architectural or implementation changes.
 
 ## Core rules
 
@@ -24,7 +24,7 @@ Read `AI_WORKBENCH_MASTER_SPEC.md` before making architectural or implementation
 
 If this is a fresh repository:
 
-1. Read `AI_WORKBENCH_MASTER_SPEC.md`.
+1. Read `AI_WORKBENCH.md`.
 2. Read `PROGRESS.md`.
 3. Briefly state the planned repository structure, domain interfaces, data flow and first vertical slice.
 4. Implement G0 Foundation.

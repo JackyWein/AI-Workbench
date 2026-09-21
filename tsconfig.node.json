@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": ["node"]
+  },
+  "include": [
+    "packages/shared/src/**/*.ts",
+    "packages/core/src/**/*.ts",
+    "packages/database/src/**/*.ts",
+    "packages/providers/base/src/**/*.ts",
+    "packages/providers/mock/src/**/*.ts",
+    "apps/desktop/src/main/**/*.ts",
+    "apps/desktop/src/preload/**/*.ts",
+    "apps/desktop/src/shared-types/**/*.ts",
+    "*.config.ts",
+    "apps/desktop/*.config.ts",
+    "packages/*/*.config.ts",
+    "types/**/*.d.ts"
+  ]
+}
