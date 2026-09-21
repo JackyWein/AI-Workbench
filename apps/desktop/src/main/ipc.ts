@@ -263,6 +263,25 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       return { updated: true };
     },
 
+    "team.list": (input) => services.teams.list(input.workspaceId),
+    "team.create": async (input) => {
+      // An agent inherits the workspace directory unless it names its own, so
+      // a team cannot be pointed outside the workspace by accident.
+      const workspace = await services.workspaces.require(input.workspaceId);
+      return services.teams.create({ ...input, workingDirectory: workspace.path });
+    },
+    "team.setLead": (input) => services.teams.setLeadAgent(input.teamId, input.agentId),
+    "team.delete": async (input) => ({
+      deleted: await services.teams.delete(input.teamId),
+    }),
+
+    "team.listRuns": (input) => services.teams.listRuns(input.teamId),
+    "team.getRun": (input) => services.teams.getSnapshot(input.runId),
+    "team.startRun": (input) => services.teams.startRun(input),
+    "team.resumeRun": (input) => services.teams.resumeRun(input.runId),
+    "team.pauseRun": (input) => services.teams.pauseRun(input.runId),
+    "team.cancelRun": (input) => services.teams.cancelRun(input.runId),
+
     "settings.get": () => services.settings.get(),
     "settings.update": (input) => services.settings.update(input),
   };

@@ -9,6 +9,7 @@ import {
   SessionManager,
   SettingsService,
   SkillService,
+  TeamManager,
   SqlCredentialStorage,
   UsageService,
   WorkspaceManager,
@@ -48,6 +49,7 @@ export interface AppServices {
   readonly skills: SkillService;
   readonly plugins: PluginService;
   readonly mcp: McpService;
+  readonly teams: TeamManager;
   readonly credentials: CredentialManager;
   /** Importers offered when the user adds skills from a folder (spec §31). */
   readonly skillImporters: readonly (ClaudeSkillImporter | MarkdownSkillImporter)[];
@@ -155,6 +157,8 @@ export async function createServices(
     });
   }
 
+  const teams = new TeamManager({ db: database.db, events, logger, providers });
+
   const sessions = new SessionManager({
     db: database.db,
     events,
@@ -210,6 +214,7 @@ export async function createServices(
     skills,
     plugins,
     mcp,
+    teams,
     credentials,
     skillImporters: [new ClaudeSkillImporter(), new MarkdownSkillImporter()],
     files,
@@ -222,6 +227,8 @@ export async function createServices(
     dispose: async () => {
       terminals.closeAll();
       terminalListeners.clear();
+      // A run in flight is paused rather than orphaned (spec §132).
+      await teams.shutdown();
       await sessions.shutdown();
       await mcpManager.disconnectAll();
       await providers.dispose();

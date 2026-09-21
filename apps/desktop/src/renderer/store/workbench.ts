@@ -15,13 +15,23 @@ import type {
   SessionStatus,
   SkillManifest,
   SkillScopes,
+  TeamDefinition,
+  TeamRun,
+  TeamRunSnapshot,
   StoredProviderConfig,
   Workspace,
 } from "@ai-workbench/shared";
 import { defaultAppSettings } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
 
-export type MainView = "chat" | "providers" | "skills" | "plugins" | "mcp" | "settings";
+export type MainView =
+  | "chat"
+  | "providers"
+  | "skills"
+  | "plugins"
+  | "mcp"
+  | "teams"
+  | "settings";
 export type WorkspaceTab = "terminal" | "files" | "changes";
 
 interface WorkbenchState {
@@ -45,6 +55,13 @@ interface WorkbenchState {
   mcpStatuses: McpServerStatus[];
   /** MCP servers the active session may use (spec §38). */
   sessionMcpServerIds: string[];
+
+  teams: TeamDefinition[];
+  /** Runs per team, newest first. */
+  teamRuns: Record<string, TeamRun[]>;
+  /** The run whose detail is open, and its contents. */
+  openRunId: string | null;
+  runSnapshots: Record<string, TeamRunSnapshot>;
 
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
@@ -110,6 +127,20 @@ interface WorkbenchState {
   }): Promise<void>;
   disconnectAccount(id: string): Promise<void>;
 
+  refreshTeams(): Promise<void>;
+  createTeam(input: {
+    name: string;
+    agents: Array<{ displayName: string; providerId: string; role: string }>;
+  }): Promise<void>;
+  deleteTeam(teamId: string): Promise<void>;
+  setTeamLead(teamId: string, agentId: string): Promise<void>;
+  startTeamRun(teamId: string, goal: string): Promise<void>;
+  openTeamRun(runId: string | null): Promise<void>;
+  refreshTeamRun(runId: string): Promise<void>;
+  pauseTeamRun(runId: string): Promise<void>;
+  resumeTeamRun(runId: string): Promise<void>;
+  cancelTeamRun(runId: string): Promise<void>;
+
   refreshMcp(): Promise<void>;
   saveMcpServer(config: McpServerConfig): Promise<void>;
   deleteMcpServer(id: string): Promise<void>;
@@ -159,6 +190,11 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   mcpServers: [],
   mcpStatuses: [],
   sessionMcpServerIds: [],
+
+  teams: [],
+  teamRuns: {},
+  openRunId: null,
+  runSnapshots: {},
 
   activeWorkspaceId: null,
   activeSessionId: null,
@@ -502,6 +538,125 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
+  async refreshTeams() {
+    const workspaceId = get().activeWorkspaceId;
+    try {
+      const teams = await invoke("team.list", {
+        ...(workspaceId ? { workspaceId } : {}),
+      });
+      const runs = await Promise.all(
+        teams.map(async (team) => [team.id, await invoke("team.listRuns", { teamId: team.id })] as const),
+      );
+      set({ teams, teamRuns: Object.fromEntries(runs) });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async createTeam(input) {
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) {
+      return;
+    }
+    try {
+      await invoke("team.create", {
+        workspaceId,
+        name: input.name,
+        agents: input.agents.map((agent) => ({
+          displayName: agent.displayName,
+          providerId: agent.providerId,
+          role: agent.role,
+          skills: [],
+          plugins: [],
+          mcpServers: [],
+          settings: {},
+        })),
+      });
+      await get().refreshTeams();
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async deleteTeam(teamId) {
+    try {
+      await invoke("team.delete", { teamId });
+      await get().refreshTeams();
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async setTeamLead(teamId, agentId) {
+    try {
+      await invoke("team.setLead", { teamId, agentId });
+      await get().refreshTeams();
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async startTeamRun(teamId, goal) {
+    try {
+      const run = await invoke("team.startRun", { teamId, goal });
+      await get().refreshTeams();
+      await get().openTeamRun(run.id);
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async openTeamRun(runId) {
+    set({ openRunId: runId });
+    if (runId) {
+      await get().refreshTeamRun(runId);
+    }
+  },
+
+  async refreshTeamRun(runId) {
+    try {
+      const snapshot = await invoke("team.getRun", { runId });
+      set((state) => ({
+        runSnapshots: { ...state.runSnapshots, [runId]: snapshot },
+        teamRuns: {
+          ...state.teamRuns,
+          [snapshot.run.teamId]: (state.teamRuns[snapshot.run.teamId] ?? []).map((run) =>
+            run.id === runId ? snapshot.run : run,
+          ),
+        },
+      }));
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async pauseTeamRun(runId) {
+    try {
+      await invoke("team.pauseRun", { runId });
+      await get().refreshTeamRun(runId);
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async resumeTeamRun(runId) {
+    try {
+      await invoke("team.resumeRun", { runId });
+      await get().refreshTeamRun(runId);
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async cancelTeamRun(runId) {
+    try {
+      await invoke("team.cancelRun", { runId });
+      await get().refreshTeamRun(runId);
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
   async refreshMcp() {
     try {
       const sessionId = get().activeSessionId;
@@ -657,6 +812,18 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       case "provider.usage.updated":
         set({ usage: event.usage });
         break;
+      case "team.event": {
+        // The run's own state is the source of truth, so a team event refreshes
+        // it rather than being replayed into a second copy here (spec §50).
+        const { runId } = event.event;
+        if (get().openRunId === runId) {
+          void get().refreshTeamRun(runId);
+        }
+        if (event.event.type === "TEAM_FINISHED" || event.event.type === "TEAM_STARTED") {
+          void get().refreshTeams();
+        }
+        break;
+      }
       case "message.delta":
       case "provider.event":
         break;

@@ -15,19 +15,21 @@ Weighted contribution = weight x completion.
 | G2 | Provider platform | 15% | 20 | 18 | 90% | 13.50 |
 | G3 | Workspace / developer tooling | 10% | 14 | 14 | 100% | 10.00 |
 | G4 | Skills, plugins & MCP | 10% | 15 | 14 | 93% | 9.33 |
-| G5 | Autonomous team system | 20% | 28 | 0 | 0% | 0.00 |
+| G5 | Autonomous team system | 20% | 28 | 27 | 96% | 19.29 |
 | G6 | Status Island & background runtime | 10% | 22 | 0 | 0% | 0.00 |
 | G7 | UX, security, reliability & performance | 10% | 19 | 13 | 68% | 6.84 |
 | G8 | Extensibility, SDK & packaging | 5% | 10 | 1 | 10% | 0.50 |
-| **TOTAL** | | **100%** | **160** | **91** | | **59.42%** |
+| **TOTAL** | | **100%** | **160** | **118** | | **78.71%** |
 
 ## Current focus
 
-**G5 — the autonomous team system.** Skills, plugins, MCP servers and
-credential storage are in place and reachable from the application. What
-remains in G4 is remote MCP transports, which the application reports as
-unsupported rather than pretending to offer. What remains in G2 is verifying
-the Codex and Antigravity profiles against those tools.
+**G6 — the Status Island and the background runtime.** Teams work: a lead
+breaks a goal into tasks, other agents do them concurrently, publish artifacts
+and report back, and the lead closes the goal — persisted as it happens and
+resumable after a restart. What remains in G5 is two real providers
+collaborating, and handing the Team MCP server to a provider that speaks MCP.
+What remains in G4 is remote MCP transports, and in G2 verifying the Codex and
+Antigravity profiles against those tools.
 
 ## How this file is verified
 
@@ -37,7 +39,7 @@ Everything ticked below is proven by `pnpm verify`, which runs:
   frozen install cannot fail only on a build machine
 - `pnpm lint` — ESLint over the workspace
 - `pnpm typecheck` — strict TypeScript over Node and web projects
-- `pnpm test` — 179 unit and integration tests (2 more are skipped by default
+- `pnpm test` — 210 unit and integration tests (2 more are skipped by default
   because they spend real provider quota; see below)
 - `pnpm build` — electron-vite production build
 - `pnpm verify:app` — starts the built application headlessly (Xvfb) and drives
@@ -47,8 +49,10 @@ Everything ticked below is proven by `pnpm verify`, which runs:
   providers views. Since this milestone it also proves that a skill switched on
   for a session reaches the provider as instructions, that an MCP server which
   cannot start is reported instead of thrown, that a session can be given
-  access to a server, and that connecting an account never falls back to
-  plaintext. It then runs a second time against the same database to prove a
+  access to a server, that connecting an account never falls back to
+  plaintext, and that a team of three agents runs a goal to completion — the
+  lead delegating to the other two, both finishing, the run reaching
+  `goalFinished` and the screen showing it. It then runs a second time against the same database to prove a
   conversation and its provider session survive a restart.
 
 Additionally, and deliberately outside the default run:
@@ -196,34 +200,41 @@ round trip needs one run on a desktop.
 
 ## G5 — Autonomous team system — 20%
 
-- [ ] TeamDefinition persisted
-- [ ] team agent definitions persisted
-- [ ] Lead Agent selectable
-- [ ] TeamRun persisted
-- [ ] Task Graph works
-- [ ] dependencies work
-- [ ] ready/blocked transitions work
-- [ ] Agent Mailbox works
-- [ ] Shared Team State works
-- [ ] Decision Log works
-- [ ] Artifact registry works
-- [ ] Team Event Bus works
-- [ ] Team MCP server launches
-- [ ] agent can read team state
-- [ ] agent can create task
-- [ ] task can be delegated
-- [ ] worker can complete task
-- [ ] result reaches Lead Agent
-- [ ] independent tasks can run concurrently
-- [ ] TeamOrchestrator enforces concurrency
-- [ ] max calls/tasks/depth/runtime enforced
-- [ ] agent ping-pong protection works
-- [ ] failure recovery works
-- [ ] team can finish a goal
-- [ ] team run can survive app restart
-- [ ] at least two different MockProvider agents collaborate end-to-end
+- [x] TeamDefinition persisted
+- [x] team agent definitions persisted
+- [x] Lead Agent selectable
+- [x] TeamRun persisted
+- [x] Task Graph works
+- [x] dependencies work
+- [x] ready/blocked transitions work
+- [x] Agent Mailbox works
+- [x] Shared Team State works
+- [x] Decision Log works
+- [x] Artifact registry works
+- [x] Team Event Bus works
+- [x] Team MCP server launches
+- [x] agent can read team state
+- [x] agent can create task
+- [x] task can be delegated
+- [x] worker can complete task
+- [x] result reaches Lead Agent
+- [x] independent tasks can run concurrently
+- [x] TeamOrchestrator enforces concurrency
+- [x] max calls/tasks/depth/runtime enforced
+- [x] agent ping-pong protection works
+- [x] failure recovery works
+- [x] team can finish a goal
+- [x] team run can survive app restart
+- [x] at least two different MockProvider agents collaborate end-to-end
 - [ ] at least two real provider adapters can collaborate when available
-- [ ] Team UI shows state without becoming permanently cluttered
+- [x] Team UI shows state without becoming permanently cluttered
+
+Two things this does not yet claim. The Team MCP server starts and serves all
+21 tools to a real MCP client, but no provider is handed it as one of its own
+MCP servers yet, so the collaboration proven end to end runs on the equivalent
+host-mediated path. And the team that was driven to a finished goal is made of
+MockProvider agents; two real providers collaborating is the one criterion left
+open, because it was not run here.
 
 ## G6 — Status Island & background runtime — 10%
 

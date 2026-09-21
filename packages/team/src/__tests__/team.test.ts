@@ -299,6 +299,48 @@ describe("autonomous collaboration", () => {
     expect(service.listArtifacts().length).toBeGreaterThanOrEqual(2);
   });
 
+  it("runs independent tasks together, up to the run's limit", async () => {
+    const { service } = boot([agent("lead", "Lead"), agent("w1", "W1"), agent("w2", "W2")]);
+    await service.start();
+    for (const title of ["One", "Two", "Three"]) {
+      await service.createTask({ title, createdBy: "lead", assignedTo: "w1" });
+    }
+
+    // A provider that holds each turn open long enough to observe the overlap.
+    let inFlight = 0;
+    let peak = 0;
+    const slow: AIProviderAdapter = {
+      ...adapter,
+      createSession: adapter.createSession.bind(adapter),
+      async *sendMessage(handle, message) {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 40));
+          yield* adapter.sendMessage(handle, message);
+        } finally {
+          inFlight -= 1;
+        }
+      },
+    } as AIProviderAdapter;
+
+    Object.assign(service.run.limits, { maxConcurrentAgents: 2 });
+    const orchestrator = new TeamOrchestrator({
+      service,
+      runtime: { adapterFor: () => slow },
+      logger: nullLogger,
+      turnTimeoutMs: 15_000,
+    });
+    await orchestrator.run();
+    await orchestrator.dispose();
+
+    // More than one at a time proves concurrency; never more than two proves
+    // the limit is what bounds it.
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(2);
+    expect(service.listTasks().every((task) => task.status === "completed")).toBe(true);
+  });
+
   it("stops when the run runs out of agent calls", async () => {
     const { service } = boot([agent("lead", "Lead"), agent("worker-1", "W1")]);
     Object.assign(service.run.limits, { maxAgentCalls: 1 });

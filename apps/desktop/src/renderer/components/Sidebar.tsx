@@ -8,6 +8,7 @@ import {
   Folder,
   Puzzle,
   Server,
+  Users,
 } from "lucide-react";
 import type { Session, Workspace } from "@ai-workbench/shared";
 import { formatPath } from "../lib/format.js";
@@ -166,6 +167,15 @@ export function Sidebar({
         >
           <Puzzle size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Plugins</span>
+        </button>
+        <button
+          type="button"
+          className="row"
+          aria-current={view === "teams"}
+          onClick={() => setView("teams")}
+        >
+          <Users size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">Teams</span>
         </button>
         <button
           type="button"

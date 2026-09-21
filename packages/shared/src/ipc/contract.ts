@@ -43,6 +43,12 @@ import {
   mcpServerConfigSchema,
   mcpServerStatusSchema,
 } from "../domain/mcp.js";
+import {
+  createTeamInputSchema,
+  teamDefinitionSchema,
+  teamRunSchema,
+  teamRunSnapshotSchema,
+} from "../domain/team.js";
 
 /**
  * The single source of truth for privileged main-process operations (spec §105).
@@ -288,6 +294,52 @@ export const ipcContract = {
       enabled: z.boolean(),
     }),
     output: z.object({ updated: z.boolean() }),
+  },
+
+  "team.list": {
+    input: z.object({ workspaceId: z.string().min(1).optional() }),
+    output: z.array(teamDefinitionSchema),
+  },
+  "team.create": { input: createTeamInputSchema, output: teamDefinitionSchema },
+  "team.setLead": {
+    input: z.object({
+      teamId: z.string().min(1),
+      agentId: z.string().min(1).nullable(),
+    }),
+    output: teamDefinitionSchema,
+  },
+  "team.delete": {
+    input: z.object({ teamId: z.string().min(1) }),
+    output: z.object({ deleted: z.boolean() }),
+  },
+
+  "team.listRuns": {
+    input: z.object({ teamId: z.string().min(1).optional() }),
+    output: z.array(teamRunSchema),
+  },
+  /** The whole run: graph, mail, decisions and artifacts (spec §53). */
+  "team.getRun": {
+    input: z.object({ runId: z.string().min(1) }),
+    output: teamRunSnapshotSchema,
+  },
+  "team.startRun": {
+    input: z.object({
+      teamId: z.string().min(1),
+      goal: z.string().min(1).max(20_000),
+    }),
+    output: teamRunSchema,
+  },
+  "team.resumeRun": {
+    input: z.object({ runId: z.string().min(1) }),
+    output: teamRunSchema,
+  },
+  "team.pauseRun": {
+    input: z.object({ runId: z.string().min(1) }),
+    output: teamRunSchema,
+  },
+  "team.cancelRun": {
+    input: z.object({ runId: z.string().min(1) }),
+    output: teamRunSchema,
   },
 
   "settings.get": { input: z.void(), output: appSettingsSchema },

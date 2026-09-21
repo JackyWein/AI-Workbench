@@ -423,6 +423,73 @@ export async function runStartupCheck(
      })()`,
   );
 
+  await check(
+    "a team runs a goal to completion through the interface",
+    `(async () => {
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Teams'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       if (![...document.querySelectorAll('.view__title')]
+             .some(node => node.textContent === 'Teams')) return false;
+
+       // A team of three, all on the same registered provider.
+       const workspaceId = window.__checkWorkspaceId;
+       // The resume phase finds the team the first phase created.
+       const existing = (await window.workbench.invoke('team.list', { workspaceId }))
+         .find(entry => entry.name === 'Check team');
+       const team = existing ?? await window.workbench.invoke('team.create', {
+         workspaceId,
+         name: 'Check team',
+         agents: [
+           { displayName: 'Lead', providerId: 'mock', role: 'plans', skills: [], plugins: [], mcpServers: [], settings: {} },
+           { displayName: 'Builder', providerId: 'mock', role: 'implements', skills: [], plugins: [], mcpServers: [], settings: {} },
+           { displayName: 'Reviewer', providerId: 'mock', role: 'reviews', skills: [], plugins: [], mcpServers: [], settings: {} },
+         ],
+       });
+       if (team.agents.length !== 3 || team.leadAgentId !== team.agents[0].id) return false;
+
+       const run = await window.workbench.invoke('team.startRun', {
+         teamId: team.id,
+         goal: 'Check that the team really collaborates',
+       });
+
+       // Wait for the run to settle, reading the run itself rather than the UI.
+       let snapshot = null;
+       const deadline = Date.now() + 25000;
+       while (Date.now() < deadline) {
+         await new Promise(resolve => setTimeout(resolve, 200));
+         snapshot = await window.workbench.invoke('team.getRun', { runId: run.id });
+         if (snapshot.run.status !== 'running' && snapshot.run.status !== 'pending') break;
+       }
+       if (!snapshot || snapshot.run.status !== 'completed') return false;
+       if (snapshot.run.stopReason !== 'goalFinished') return false;
+
+       // The lead delegated rather than doing it all itself, and the work
+       // actually came back.
+       const assignees = new Set(snapshot.tasks.map(task => task.assignedTo));
+       if (assignees.size < 2 || assignees.has(team.leadAgentId)) return false;
+       if (!snapshot.tasks.every(task => task.status === 'completed')) return false;
+       if (snapshot.artifacts.length < 2) return false;
+
+       // And the screen shows it without being told to reload.
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Teams'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 600));
+       const entry = [...document.querySelectorAll('.provider-entry')]
+         .find(node => node.textContent?.includes('Check team'));
+       if (!entry || !entry.textContent?.includes('3 agents')) return false;
+
+       const runRow = [...entry.querySelectorAll('.row')]
+         .find(node => node.textContent?.includes('really collaborates'));
+       if (!runRow) return false;
+       runRow.click();
+       await new Promise(resolve => setTimeout(resolve, 600));
+       const detail = document.querySelector('.run-detail');
+       return Boolean(detail && detail.textContent?.includes('Finished')
+         && detail.querySelectorAll('.changes__item').length >= 2);
+     })()`,
+  );
+
   // The remaining checks expect the session's chat again.
   await check(
     "returns to the session after the settings screens",
@@ -563,8 +630,9 @@ function createScenario(workspaceDirectory: string): string {
     await api.invoke('session.sendMessage', { sessionId: session.id, text: 'hello' });
     const answer = await done;
 
-    // Later checks address this session directly.
+    // Later checks address this session and workspace directly.
     window.__checkSessionId = session.id;
+    window.__checkWorkspaceId = workspace.id;
 
     const stored = await api.invoke('message.list', { sessionId: session.id });
     const usage = await api.invoke('provider.getUsage', undefined);
@@ -596,6 +664,7 @@ function resumeScenario(): string {
     const session = sessions.find(entry => entry.name === 'Check session');
     if (!session || !session.providerSessionId) return false;
     window.__checkSessionId = session.id;
+    window.__checkWorkspaceId = workspace.id;
 
     // The first phase may have exchanged several turns; what matters is that
     // the conversation is still there and grows from where it left off.

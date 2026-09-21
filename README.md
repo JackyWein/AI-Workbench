@@ -53,6 +53,15 @@ Skills, plugins and MCP servers are part of the application, not of a provider:
 - **Secrets** go into the operating system's own storage. Where there is none,
   the application refuses to store them rather than writing them in the clear
 
+**Teams** work on one goal together. A lead breaks it into tasks, the other
+agents pick them up and run concurrently, publish what they produce and report
+back, and the lead closes the goal — with no prompt relayed by hand. Every run
+is bounded (calls, tasks, depth, runtime, failures, concurrency, messages,
+delegations), persisted as it happens, and resumable after a restart. Agents
+reach each other through the team, either through `ai-workbench-team-mcp` or,
+for providers without MCP, through the same operations written as action
+blocks.
+
 See `PROGRESS.md` for what is verified, measured only from acceptance criteria
 that a run of `pnpm verify` actually proves.
 

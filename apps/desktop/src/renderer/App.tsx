@@ -16,6 +16,7 @@ import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillsView } from "./components/SkillsView.js";
+import { TeamsView } from "./components/TeamsView.js";
 import { WorkspacePanel } from "./components/WorkspacePanel.js";
 
 type AppInfo = { version: string; platform: string; userDataPath: string };
@@ -166,6 +167,7 @@ export function App(): JSX.Element {
         {state.view === "skills" ? <SkillsView /> : null}
         {state.view === "plugins" ? <PluginsView /> : null}
         {state.view === "mcp" ? <McpView /> : null}
+        {state.view === "teams" ? <TeamsView /> : null}
         {state.view === "settings" ? (
           <SettingsView settings={state.settings} appInfo={appInfo} />
         ) : null}
