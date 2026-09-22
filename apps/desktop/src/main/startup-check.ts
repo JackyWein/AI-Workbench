@@ -1127,6 +1127,19 @@ export async function runStartupCheck(
       await capture("settings", sidebar("Settings"));
       await capture("skills", sidebar("Skills"));
 
+      // Both themes are meant to be deliberate, so both are reviewable. The
+      // theme is set the way the renderer itself applies it; going through
+      // settings would not reach this window, which already has its own copy.
+      await capture(
+        "settings-light",
+        `document.documentElement.dataset.theme = 'light';
+         ${sidebar("Settings")}`,
+      );
+      await capture("providers-light", sidebar("Providers"));
+      await window.webContents.executeJavaScript(
+        `document.documentElement.dataset.theme = 'dark'`,
+      );
+
       logger.info("Startup check screenshots written", { directory: dirname(screenshotPath) });
     } catch (error) {
       logger.warn("Startup check screenshots failed", {

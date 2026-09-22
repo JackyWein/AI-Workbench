@@ -1,0 +1,401 @@
+/*
+ * The controls layer.
+ *
+ * A browser's own checkbox, select and scrollbar are the loudest signal that
+ * an interface was never finished: they belong to the platform's web engine,
+ * not to the product. Everything a person clicks is drawn here instead, from
+ * the same tokens, so both themes are deliberate rather than inherited.
+ *
+ * The reference is the macOS look — hairline borders, generous radii, a real
+ * pressed state, a focus ring that is a halo rather than an outline — without
+ * copying any one control pixel for pixel.
+ */
+
+/* ------------------------------------------------------------ scrollbars -- */
+
+/*
+ * Overlay scrollbars: present while scrolling or hovering, invisible at rest,
+ * and never a grey trough down the side of every panel.
+ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+:root {
+  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
+}
+
+:root[data-theme="light"] {
+  --scrollbar-thumb: rgba(17, 19, 26, 0.2);
+  --scrollbar-thumb-hover: rgba(17, 19, 26, 0.34);
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  border-radius: var(--radius-pill);
+  /* Drawn inside a transparent border, so the bar floats off the edge. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  transition: background-color var(--duration-fast) var(--easing-standard);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--scrollbar-thumb-hover);
+}
+
+/* ---------------------------------------------------------- focus rings -- */
+
+/*
+ * One focus treatment everywhere: a soft halo in the accent colour. Keyboard
+ * users get it; a mouse click does not leave it behind.
+ */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--surface-base),
+    0 0 0 4px var(--accent-quiet);
+  border-color: var(--border-focus);
+}
+
+/* ------------------------------------------------------ checkbox, radio -- */
+
+.control,
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  display: inline-grid;
+  place-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--easing-standard),
+    border-color var(--duration-fast) var(--easing-standard);
+}
+
+input[type="radio"] {
+  border-radius: var(--radius-pill);
+}
+
+input[type="checkbox"]:hover:not(:disabled),
+input[type="radio"]:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+input[type="checkbox"]::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  transform: scale(0);
+  transition: transform var(--duration-fast) var(--easing-standard);
+  background-color: var(--text-inverted);
+  /* A drawn tick, so it matches the control at any size. */
+  clip-path: polygon(14% 47%, 0 61%, 39% 100%, 100% 22%, 85% 9%, 37% 70%);
+}
+
+input[type="radio"]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  transform: scale(0);
+  transition: transform var(--duration-fast) var(--easing-standard);
+  background-color: var(--text-inverted);
+}
+
+input[type="checkbox"]:checked,
+input[type="radio"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+input[type="checkbox"]:checked::before,
+input[type="radio"]:checked::before {
+  transform: scale(1);
+}
+
+input[type="checkbox"]:disabled,
+input[type="radio"]:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- switch -- */
+
+/* For a preference that takes effect immediately, rather than on save. */
+.switch {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--surface-active);
+  cursor: pointer;
+  transition: background-color var(--duration-normal) var(--easing-standard);
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill);
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform var(--duration-normal) var(--easing-standard);
+}
+
+.switch:checked {
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  transform: translateX(16px);
+}
+
+.switch:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- inputs -- */
+
+.text-input,
+input[type="text"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+textarea {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  padding: 7px var(--space-4);
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.06);
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--easing-standard),
+    box-shadow var(--duration-fast) var(--easing-standard);
+}
+
+textarea {
+  resize: vertical;
+  line-height: var(--line-body);
+}
+
+.text-input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.text-input:hover:not(:disabled),
+textarea:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.text-input:focus,
+textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow:
+    inset 0 1px 1px rgba(0, 0, 0, 0.06),
+    0 0 0 3px var(--accent-quiet);
+}
+
+.text-input:disabled,
+textarea:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- select -- */
+
+.select,
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 5px 26px 5px var(--space-4);
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  background-color: var(--surface-raised);
+  /* The chevron is drawn, so no platform arrow appears in the corner. */
+  background-image: var(--select-chevron);
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 9px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--easing-standard),
+    background-color var(--duration-fast) var(--easing-standard);
+}
+
+:root {
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23a3a7b0' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+:root[data-theme="light"] {
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%234b505a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+.select:hover:not(:disabled),
+select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background-color: var(--surface-hover);
+}
+
+.select:disabled,
+select:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* The menu itself is the platform's; only its colours are ours to set. */
+.select option,
+select option {
+  background: var(--surface-overlay);
+  color: var(--text-primary);
+}
+
+/* --------------------------------------------------------------- buttons -- */
+
+.primary-button,
+.ghost-button,
+.quiet-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--easing-standard),
+    border-color var(--duration-fast) var(--easing-standard),
+    transform var(--duration-fast) var(--easing-standard);
+}
+
+.primary-button {
+  padding: 6px var(--space-5);
+  color: var(--text-inverted);
+  background: var(--accent);
+  border: 1px solid transparent;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.primary-button:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.ghost-button {
+  padding: 6px var(--space-5);
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+}
+
+.ghost-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.quiet-button {
+  padding: 5px var(--space-3);
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+}
+
+.quiet-button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+/* A press should be felt, not just seen. */
+.primary-button:active:not(:disabled),
+.ghost-button:active:not(:disabled),
+.quiet-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.primary-button:disabled,
+.ghost-button:disabled,
+.quiet-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------------------------------------------------- segmented control -- */
+
+/*
+ * Two or three exclusive choices, shown together. The moving background is
+ * one element, so the selection slides instead of blinking.
+ */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.segmented__item {
+  padding: 3px var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) var(--easing-standard),
+    color var(--duration-fast) var(--easing-standard);
+}
+
+.segmented__item:hover:not([aria-pressed="true"]):not([aria-current="true"]) {
+  color: var(--text-primary);
+}
+
+.segmented__item[aria-pressed="true"],
+.segmented__item[aria-current="true"] {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+}

@@ -1,4 +1,5 @@
 @import "@ai-workbench/ui/tokens.css";
+@import "@ai-workbench/ui/controls.css";
 
 /*
  * The island is a floating companion, not a window: the page itself is

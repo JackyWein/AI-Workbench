@@ -1,4 +1,5 @@
 @import "@ai-workbench/ui/tokens.css";
+@import "@ai-workbench/ui/controls.css";
 
 *,
 *::before,
@@ -11,6 +12,46 @@ body,
 #root {
   height: 100%;
   margin: 0;
+}
+
+/*
+ * Spacing is the layout's to decide, never the user agent's. Without this the
+ * browser's own paragraph and heading margins add tens of pixels to every row
+ * of every screen, which is most of what made the application look like a
+ * sprawling document rather than a built interface.
+ */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+figure,
+blockquote,
+dl,
+dd,
+ul,
+ol,
+pre {
+  margin: 0;
+}
+
+ul,
+ol {
+  padding: 0;
+  list-style: none;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: var(--line-tight);
 }
 
 body {
@@ -37,12 +78,6 @@ textarea,
 select {
   font: inherit;
   color: inherit;
-}
-
-:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 1px;
-  border-radius: var(--radius-sm);
 }
 
 /* ---------------------------------------------------------------- shell -- */
@@ -203,7 +238,13 @@ select {
   display: flex;
   align-items: baseline;
   gap: var(--space-3);
+  /*
+   * The left side is what gives way. Without this the subtitles keep their
+   * full width and run underneath the controls on the right.
+   */
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .header__title {
@@ -218,34 +259,28 @@ select {
   font-size: var(--text-sm);
   color: var(--text-muted);
   white-space: nowrap;
+  /* Each piece may shrink and truncate rather than push the next one out. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The session's own name is the last thing to give way. */
+.header__title {
+  flex: 0 1 auto;
 }
 
 .header__actions {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
+  /* Controls are hit targets; they never shrink into each other. */
+  flex: none;
   -webkit-app-region: no-drag;
 }
 
 /* ----------------------------------------------------------- quiet bits -- */
-
-.quiet-button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-  transition: background var(--duration-fast) var(--easing-standard),
-    color var(--duration-fast) var(--easing-standard);
-}
-
-.quiet-button:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
 
 .status-dot {
   width: 6px;
@@ -350,18 +385,28 @@ select {
   min-width: 0;
 }
 
+/* The same grouped panel, for the read-only rows a provider or run shows. */
 .detail-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
   margin: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 
 .detail {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  gap: var(--space-3);
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: 7px var(--space-5);
   font-size: var(--text-sm);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.detail:first-child {
+  border-top: none;
 }
 
 .detail__label {
@@ -628,40 +673,6 @@ select {
   color: var(--text-muted);
 }
 
-.primary-button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
-  background: var(--accent);
-  color: var(--text-inverted);
-  font-size: var(--text-sm);
-  font-weight: 560;
-  transition: opacity var(--duration-fast) var(--easing-standard);
-}
-
-.primary-button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.ghost-button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
-}
-
-.ghost-button:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
 /* -------------------------------------------------------- context panel -- */
 
 .context {
@@ -796,12 +807,40 @@ select {
 }
 
 .view__inner {
-  max-width: 720px;
+  /* Wide enough to use the window, narrow enough that a line stays readable. */
+  max-width: 880px;
   margin: 0 auto;
   padding: var(--space-7) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-7);
+  gap: var(--space-6);
+}
+
+/*
+ * The label belongs above its group, not inside it, and the rows of a group
+ * touch: a gap between them would break the panel back into separate boxes.
+ */
+.view__inner section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.view__inner .section__label {
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-3);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* Introductory text sits between the label and the panel it explains. */
+.view__inner section > .field__description {
+  padding: 0 var(--space-2);
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  max-width: 62ch;
 }
 
 .view__title {
@@ -823,6 +862,42 @@ select {
   border-top: none;
 }
 
+/*
+ * On a full screen, a run of settings rows is one grouped panel rather than
+ * separators drawn across the page. Rows carry the sides themselves, so the
+ * group needs no wrapper element: the first and last round off, and the
+ * borders between them become the separators.
+ */
+.view__inner .field {
+  padding: var(--space-4) var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-top-color: var(--border-subtle);
+  border-bottom: none;
+}
+
+.view__inner .field:first-of-type {
+  border-top: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.view__inner .field:last-of-type {
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* A group of one is a single rounded panel, not a half-open one. */
+.view__inner .field:first-of-type:last-of-type {
+  border-radius: var(--radius-lg);
+}
+
+.view__inner .field > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
 .field__label {
   font-size: var(--text-md);
 }
@@ -830,15 +905,6 @@ select {
 .field__description {
   font-size: var(--text-sm);
   color: var(--text-muted);
-}
-
-.select {
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  font-size: var(--text-sm);
 }
 
 .view__header {
@@ -1020,11 +1086,6 @@ select {
   cursor: pointer;
 }
 
-.scope-toggle input {
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-
 .scope-toggle input:disabled,
 .scope-toggle:has(input:disabled) {
   cursor: default;
@@ -1108,19 +1169,6 @@ select {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.text-input {
-  width: 100%;
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-raised);
-  outline: none;
-}
-
-.text-input:focus {
-  border-color: var(--border-strong);
 }
 
 .text-input--multiline {
