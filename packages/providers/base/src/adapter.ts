@@ -45,6 +45,13 @@ export interface AIProviderAdapter {
   /** When the model list was last read from the tool itself; null if never. */
   getModelsUpdatedAt?(): Date | null;
 
+  /**
+   * Why the tool's own model list is missing, when it is. A tool that was
+   * asked and answered with nothing usable is not the same as one that has no
+   * such command, and the user is told which.
+   */
+  getModelsNote?(): string | null;
+
   createSession(config: ProviderSessionConfig): Promise<ProviderSessionInfo>;
   resumeSession?(
     providerSessionId: string,

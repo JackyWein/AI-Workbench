@@ -106,6 +106,8 @@ export class CliProviderAdapter implements AIProviderAdapter {
   readonly #sessions = new Map<string, SessionSetup>();
   readonly #installation = new TimedCache<InstallationStatus>(INSTALLATION_TTL_MS);
   readonly #auth = new TimedCache<AuthStatus>(AUTH_TTL_MS);
+  /** Why the last model discovery produced nothing, when it did. */
+  #modelsNote: string | null = null;
   /** Logs through the context's logger, which only exists once initialized. */
   readonly #logger: Logger = forwardingLogger(() => this.#context?.logger ?? null);
   readonly #models: ModelStore;
@@ -312,6 +314,11 @@ export class CliProviderAdapter implements AIProviderAdapter {
 
   getModelsUpdatedAt(): Date | null {
     return this.#models.updatedAt;
+  }
+
+  /** Why the tool's own list is missing; cleared as soon as one is read. */
+  getModelsNote(): string | null {
+    return this.#modelsNote;
   }
 
   async discoverImportables(request: { workspacePath?: string }): Promise<ProviderImportables> {
@@ -625,14 +632,32 @@ export class CliProviderAdapter implements AIProviderAdapter {
     }
     const transport = this.#transport;
     const args = [...this.#profile.modelsArgs];
+    const command = [this.#profile.command, ...args].join(" ");
     await this.#models.refresh(async () => {
       try {
         const { stdout, exit } = await transport.exec({ args, timeoutMs: 30_000 });
         if (exit.code !== 0) {
+          // The tool's own first line of complaint is more use than a code.
+          const said = firstLine(exit.stderr) || firstLine(stdout);
+          this.#modelsNote = said
+            ? `\`${command}\` failed: ${said}`
+            : `\`${command}\` failed with exit ${String(exit.code ?? "unknown")}`;
           return null;
         }
-        return parseModelLines(stdout);
-      } catch {
+        const models = parseModelLines(stdout);
+        if (models.length === 0) {
+          const said = firstLine(stdout);
+          this.#modelsNote = said
+            ? `\`${command}\` answered with nothing that reads as a model: "${said}"`
+            : `\`${command}\` answered with nothing`;
+          return null;
+        }
+        this.#modelsNote = null;
+        return models;
+      } catch (error) {
+        this.#modelsNote = `\`${command}\` could not be run: ${
+          error instanceof Error ? error.message : String(error)
+        }`;
         return null;
       }
     });
@@ -824,7 +849,7 @@ function forwardingLogger(current: () => Logger | null): Logger {
 }
 
 function firstLine(text: string): string {
-  return text.trim().split("\n")[0]?.trim() ?? "";
+  return (text.trim().split("\n")[0]?.trim() ?? "").slice(0, 160);
 }
 
 /**

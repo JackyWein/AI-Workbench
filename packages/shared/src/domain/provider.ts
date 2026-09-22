@@ -202,6 +202,12 @@ export const providerSummarySchema = z.object({
   models: z.array(modelInfoSchema),
   /** When the model list was last read from the tool itself, if ever. */
   modelsUpdatedAt: z.date().nullable().default(null),
+  /**
+   * Why the tool's own model list is missing, when it is. A tool that was
+   * asked and answered with nothing usable is not the same as one that has no
+   * such command, and the difference is the user's to see (spec §56).
+   */
+  modelsNote: z.string().nullable().default(null),
   usage: providerUsageSnapshotSchema.nullable(),
   /** False when the user hid the provider; hidden ones offer nothing new. */
   enabled: z.boolean().default(true),

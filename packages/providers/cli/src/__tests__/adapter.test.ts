@@ -1,3 +1,4 @@
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProviderEvent } from "@ai-workbench/shared";
@@ -484,6 +485,23 @@ describe("profile-driven model discovery", () => {
     // A tool that refuses, or prints help, must not become a model list.
     expect(parseModelLines("You are not signed in. Run `agy login` first.\n")).toEqual([]);
     expect(parseModelLines("Usage: agy models [options]\n\n  Lists models\n")).toEqual([]);
+  });
+
+  it("says why a tool's model list is missing instead of showing none", async () => {
+    const refusing = join(fixtures, "refusing-models-cli.mjs");
+    const adapter = new CliProviderAdapter(parseProfile(modelsProfile));
+    // Its own state directory: a list remembered by another test would
+    // rightly survive a failed refresh and hide what is being checked here.
+    await adapter.initialize({
+      ...contextFor(refusing),
+      stateDirectory: join(tmpdir(), `ai-workbench-models-${String(process.pid)}`),
+    });
+
+    expect(await adapter.refreshModels()).toEqual([]);
+    const note = adapter.getModelsNote();
+    expect(note).toContain("nothing that reads as a model");
+    // The tool's own words are carried, so the cause is visible.
+    expect(note).toContain("not signed in");
   });
 
   it("discovers the tool's models without manual entry", async () => {

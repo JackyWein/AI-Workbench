@@ -413,6 +413,14 @@ select {
   color: var(--text-muted);
 }
 
+/* A second line under a value, for why it says what it says. */
+.detail__note {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 .detail__value {
   color: var(--text-primary);
   overflow-wrap: anywhere;

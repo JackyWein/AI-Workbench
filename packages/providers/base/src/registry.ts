@@ -105,6 +105,7 @@ export class ProviderRegistry {
       capabilities: capabilities ?? { supported: [] },
       models: models ?? [],
       modelsUpdatedAt: this.#modelsUpdatedAt(adapter),
+      modelsNote: this.#modelsNote(adapter),
       usage: usage ?? null,
       // The manager overlays the user's choice; unknown to the registry means on.
       enabled: true,
@@ -114,6 +115,14 @@ export class ProviderRegistry {
   #modelsUpdatedAt(adapter: AIProviderAdapter): Date | null {
     try {
       return adapter.getModelsUpdatedAt?.() ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  #modelsNote(adapter: AIProviderAdapter): string | null {
+    try {
+      return adapter.getModelsNote?.() ?? null;
     } catch {
       return null;
     }

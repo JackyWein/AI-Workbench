@@ -191,7 +191,13 @@ function ProviderEntry({
         ) : null}
         <div className="detail">
           <dt className="detail__label">Models</dt>
-          <dd className="detail__value">{modelsLabel(provider, configuredModels)}</dd>
+          <dd className="detail__value">
+            {modelsLabel(provider, configuredModels)}
+            {/* Why a tool's own list is missing, when it is (spec §56). */}
+            {provider.modelsNote ? (
+              <span className="detail__note">{provider.modelsNote}</span>
+            ) : null}
+          </dd>
         </div>
         <div className="detail">
           <dt className="detail__label">Usage</dt>
