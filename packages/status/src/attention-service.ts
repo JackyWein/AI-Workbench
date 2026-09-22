@@ -102,12 +102,17 @@ export class StatusAttentionService {
 
   /** Steps through the widgets that currently have something to say. */
   cycle(direction: 1 | -1 = 1): IslandState {
-    const available = this.#state.entries;
+    // Touching the island acknowledges the news holding it, so the step is
+    // taken from where the island settles rather than from the flash. A step
+    // that counted from a passing announcement would land somewhere the user
+    // could not predict from what the island shows a second later.
+    const settled = this.dismissOverride();
+    const available = settled.entries;
     if (available.length <= 1) {
-      return this.#state;
+      return settled;
     }
     const currentIndex = available.findIndex(
-      (entry) => entry.widget === this.#state.current.widget,
+      (entry) => entry.widget === settled.current.widget,
     );
     const next = (currentIndex + direction + available.length) % available.length;
     this.#rotation = next;
@@ -122,12 +127,6 @@ export class StatusAttentionService {
     return this.#refresh();
   }
 
-  /**
-   * Touching the island acknowledges what it was showing: the entry holding it
-   * lets go, and the news it was about does not take it again a moment later.
-   * Without this an explicit choice — pinning, cycling, dismissing — would be
-   * undone by the next refresh while that news is still unseen.
-   */
   /** Notes that a piece of news has had its moment, with bounded memory. */
   #remember(key: string): void {
     this.#seen.add(key);
@@ -140,6 +139,12 @@ export class StatusAttentionService {
     }
   }
 
+  /**
+   * Touching the island acknowledges what it was showing: the entry holding it
+   * lets go, and the news it was about does not take it again a moment later.
+   * Without this an explicit choice — pinning, cycling, dismissing — would be
+   * undone by the next refresh while that news is still unseen.
+   */
   #settle(): void {
     this.#override = null;
     for (const entry of this.#state.entries) {

@@ -209,17 +209,34 @@ export async function runStartupCheck(
     if (BrowserWindow.getAllWindows().filter((entry) => !entry.isDestroyed()).length !== 2) {
       return false;
     }
-    // Compact, with the usage title the service reported — nothing invented.
-    const bounds = target.getBounds();
-    const title = await islandJs(
-      "document.querySelector('.island__title')?.textContent ?? ''",
-    );
-    return (
-      bounds.width === 320 &&
-      bounds.height === 44 &&
-      typeof title === "string" &&
-      /mock \d+%/.test(title)
-    );
+    // It shows exactly the title the service reported — nothing invented —
+    // and it is sized for the state it is in: compact normally, larger while
+    // an entry is holding it open. Which entry that is depends on what the
+    // application knows, so both are compared against the service rather than
+    // against fixed values. On a second start there can be unseen news, so a
+    // check that demanded the compact size would be asserting a fresh profile.
+    const deadline = Date.now() + 5_000;
+    let matched = false;
+    while (Date.now() < deadline) {
+      const state = island.state;
+      const title = await islandJs(
+        "document.querySelector('.island__title')?.textContent ?? ''",
+      );
+      const bounds = target.getBounds();
+      const expected = state.expanded
+        ? { width: 380, height: 132 }
+        : { width: 320, height: 44 };
+      if (
+        title === state.current.title &&
+        bounds.width === expected.width &&
+        bounds.height === expected.height
+      ) {
+        matched = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return matched;
   });
 
   await check(
@@ -882,8 +899,21 @@ export async function runStartupCheck(
   await check(
     "the palette cycles the island widget",
     `(async () => {
+       // Which widget is second depends on what the application currently
+       // knows, so the step is checked against the order the island reports.
+       const before = await window.workbench.invoke('statusIsland.pinWidget', { widget: null });
+       const expected = before.entries[1]?.widget;
+       if (!expected) return false;
        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
        await new Promise(resolve => setTimeout(resolve, 120));
+       // The palette lists only the first handful of commands until something
+       // is typed, so the command is searched for the way a person reaches it.
+       const input = document.querySelector('.palette__input');
+       if (!input) return false;
+       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+       setValue.call(input, 'Cycle Status Island');
+       input.dispatchEvent(new Event('input', { bubbles: true }));
+       await new Promise(resolve => setTimeout(resolve, 150));
        const item = [...document.querySelectorAll('.palette__item')]
          .find(node => node.textContent?.includes('Cycle Status Island widget'));
        if (!item) return false;
@@ -891,8 +921,8 @@ export async function runStartupCheck(
        await new Promise(resolve => setTimeout(resolve, 400));
        if (document.querySelector('.palette') !== null) return false;
        const state = await window.workbench.invoke('statusIsland.getState', undefined);
-       return state.current.widget === 'connectionHealth'
-         && state.preferences.pinnedWidget === 'connectionHealth';
+       return state.current.widget === expected
+         && state.preferences.pinnedWidget === expected;
      })()`,
   );
 
@@ -918,8 +948,10 @@ export async function runStartupCheck(
     `(async () => {
        const state = await window.workbench.invoke('statusIsland.getState', undefined);
        await window.workbench.invoke('statusIsland.pinWidget', { widget: null });
-       return state.current.widget === 'connectionHealth'
-         && state.preferences.pinnedWidget === 'connectionHealth';
+       const expected = state.entries[1]?.widget;
+       return Boolean(expected)
+         && state.current.widget === expected
+         && state.preferences.pinnedWidget === expected;
      })()`,
   );
 
@@ -927,10 +959,13 @@ export async function runStartupCheck(
     "cycling and pinning follow the widget order",
     `(async () => {
        const api = window.workbench;
+       const start = await api.invoke('statusIsland.pinWidget', { widget: null });
+       const order = start.entries.map(entry => entry.widget);
+       if (order.length < 2) return false;
        const first = await api.invoke('statusIsland.cycle', { direction: 1 });
-       if (first.current.widget !== 'connectionHealth') return false;
+       if (first.current.widget !== order[1]) return false;
        const back = await api.invoke('statusIsland.cycle', { direction: -1 });
-       if (back.current.widget !== 'needsAttention') return false;
+       if (back.current.widget !== order[0]) return false;
 
        const pinned = await api.invoke('statusIsland.pinWidget', { widget: 'providerUsage' });
        if (pinned.current.widget !== 'providerUsage') return false;
@@ -943,7 +978,7 @@ export async function runStartupCheck(
        // Automatic mode is the priority order, highest first.
        const automatic = await api.invoke('statusIsland.pinWidget', { widget: null });
        return automatic.preferences.pinnedWidget === null
-         && automatic.current.widget === 'needsAttention'
+         && automatic.current.widget === order[0]
          && automatic.entries.every((entry, index, all) =>
            index === 0 || all[index - 1].priority >= entry.priority);
      })()`,
@@ -969,11 +1004,10 @@ export async function runStartupCheck(
          ],
        });
        await api.invoke('statusIsland.setPreferences', { autoExpand: true });
-       const resume = existing
-         ? (await api.invoke('team.listRuns', { teamId: team.id }))
-           .find(run => run.status === 'completed')
-         : null;
-       const run = resume ?? await api.invoke('team.startRun', {
+       // A failure takes the island while it is news and then settles (spec
+       // §97), so an old run that was already announced proves nothing. The
+       // team is reused; the failure is always a fresh one.
+       const run = await api.invoke('team.startRun', {
          teamId: team.id,
          goal: 'Check failure surfacing [fail: the test API is down]',
        });
@@ -1239,7 +1273,13 @@ async function seedWorkspace(directory: string): Promise<boolean> {
       return false;
     }
     if ((await run("commit", "-m", "initial")) !== 0) {
-      return false;
+      // The second phase seeds the same directory again, where the tree is
+      // already committed and there is nothing to commit. That is fine as long
+      // as the repository really does have a commit; anything else still falls
+      // back to the no-git path.
+      if ((await run("rev-parse", "--verify", "HEAD")) !== 0) {
+        return false;
+      }
     }
     await writeFile(join(directory, "untracked.txt"), "new file\n");
     return true;

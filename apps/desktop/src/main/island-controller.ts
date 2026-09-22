@@ -317,6 +317,11 @@ export class IslandController {
   }
 
   async pin(widget: IslandWidgetId | null): Promise<IslandState> {
+    // Pinning — including going back to automatic — is an explicit choice, so
+    // the entry holding the island lets go first (spec §100). Writing the
+    // preference alone would leave a passing announcement on screen and the
+    // choice would look like it had not been taken.
+    this.#services.attention.pin(widget);
     return this.setPreferences({ pinnedWidget: widget });
   }
 

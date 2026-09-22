@@ -230,6 +230,85 @@ describe("the priority engine", () => {
     expect(service.cycle().current.widget).toBe(first);
   });
 
+  it("cycles to the next widget while an entry is holding the island", () => {
+    // The state the application is actually in when this is used: an unread
+    // question is holding the island, and several other widgets have
+    // something to say behind it.
+    const service = boot();
+    const state = service.update({
+      usage: usageWith(40),
+      busySessions: [{ sessionId: "s1", name: "One", status: "answering" }],
+      attention: [{ key: "ask-1", title: "Needs you", detail: "", at: NOW }],
+      brokenConnections: [{ key: "mcp:x", title: "x is not connected", detail: "" }],
+      completed: [{ key: "run_1:done", title: "Finished", detail: "", at: NOW }],
+      now: NOW,
+    });
+    expect(state.entries.map((entry) => entry.widget)).toEqual([
+      "needsAttention",
+      "connectionHealth",
+      "completedWork",
+      "activeAgents",
+      "providerUsage",
+    ]);
+    expect(state.current.widget).toBe("needsAttention");
+
+    // One step lands on the next widget and pins it, holding entry or not.
+    const stepped = service.cycle(1);
+    expect(stepped.preferences.pinnedWidget).toBe("connectionHealth");
+    expect(stepped.current.widget).toBe("connectionHealth");
+
+    // And it is still there after the next refresh of the sources.
+    expect(service.update({ now: NOW }).current.widget).toBe("connectionHealth");
+  });
+
+  it("steps from where the island settles, not from the news holding it", () => {
+    // Each refresh gives one unseen piece of news its moment, so after three
+    // the island is held by the completion — which is neither the most
+    // important entry nor the one next in line.
+    const service = boot();
+    const sources = {
+      usage: usageWith(40),
+      attention: [{ key: "ask-1", title: "Needs you", detail: "", at: NOW }],
+      brokenConnections: [{ key: "mcp:x", title: "x is not connected", detail: "" }],
+      completed: [{ key: "run_1:done", title: "Finished", detail: "", at: NOW }],
+      now: NOW,
+    };
+    const state = service.update(sources);
+    expect(state.entries.map((entry) => entry.widget)).toEqual([
+      "needsAttention",
+      "connectionHealth",
+      "completedWork",
+      "providerUsage",
+    ]);
+    service.update({ now: NOW });
+    expect(service.update({ now: NOW }).current.widget).toBe("completedWork");
+
+    // Touching the island lets that go, so one step lands on the widget after
+    // the one the island settles on — not on the one after the announcement.
+    const stepped = service.cycle(1);
+    expect(stepped.current.widget).toBe("connectionHealth");
+    expect(stepped.preferences.pinnedWidget).toBe("connectionHealth");
+  });
+
+  it("goes back to the most important entry when asked for automatic", () => {
+    const service = boot();
+    const sources = {
+      usage: usageWith(40),
+      attention: [{ key: "ask-1", title: "Needs you", detail: "", at: NOW }],
+      completed: [{ key: "run_1:done", title: "Finished", detail: "", at: NOW }],
+      now: NOW,
+    };
+    service.update(sources);
+    expect(service.update({ now: NOW }).current.widget).toBe("completedWork");
+
+    // Asking for automatic is an explicit choice, so the announcement stops
+    // holding the island instead of outlasting the request (spec §100).
+    const automatic = service.pin(null);
+    expect(automatic.preferences.pinnedWidget).toBeNull();
+    expect(automatic.current.widget).toBe("needsAttention");
+    expect(service.update({ now: NOW }).current.widget).toBe("needsAttention");
+  });
+
   it("shows only the widgets the user enabled", () => {
     const service = boot({ enabledWidgets: ["providerUsage"] });
     const state = service.update({
