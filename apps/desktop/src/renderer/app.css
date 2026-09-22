@@ -1663,3 +1663,64 @@ select {
   font-size: var(--text-sm);
   color: var(--text-muted);
 }
+
+/* Picking a folder on another machine. A remote host has no folder dialog to
+   borrow, so this is the one place the application draws one itself. */
+.remote-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.remote-picker__path {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.remote-picker__path span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-picker__list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.remote-picker__entry {
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.remote-picker__entry + .remote-picker__entry {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.remote-picker__entry:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.remote-picker__entry:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}

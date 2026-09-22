@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
-import { WorkspaceFileSystem } from "../file-system.js";
+import { LocalWorkspaceFileSystem } from "../file-system.js";
 import {
   PathBoundaryError,
   isInsideRoot,
@@ -72,7 +72,7 @@ describe.skipIf(process.platform === "win32")("symbolic links", () => {
       PathBoundaryError,
     );
 
-    const fs = new WorkspaceFileSystem({ logger: nullLogger });
+    const fs = new LocalWorkspaceFileSystem({ logger: nullLogger });
     await expect(fs.readText(root, "link.txt")).rejects.toThrow(PathBoundaryError);
   });
 
@@ -80,18 +80,18 @@ describe.skipIf(process.platform === "win32")("symbolic links", () => {
     await writeFile(join(root, "real.txt"), "fine");
     await symlink(join(root, "real.txt"), join(root, "alias.txt"));
 
-    const fs = new WorkspaceFileSystem({ logger: nullLogger });
+    const fs = new LocalWorkspaceFileSystem({ logger: nullLogger });
     expect((await fs.readText(root, "alias.txt")).content).toBe("fine");
   });
 });
 
-describe("WorkspaceFileSystem", () => {
+describe("LocalWorkspaceFileSystem", () => {
   let root: string;
-  let fs: WorkspaceFileSystem;
+  let fs: LocalWorkspaceFileSystem;
 
   beforeEach(async () => {
     root = await makeTempDirectory("ai-workbench-fs-");
-    fs = new WorkspaceFileSystem({ logger: nullLogger, maxReadBytes: 64 });
+    fs = new LocalWorkspaceFileSystem({ logger: nullLogger, maxReadBytes: 64 });
   });
 
   afterEach(async () => {

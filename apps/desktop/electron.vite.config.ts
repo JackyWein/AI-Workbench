@@ -24,6 +24,8 @@ const alias = {
     "packages/providers/transports/cli/src/index.ts",
   ),
   "@ai-workbench/workspace-fs": resolve(root, "packages/workspace-fs/src/index.ts"),
+  "@ai-workbench/workspace-ssh": resolve(root, "packages/workspace-ssh/src/index.ts"),
+  "@ai-workbench/test-support": resolve(root, "packages/test-support/src/index.ts"),
   "@ai-workbench/workspace-git": resolve(root, "packages/workspace-git/src/index.ts"),
   "@ai-workbench/credentials": resolve(root, "packages/credentials/src/index.ts"),
   "@ai-workbench/mcp": resolve(root, "packages/mcp/src/index.ts"),

@@ -21,6 +21,8 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("workspace.updated"), workspace: workspaceSchema }),
   z.object({ type: z.literal("workspace.deleted"), workspaceId: z.string() }),
 
+  z.object({ type: z.literal("connection.changed"), connectionId: z.string() }),
+
   z.object({ type: z.literal("session.created"), session: sessionSchema }),
   z.object({ type: z.literal("session.updated"), session: sessionSchema }),
   z.object({ type: z.literal("session.deleted"), sessionId: z.string() }),

@@ -1,8 +1,9 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { BrowserWindow, screen } from "electron";
 import { execCli } from "@ai-workbench/transport-cli";
 import type { Logger } from "@ai-workbench/shared";
+import type { startSshTestServer as StartSshTestServer } from "@ai-workbench/test-support";
 import type { IslandController } from "./island-controller.js";
 
 export interface CheckOutcome {
@@ -363,11 +364,34 @@ export async function runStartupCheck(
     await check(
       "completed work and attention are still reported",
       `(async () => {
-         const state = await window.workbench.invoke('statusIsland.getState', undefined);
-         return state.entries.some(item => item.widget === 'completedWork')
-           && state.entries.some(item => item.widget === 'needsAttention')
-           && state.entries.every((entry, index, all) =>
-             index === 0 || all[index - 1].priority >= entry.priority);
+         const api = window.workbench;
+         const state = await api.invoke('statusIsland.getState', undefined);
+
+         // An unread question is a state: it lasts until somebody reads it,
+         // so it has to survive a restart.
+         if (!state.entries.some(item => item.widget === 'needsAttention')) {
+           return 'no attention entry';
+         }
+         if (!state.entries.every((entry, index, all) =>
+           index === 0 || all[index - 1].priority >= entry.priority)) {
+           return 'entries are out of order';
+         }
+
+         // A finished run is news, and news ages out on purpose (spec §97).
+         // Whether it should still be on the island therefore depends on how
+         // long ago it finished, not on it having happened at all.
+         const runs = await api.invoke('team.listRuns', {});
+         const finished = runs
+           .filter(run => run.status === 'completed' && run.finishedAt)
+           .map(run => new Date(run.finishedAt).getTime());
+         if (finished.length === 0) return 'no completed run survived';
+         const newest = Math.max(...finished);
+         const isNews = Date.now() - newest < 5 * 60 * 1000;
+         const reported = state.entries.some(item => item.widget === 'completedWork');
+         return reported === isNews
+           ? true
+           : 'completed work ' + (reported ? 'reported' : 'missing')
+             + ' but the run finished ' + Math.round((Date.now() - newest) / 1000) + 's ago';
        })()`,
     );
   }
@@ -1123,6 +1147,228 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // --- a workspace on another machine -------------------------------------
+  //
+  // A real SSH server, started in this process, serving a real directory. The
+  // point is to prove the whole path end to end: a connection is defined, its
+  // host key is learned, a workspace is created on it, and its files are
+  // browsed, opened and saved through exactly the same screens a local
+  // workspace uses. Nothing here is mocked; only the machine is nearby.
+  const remoteDirectory = join(dirname(workspaceDirectory), "remote");
+  const hostKeyFile = join(dirname(workspaceDirectory), "remote-host-key");
+  let sshServer: Awaited<ReturnType<typeof StartSshTestServer>> | null = null;
+
+  await checkMain("a machine is reachable over SSH", async () => {
+    await mkdir(join(remoteDirectory, "service"), { recursive: true });
+    await writeFile(join(remoteDirectory, "README.md"), "# Remote project\n");
+    await writeFile(
+      join(remoteDirectory, "service", "main.ts"),
+      "export const port = 8080;\n",
+    );
+
+    // The second phase has to look like the same machine, or a client that
+    // remembered the host key would rightly refuse to connect.
+    const stored = await readFile(hostKeyFile, "utf8").catch(() => null);
+    // Loaded only here, so the shipped application does not carry a server
+    // it never runs.
+    const { startSshTestServer } = await import("@ai-workbench/test-support");
+    sshServer = await startSshTestServer({
+      directory: remoteDirectory,
+      ...(stored === null ? {} : { hostKey: stored }),
+    });
+    if (stored === null) {
+      await writeFile(hostKeyFile, sshServer.hostKey);
+    }
+    return sshServer.port > 0;
+  });
+
+  if (sshServer) {
+    const server = sshServer as Awaited<ReturnType<typeof StartSshTestServer>>;
+    const connectionScript = `{
+      name: 'Check machine',
+      host: ${JSON.stringify(server.host)},
+      port: ${server.port},
+      username: ${JSON.stringify(server.username)},
+      auth: 'password',
+      secret: ${JSON.stringify(server.password)},
+    }`;
+
+    await check(
+      "a connection is created and proves itself",
+      `(async () => {
+         const api = window.workbench;
+         const existing = (await api.invoke('connection.list', undefined))
+           .find(entry => entry.name === 'Check machine');
+         // The port changes every run, so a remembered connection is pointed
+         // at the server that is actually listening now.
+         const connection = existing
+           ? await api.invoke('connection.update', { id: existing.id, port: ${server.port} })
+           : await api.invoke('connection.create', ${connectionScript});
+         window.__checkConnectionId = connection.id;
+
+         const result = await api.invoke('connection.test', { id: connection.id });
+         if (!result.ok) return 'test failed: ' + result.error;
+         // Trust on first use: the key is learned once and recorded.
+         if (!result.fingerprint) return 'no fingerprint';
+         if (result.fingerprint !== ${JSON.stringify(server.fingerprint)}) {
+           return 'wrong fingerprint: ' + result.fingerprint;
+         }
+         return result.homeDirectory === ${JSON.stringify(remoteDirectory)};
+       })()`,
+      30_000,
+    );
+
+    await check(
+      "a wrong password is reported as such, not as a protocol error",
+      `(async () => {
+         const api = window.workbench;
+         const id = window.__checkConnectionId;
+         await api.invoke('connection.update', { id, secret: 'definitely-wrong' });
+         const failed = await api.invoke('connection.test', { id });
+         await api.invoke('connection.update', { id, secret: ${JSON.stringify(server.password)} });
+         const recovered = await api.invoke('connection.test', { id });
+         return failed.ok === false
+           && /rejected the credentials/.test(failed.error ?? '')
+           && recovered.ok === true;
+       })()`,
+      30_000,
+    );
+
+    await check(
+      "a folder on the machine can be browsed",
+      `(async () => {
+         const api = window.workbench;
+         const id = window.__checkConnectionId;
+         const home = await api.invoke('connection.browse', { id, path: '' });
+         if (home.path !== ${JSON.stringify(remoteDirectory)}) return 'home is ' + home.path;
+         // Directories first, then files, exactly as a local listing.
+         return home.entries.map(entry => entry.kind + ':' + entry.name).join(',')
+           === 'directory:service,file:README.md';
+       })()`,
+      30_000,
+    );
+
+    await check(
+      "a workspace is created on the machine",
+      `(async () => {
+         const api = window.workbench;
+         const id = window.__checkConnectionId;
+         const existing = (await api.invoke('workspace.list', undefined))
+           .find(entry => entry.connectionId === id);
+         const workspace = existing ?? await api.invoke('workspace.create', {
+           name: 'Remote project',
+           path: ${JSON.stringify(remoteDirectory)},
+           connectionId: id,
+         });
+         window.__checkRemoteWorkspaceId = workspace.id;
+         const session = (await api.invoke('session.list', { workspaceId: workspace.id }))[0]
+           ?? await api.invoke('session.create', {
+             workspaceId: workspace.id,
+             name: 'Remote session',
+             type: 'solo',
+           });
+         window.__checkRemoteSessionId = session.id;
+         return workspace.connectionId === id
+           && workspace.path === ${JSON.stringify(remoteDirectory)};
+       })()`,
+      30_000,
+    );
+
+    await check(
+      "the remote workspace browses, opens and saves like a local one",
+      `(async () => {
+         const api = window.workbench;
+         const sessionId = window.__checkRemoteSessionId;
+
+         const listing = await api.invoke('files.list', { sessionId, path: '' });
+         if (listing.map(e => e.name).join(',') !== 'service,README.md') {
+           return 'listing was ' + listing.map(e => e.name).join(',');
+         }
+
+         const opened = await api.invoke('files.read', {
+           sessionId, path: 'service/main.ts',
+         });
+         if (opened.content !== 'export const port = 8080;\\n') {
+           return 'read back ' + JSON.stringify(opened.content);
+         }
+
+         // Edited and saved through the same channel the editor uses.
+         await api.invoke('files.write', {
+           sessionId,
+           path: 'service/main.ts',
+           content: 'export const port = 9090;\\n',
+         });
+         const reread = await api.invoke('files.read', {
+           sessionId, path: 'service/main.ts',
+         });
+         return reread.content === 'export const port = 9090;\\n';
+       })()`,
+      30_000,
+    );
+
+    await checkMain("the edit really reached the other machine", async () => {
+      // Read from the directory the server serves, not through the client
+      // that wrote it: otherwise this would only prove the code agrees with
+      // itself.
+      const onDisk = await readFile(join(remoteDirectory, "service", "main.ts"), "utf8");
+      return onDisk === "export const port = 9090;\n";
+    });
+
+    await check(
+      "a remote workspace refuses a path outside its root",
+      `(async () => {
+         const api = window.workbench;
+         const sessionId = window.__checkRemoteSessionId;
+         try {
+           await api.invoke('files.read', { sessionId, path: '../remote-host-key' });
+           return false;
+         } catch (error) {
+           return /outside the permitted root|is not a file/.test(String(error.message ?? error));
+         }
+       })()`,
+      30_000,
+    );
+
+    await check(
+      "a connection still carrying a workspace is not silently removed",
+      `(async () => {
+         const api = window.workbench;
+         try {
+           await api.invoke('connection.delete', { id: window.__checkConnectionId });
+           return false;
+         } catch (error) {
+           return /still used by/.test(String(error.message ?? error));
+         }
+       })()`,
+    );
+
+    if (mode === "resume") {
+      await check(
+        "the remote workspace and its host key survived the restart",
+        `(async () => {
+           const api = window.workbench;
+           const connection = (await api.invoke('connection.list', undefined))
+             .find(entry => entry.name === 'Check machine');
+           if (!connection) return 'no connection';
+           // The machine was recognised rather than trusted afresh.
+           if (connection.hostKeyFingerprint !== ${JSON.stringify(server.fingerprint)}) {
+             return 'fingerprint is ' + connection.hostKeyFingerprint;
+           }
+           const workspace = (await api.invoke('workspace.list', undefined))
+             .find(entry => entry.connectionId === connection.id);
+           if (!workspace) return 'no remote workspace';
+           const sessionId = window.__checkRemoteSessionId;
+           const file = await api.invoke('files.read', {
+             sessionId, path: 'service/main.ts',
+           });
+           // The edit from the first phase is still there, on the machine.
+           return file.content === 'export const port = 9090;\\n';
+         })()`,
+        30_000,
+      );
+    }
+  }
+
   await checkMain("the main window comes back", () => {
     window.show();
     return window.isVisible();
@@ -1217,6 +1463,11 @@ export async function runStartupCheck(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  // The machine goes away with the check that started it.
+  if (sshServer) {
+    await (sshServer as Awaited<ReturnType<typeof StartSshTestServer>>).close();
   }
 
   const noRendererErrors = rendererErrors.length === 0;

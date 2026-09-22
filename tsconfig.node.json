@@ -29,6 +29,7 @@
     "packages/terminal/src/**/*.ts",
     "packages/test-support/src/**/*.ts",
     "packages/workspace-fs/src/**/*.ts",
+    "packages/workspace-ssh/src/**/*.ts",
     "packages/workspace-git/src/**/*.ts",
     "packages/providers/transports/cli/src/**/*.ts",
     "apps/desktop/src/main/**/*.ts",

@@ -16,3 +16,4 @@ export * from "./tool-bridge.js";
 export * from "./settings-service.js";
 export * from "./usage-service.js";
 export * from "./workspace-manager.js";
+export * from "./connection-service.js";

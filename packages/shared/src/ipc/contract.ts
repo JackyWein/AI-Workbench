@@ -5,6 +5,12 @@ import {
   workspaceSchema,
 } from "../domain/workspace.js";
 import {
+  createSshConnectionInputSchema,
+  sshConnectionSchema,
+  sshConnectionTestSchema,
+  updateSshConnectionInputSchema,
+} from "../domain/connection.js";
+import {
   createSessionInputSchema,
   sessionSchema,
   updateSessionInputSchema,
@@ -166,6 +172,35 @@ export const ipcContract = {
   "account.remove": {
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ removed: z.boolean() }),
+  },
+
+  "connection.list": { input: z.void(), output: z.array(sshConnectionSchema) },
+  "connection.create": {
+    input: createSshConnectionInputSchema,
+    output: sshConnectionSchema,
+  },
+  "connection.update": {
+    input: updateSshConnectionInputSchema,
+    output: sshConnectionSchema,
+  },
+  "connection.delete": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ deleted: z.boolean() }),
+  },
+  "connection.test": {
+    input: z.object({ id: z.string().min(1) }),
+    output: sshConnectionTestSchema,
+  },
+  /** Lists a directory on a connection, so a remote root can be picked. */
+  "connection.browse": {
+    input: z.object({
+      id: z.string().min(1),
+      path: z.string().max(4096).default(""),
+    }),
+    output: z.object({
+      path: z.string(),
+      entries: z.array(directoryEntrySchema),
+    }),
   },
 
   "files.list": {

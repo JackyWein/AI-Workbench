@@ -1,5 +1,5 @@
 import { realpath } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, posix, relative, resolve, sep } from "node:path";
 
 export class PathBoundaryError extends Error {
   constructor(message: string) {
@@ -67,4 +67,38 @@ export async function resolveRealPathInsideRoot(
 export function toRelativePath(root: string, target: string): string {
   const relativePath = relative(resolve(root), resolve(target));
   return relativePath.split(sep).join("/");
+}
+
+/**
+ * The same boundary rules for a root on another machine (spec §25).
+ *
+ * Remote paths are POSIX whatever this computer runs, so they must not go
+ * through `node:path`, whose Windows implementation would read "/srv/app" as a
+ * drive-relative path and "C:/x" as absolute. These work on POSIX semantics
+ * only, and take the real path as an argument because resolving a symbolic
+ * link means asking the other machine.
+ */
+export function resolvePosixInsideRoot(root: string, candidate: string): string {
+  const resolvedRoot = posix.resolve("/", root);
+  const resolvedCandidate = posix.isAbsolute(candidate)
+    ? posix.resolve("/", candidate)
+    : posix.resolve(resolvedRoot, candidate);
+
+  if (!isInsidePosixRoot(resolvedRoot, resolvedCandidate)) {
+    throw new PathBoundaryError(`Path "${candidate}" is outside the permitted root`);
+  }
+  return resolvedCandidate;
+}
+
+export function isInsidePosixRoot(root: string, candidate: string): boolean {
+  const relativePath = posix.relative(posix.resolve("/", root), posix.resolve("/", candidate));
+  if (relativePath === "") {
+    return true;
+  }
+  return !relativePath.startsWith("..") && !posix.isAbsolute(relativePath);
+}
+
+/** Path of `target` relative to `root`, for two POSIX paths. */
+export function toPosixRelativePath(root: string, target: string): string {
+  return posix.relative(posix.resolve("/", root), posix.resolve("/", target));
 }

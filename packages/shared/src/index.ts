@@ -1,4 +1,5 @@
 export * from "./domain/workspace.js";
+export * from "./domain/connection.js";
 export * from "./domain/session.js";
 export * from "./domain/message.js";
 export * from "./domain/provider.js";

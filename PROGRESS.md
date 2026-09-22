@@ -184,6 +184,40 @@ Last full run: all checks passed.
 - [x] context sidebar works
 - [x] useful keyboard navigation exists
 
+### Beyond G3 — workspaces on another machine
+
+Not one of the 160 acceptance criteria: the specification has no section for
+remote workspaces yet, so nothing below counts toward the total. It is recorded
+here because it is built, verified and in use.
+
+A workspace root is either on this computer or on a machine reached over SSH.
+`WorkspaceFileSystem` became the contract both answer to, and `WorkspaceAccess`
+decides which one a workspace gets — the file browser, the editor and the IPC
+handlers never learn which it is.
+
+What is proven, by 20 tests against a real SSH server with a real SFTP
+subsystem serving a real directory, and by the startup check driving the
+application itself:
+
+- [x] a connection is defined once and used by any number of workspaces
+- [x] the password or key goes to the credential store, never to the renderer
+- [x] the host key is trusted on first use and a change is refused
+- [x] wrong credentials are reported as such, not as a protocol error
+- [x] a folder on the machine can be browsed and picked
+- [x] a remote workspace lists, opens, edits and saves like a local one
+- [x] the boundary holds remotely, including through a symbolic link that
+      leaves the root
+- [x] binary content is refused and reads and writes are capped
+- [x] one connection is shared by many operations rather than reopened
+- [x] a connection still carrying workspaces is not silently removed
+- [x] the workspace, its host key and its edits survive a restart
+
+Not done, and not claimed: git and terminals on a remote workspace. Git status
+reports "no repository" for a remote workspace rather than running git here
+against a path that only exists elsewhere, and a terminal still opens on this
+computer. Agents therefore cannot yet work in a remote workspace — only people
+can, through the file browser.
+
 ## G4 — Skills, plugins & MCP — 10%
 
 - [x] SkillManager implemented

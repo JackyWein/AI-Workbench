@@ -15,10 +15,29 @@ import {
  * the goals that own them, so the schema never carries unused structure.
  */
 
+/**
+ * A machine reachable over SSH. The secret is not here: only the name it is
+ * stored under in the credential store, so the database never holds one.
+ */
+export const sshConnections = sqliteTable("ssh_connections", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  host: text("host").notNull(),
+  port: integer("port").notNull(),
+  username: text("username").notNull(),
+  auth: text("auth", { enum: ["password", "key", "agent"] }).notNull(),
+  credentialReference: text("credential_reference"),
+  hostKeyFingerprint: text("host_key_fingerprint"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
 export const workspaces = sqliteTable("workspaces", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   path: text("path").notNull(),
+  /** Null for a workspace on this machine; otherwise where its root lives. */
+  connectionId: text("connection_id").references(() => sshConnections.id),
   settings: text("settings", { mode: "json" })
     .$type<Record<string, unknown>>()
     .notNull()
@@ -339,6 +358,9 @@ export const settings = sqliteTable("settings", {
   value: text("value", { mode: "json" }).$type<unknown>().notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+export type SshConnectionRow = typeof sshConnections.$inferSelect;
+export type NewSshConnectionRow = typeof sshConnections.$inferInsert;
 
 export type WorkspaceRow = typeof workspaces.$inferSelect;
 export type NewWorkspaceRow = typeof workspaces.$inferInsert;

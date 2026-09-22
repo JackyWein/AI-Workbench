@@ -5,6 +5,7 @@ const workspace = {
   id: "ws1",
   name: "Demo",
   path: "/tmp/demo",
+  connectionId: null,
   settings: {},
   createdAt: new Date(),
   updatedAt: new Date(),

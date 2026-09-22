@@ -1,5 +1,5 @@
 {
-  "name": "@ai-workbench/test-support",
+  "name": "@ai-workbench/workspace-ssh",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,9 +9,12 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@ai-workbench/shared": "workspace:*",
+    "@ai-workbench/workspace-fs": "workspace:*",
     "ssh2": "^1.17.0"
   },
   "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*",
     "@types/ssh2": "^1.15.0"
   }
 }

@@ -29,6 +29,9 @@ import type {
   TeamRun,
   TeamRunSnapshot,
   StoredProviderConfig,
+  DirectoryEntry,
+  SshConnection,
+  SshConnectionTest,
   Workspace,
 } from "@ai-workbench/shared";
 import { defaultAppSettings } from "@ai-workbench/shared";
@@ -41,6 +44,7 @@ export type MainView =
   | "plugins"
   | "mcp"
   | "teams"
+  | "connections"
   | "settings";
 export type WorkspaceTab = "terminal" | "files" | "changes";
 /** The clean conversation, or the workspace's agents in their own terminals. */
@@ -97,6 +101,10 @@ interface WorkbenchState {
   pluginScopes: PluginScopes;
   pluginAccounts: PluginAccount[];
   mcpServers: McpServerConfig[];
+  /** The machines a workspace can live on (spec §25). */
+  connections: SshConnection[];
+  /** The last result of testing a connection, by connection id. */
+  connectionTests: Record<string, SshConnectionTest>;
   mcpStatuses: McpServerStatus[];
   /** MCP servers the active session may use (spec §38). */
   sessionMcpServerIds: string[];
@@ -148,7 +156,11 @@ interface WorkbenchState {
   selectWorkspace(id: string | null): Promise<void>;
   selectSession(id: string | null): Promise<void>;
 
-  createWorkspace(name: string, path: string): Promise<Workspace | null>;
+  createWorkspace(
+    name: string,
+    path: string,
+    connectionId?: string | null,
+  ): Promise<Workspace | null>;
   deleteWorkspace(id: string): Promise<void>;
   chooseDirectory(): Promise<string | null>;
 
@@ -228,6 +240,24 @@ interface WorkbenchState {
 
   refreshMcp(): Promise<void>;
   saveMcpServer(config: McpServerConfig): Promise<void>;
+
+  refreshConnections(): Promise<void>;
+  createConnection(input: {
+    name: string;
+    host: string;
+    port: number;
+    username: string;
+    auth: "password" | "key" | "agent";
+    secret?: string;
+  }): Promise<SshConnection | null>;
+  deleteConnection(id: string): Promise<void>;
+  testConnection(id: string): Promise<SshConnectionTest | null>;
+  forgetConnectionHostKey(id: string): Promise<void>;
+  /** Lists a directory on a machine, for picking a remote workspace root. */
+  browseConnection(
+    id: string,
+    path: string,
+  ): Promise<{ path: string; entries: DirectoryEntry[] } | null>;
   deleteMcpServer(id: string): Promise<void>;
   connectMcpServer(id: string): Promise<void>;
   disconnectMcpServer(id: string): Promise<void>;
@@ -282,6 +312,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   pluginScopes: {},
   pluginAccounts: [],
   mcpServers: [],
+  connections: [],
+  connectionTests: {},
   mcpStatuses: [],
   sessionMcpServerIds: [],
 
@@ -494,9 +526,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  async createWorkspace(name, path) {
+  async createWorkspace(name, path, connectionId = null) {
     try {
-      const workspace = await invoke("workspace.create", { name, path });
+      const workspace = await invoke("workspace.create", { name, path, connectionId });
       await get().selectWorkspace(workspace.id);
       return workspace;
     } catch (error) {
@@ -1000,6 +1032,66 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       set({ mcpServers, mcpStatuses, sessionMcpServerIds: access.serverIds });
     } catch (error) {
       set({ error: describeError(error) });
+    }
+  },
+
+  async refreshConnections() {
+    try {
+      set({ connections: await invoke("connection.list", undefined) });
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async createConnection(input) {
+    try {
+      const connection = await invoke("connection.create", input);
+      await get().refreshConnections();
+      return connection;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return null;
+    }
+  },
+
+  async deleteConnection(id) {
+    try {
+      await invoke("connection.delete", { id });
+      await get().refreshConnections();
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async testConnection(id) {
+    try {
+      const result = await invoke("connection.test", { id });
+      // A failed test is a result to show, not an error to swallow: the
+      // reason is the only thing that lets the user fix it.
+      set({ connectionTests: { ...get().connectionTests, [id]: result } });
+      await get().refreshConnections();
+      return result;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return null;
+    }
+  },
+
+  async forgetConnectionHostKey(id) {
+    try {
+      await invoke("connection.update", { id, forgetHostKey: true });
+      await get().refreshConnections();
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async browseConnection(id, path) {
+    try {
+      return await invoke("connection.browse", { id, path });
+    } catch (error) {
+      set({ error: describeError(error) });
+      return null;
     }
   },
 

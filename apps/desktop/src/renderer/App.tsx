@@ -11,6 +11,7 @@ import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { McpView } from "./components/McpView.js";
+import { ConnectionsView } from "./components/ConnectionsView.js";
 import { PluginsView } from "./components/PluginsView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
@@ -202,6 +203,7 @@ export function App(): JSX.Element {
         {state.view === "skills" ? <SkillsView /> : null}
         {state.view === "plugins" ? <PluginsView /> : null}
         {state.view === "mcp" ? <McpView /> : null}
+        {state.view === "connections" ? <ConnectionsView /> : null}
         {state.view === "teams" ? <TeamsView /> : null}
         {state.view === "settings" ? (
           <SettingsView settings={state.settings} appInfo={appInfo} />

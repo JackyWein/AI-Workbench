@@ -29,6 +29,28 @@ export interface FileContents {
   readonly binary: boolean;
 }
 
+/**
+ * What the application needs from a workspace root, and the only thing above
+ * it ever sees (spec §27). A root on this computer and a root on another
+ * machine answer the same five questions, so the file browser, the editor and
+ * everything built on them do not know, and must not care, which one they have.
+ *
+ * Every implementation owes the same promises: a path is resolved inside the
+ * root even through symbolic links, binary content is never returned as text
+ * or written, and reads and writes are size-capped.
+ */
+export interface WorkspaceFileSystem {
+  /** Lists one directory. Directories come first, then files, both by name. */
+  list(root: string, relativePath?: string): Promise<DirectoryEntry[]>;
+  /** Reads a text file, refusing binary content and capping the size. */
+  readText(root: string, relativePath: string): Promise<FileContents>;
+  /** Writes a text file inside the root (spec §27: open/edit/save). */
+  writeText(root: string, relativePath: string, content: string): Promise<DirectoryEntry>;
+  describe(root: string, relativePath: string): Promise<DirectoryEntry>;
+  /** Whether a path exists inside the root, without throwing on absence. */
+  exists(root: string, relativePath: string): Promise<boolean>;
+}
+
 export interface WorkspaceFileSystemOptions {
   readonly logger: Logger;
   /** Largest file returned as text. Larger files come back truncated. */
@@ -50,11 +72,11 @@ const HIDDEN_DIRECTORIES = new Set([
 ]);
 
 /**
- * The workspace file browser backend (spec §27). Every path is resolved
- * inside the workspace root, including through symbolic links. Reads refuse
- * binary content; writes refuse binary content and are size-capped.
+ * A workspace root on this computer (spec §27). Every path is resolved inside
+ * the workspace root, including through symbolic links. Reads refuse binary
+ * content; writes refuse binary content and are size-capped.
  */
-export class WorkspaceFileSystem {
+export class LocalWorkspaceFileSystem implements WorkspaceFileSystem {
   readonly #logger: Logger;
   readonly #maxReadBytes: number;
   readonly #maxWriteBytes: number;
@@ -200,7 +222,23 @@ function byDirectoryThenName(a: DirectoryEntry, b: DirectoryEntry): number {
 }
 
 /** A NUL byte in the first chunk is the usual signal that a file is binary. */
-function isBinary(buffer: Buffer): boolean {
+export function isBinary(buffer: Buffer): boolean {
   const sample = buffer.subarray(0, 8000);
   return sample.includes(0);
+}
+
+/** Directories every implementation leaves out of a project tree. */
+export const hiddenDirectories: ReadonlySet<string> = HIDDEN_DIRECTORIES;
+
+/** The one ordering a listing is presented in, wherever it came from. */
+export function byDirectoryThenNameOrder(a: DirectoryEntry, b: DirectoryEntry): number {
+  return byDirectoryThenName(a, b);
+}
+
+/** Whether a listing shows this entry: dotfiles are noise, .gitignore is not. */
+export function isListedName(name: string, isDirectory: boolean): boolean {
+  if (name.startsWith(".") && name !== ".gitignore") {
+    return false;
+  }
+  return !(isDirectory && HIDDEN_DIRECTORIES.has(name));
 }

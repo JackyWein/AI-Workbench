@@ -12,6 +12,7 @@ import {
   SettingsService,
   SkillService,
   TeamManager,
+  ConnectionService,
   SqlCredentialStorage,
   UsageService,
   WorkspaceManager,
@@ -32,8 +33,10 @@ import { resolveInteractiveCommand } from "@ai-workbench/transport-cli";
 import { TerminalManager } from "@ai-workbench/terminal";
 import { StatusAttentionService } from "@ai-workbench/status";
 import { SafeStorageEncryption } from "./safe-storage.js";
-import { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
+import { CheckEncryption } from "./check-storage.js";
+import { LocalWorkspaceFileSystem, type WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
 import { GitService } from "@ai-workbench/workspace-git";
+import { WorkspaceAccess } from "./workspace-access.js";
 import type {
   Logger,
   ProviderConfig,
@@ -49,6 +52,10 @@ export interface AppServices {
   readonly providerConfigs: ProviderConfigService;
   readonly accounts: ProviderAccountService;
   readonly workspaces: WorkspaceManager;
+  /** The machines a workspace can live on (spec §25). */
+  readonly connections: ConnectionService;
+  /** Decides how a workspace's files are reached, here or over SSH. */
+  readonly access: WorkspaceAccess;
   readonly sessions: SessionManager;
   readonly usage: UsageService;
   readonly settings: SettingsService;
@@ -197,16 +204,48 @@ async function createServicesInner(
   });
   await accounts.restore();
 
-  const workspaces = new WorkspaceManager({ db: database.db, events, logger });
-
+  // The operating system's own secret storage, always, except in the headless
+  // verification run on a machine that has none — where the alternative is not
+  // a weaker store but no coverage at all (see CheckEncryption).
+  const safeStorage = new SafeStorageEncryption();
+  const encryption =
+    safeStorage.isAvailable() || process.env["AI_WORKBENCH_STARTUP_CHECK"] !== "1"
+      ? safeStorage
+      : new CheckEncryption(options.userDataPath);
   const credentials = new CredentialManager({
-    encryption: new SafeStorageEncryption(),
+    encryption,
     storage: new SqlCredentialStorage(database.db),
     logger,
   });
   logger.child("PLUGIN").info("Secret storage", {
     available: credentials.isAvailable(),
     backend: credentials.describeBackend(),
+  });
+
+  // A workspace root is either on this computer or on a machine reached over
+  // SSH. These three know about that; nothing above them does.
+  const connections = new ConnectionService({
+    db: database.db,
+    events,
+    logger,
+    credentials,
+  });
+  const files = new LocalWorkspaceFileSystem({ logger });
+  const access = new WorkspaceAccess({ logger, connections, local: files });
+  // The service and the access layer need each other, so the link is made
+  // once both exist rather than passed through a constructor.
+  connections.useProbe({
+    homeDirectory: (connectionId) => access.homeDirectory(connectionId),
+    disconnect: (connectionId) => access.disconnect(connectionId),
+  });
+
+  const workspaces = new WorkspaceManager({
+    db: database.db,
+    events,
+    logger,
+    // A root on another machine is checked on that machine.
+    checkRemoteDirectory: (connectionId, path) =>
+      access.verifyRemoteDirectory(connectionId, path),
   });
 
   const skills = new SkillService({ db: database.db, logger });
@@ -254,7 +293,6 @@ async function createServicesInner(
   const usage = new UsageService({ providers, events, logger });
   usageRef = usage;
 
-  const files = new WorkspaceFileSystem({ logger });
   const git = new GitService({ logger });
 
   // Terminal output is pushed rather than polled, so listeners register here
@@ -314,6 +352,8 @@ async function createServicesInner(
     providerConfigs,
     accounts,
     workspaces,
+    connections,
+    access,
     sessions,
     usage,
     settings,
@@ -344,6 +384,9 @@ async function createServicesInner(
         await teams.shutdown();
         await sessions.shutdown();
         await mcpManager.disconnectAll();
+        // Open SSH connections are closed with everything else, so a quit
+        // does not leave a socket to a remote machine behind.
+        access.dispose();
         await providers.dispose();
         events.clear();
       } finally {

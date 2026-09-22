@@ -7,6 +7,8 @@ import {
   type IpcHandlerInput,
   type IpcOutput,
 } from "@ai-workbench/shared";
+import { remoteRoot } from "@ai-workbench/workspace-ssh";
+import type { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
 import { toProviderConfigOverrides, type AppServices } from "./services.js";
 import type { IslandController } from "./island-controller.js";
 import {
@@ -87,6 +89,21 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
   const { services, island } = options;
   const logger = services.logger.child("IPC");
 
+  /**
+   * Where a session's files are, and how to reach them. A session works inside
+   * its workspace, so the workspace decides which machine that is.
+   */
+  const rootFor = async (
+    sessionId: string,
+  ): Promise<{ files: WorkspaceFileSystem; root: string }> => {
+    const session = await services.sessions.require(sessionId);
+    const workspace = await services.workspaces.require(session.workspaceId);
+    return {
+      files: services.access.fileSystemFor(workspace),
+      root: services.access.rootForSession(workspace, session.workingDirectory),
+    };
+  };
+
   const handlers: Handlers = {
     "app.getInfo": () => ({
       version: options.appVersion,
@@ -163,25 +180,64 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       removed: await services.accounts.remove(input.id),
     }),
 
+    "connection.list": () => services.connections.list(),
+    "connection.create": (input) => services.connections.create(input),
+    "connection.update": (input) => services.connections.update(input),
+    "connection.delete": async (input) => ({
+      deleted: await services.connections.delete(input.id),
+    }),
+    "connection.test": (input) => services.connections.test(input.id),
+    "connection.browse": async (input) => {
+      // Browsing starts at the account's home directory, which is where a
+      // person looking for a project on a server starts too.
+      const base =
+        input.path === "" ? await services.access.homeDirectory(input.id) : input.path;
+      const root = remoteRoot(input.id, base);
+      const files = services.access.remoteFileSystem();
+      return { path: base, entries: await files.list(root) };
+    },
+
+    // The file browser and the editor do not know, and must not know, whether
+    // a workspace lives on this computer or on another machine (spec §25).
     "files.list": async (input) => {
-      const session = await services.sessions.require(input.sessionId);
-      return services.files.list(session.workingDirectory, input.path);
+      const { files, root } = await rootFor(input.sessionId);
+      return files.list(root, input.path);
     },
     "files.read": async (input) => {
-      const session = await services.sessions.require(input.sessionId);
-      return services.files.readText(session.workingDirectory, input.path);
+      const { files, root } = await rootFor(input.sessionId);
+      return files.readText(root, input.path);
     },
     "files.write": async (input) => {
-      const session = await services.sessions.require(input.sessionId);
-      return services.files.writeText(session.workingDirectory, input.path, input.content);
+      const { files, root } = await rootFor(input.sessionId);
+      return files.writeText(root, input.path, input.content);
     },
 
     "git.status": async (input) => {
       const session = await services.sessions.require(input.sessionId);
+      const workspace = await services.workspaces.require(session.workspaceId);
+      if (workspace.connectionId !== null) {
+        // Running git here against a path that only exists on another machine
+        // would report someone else's repository, or nonsense. Saying there is
+        // none is the honest answer until git speaks over the connection.
+        return {
+          isRepository: false,
+          branch: null,
+          detached: false,
+          upstream: null,
+          ahead: 0,
+          behind: 0,
+          changes: [],
+          clean: true,
+        };
+      }
       return services.git.status(session.workingDirectory);
     },
     "git.diff": async (input) => {
       const session = await services.sessions.require(input.sessionId);
+      const workspace = await services.workspaces.require(session.workspaceId);
+      if (workspace.connectionId !== null) {
+        return { path: input.path, diff: "" };
+      }
       const diff = await services.git.diff(session.workingDirectory, input.path, input.staged);
       return { path: input.path, diff };
     },

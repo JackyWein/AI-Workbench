@@ -6,12 +6,13 @@ import {
   Boxes,
   BookOpen,
   Folder,
+  Network,
   Puzzle,
   Server,
   Trash2,
   Users,
 } from "lucide-react";
-import type { Session, Workspace } from "@ai-workbench/shared";
+import type { Session, SshConnection, Workspace } from "@ai-workbench/shared";
 import { useWorkbench, type MainView } from "../store/workbench.js";
 import { Popover } from "./Popover.js";
 
@@ -39,6 +40,7 @@ export function Sidebar({
   const chooseDirectory = useWorkbench((state) => state.chooseDirectory);
   const setView = useWorkbench((state) => state.setView);
   const status = useWorkbench((state) => state.status);
+  const connections = useWorkbench((state) => state.connections);
 
   const [creating, setCreating] = useState(false);
 
@@ -101,6 +103,11 @@ export function Sidebar({
                     }
                   >
                     <p className="popover__detail">{workspace.path}</p>
+                    {workspace.connectionId === null ? null : (
+                      <p className="popover__detail">
+                        On {connectionName(connections, workspace.connectionId)}
+                      </p>
+                    )}
                   </Popover>
                   <button
                     type="button"
@@ -224,6 +231,15 @@ export function Sidebar({
         <button
           type="button"
           className="row"
+          aria-current={view === "connections"}
+          onClick={() => setView("connections")}
+        >
+          <Network size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">Connections</span>
+        </button>
+        <button
+          type="button"
+          className="row"
           aria-current={view === "settings"}
           onClick={() => setView("settings")}
         >
@@ -243,4 +259,9 @@ function dotState(status: string | undefined): string {
     return "error";
   }
   return "running";
+}
+
+/** The name of the machine a workspace is on, for the workspace's detail. */
+function connectionName(connections: readonly SshConnection[], id: string): string {
+  return connections.find((connection) => connection.id === id)?.name ?? "a connection";
 }
