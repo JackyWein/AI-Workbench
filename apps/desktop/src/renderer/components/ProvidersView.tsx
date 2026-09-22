@@ -195,9 +195,7 @@ function ProviderEntry({
         </div>
         <div className="detail">
           <dt className="detail__label">Usage</dt>
-          <dd className="detail__value">
-            {provider.usage ? usageStateLabel(provider.usage.state) : "Not reported"}
-          </dd>
+          <dd className="detail__value">{usageLabel(provider)}</dd>
         </div>
       </dl>
 
@@ -416,7 +414,17 @@ function modelsLabel(
     return "None yet — add them below";
   }
   const names = provider.models.map((model) => model.displayName).join(", ");
-  return configured.length > 0 ? `${names} (yours)` : names;
+
+  // Where a list came from changes how much it can be trusted, so it is said
+  // rather than left for the user to assume (spec §56).
+  const sources = new Set(provider.models.map((model) => model.source ?? "profile"));
+  const provenance = sources.has("provider")
+    ? "reported by the tool"
+    : configured.length > 0 || sources.has("user")
+      ? "yours"
+      : "shipped defaults — this tool does not list its models";
+
+  return `${names} · ${provenance}`;
 }
 
 function installationLabel(provider: ProviderSummary): string {
@@ -434,10 +442,29 @@ function installationLabel(provider: ProviderSummary): string {
   }
 }
 
+/**
+ * Turns a tool's own identifier into something readable without inventing a
+ * name for it: separators become spaces, the wording stays the tool's.
+ */
+function accountWording(label: string): string {
+  const spaced = label.replace(/[_-]+/g, " ").trim();
+  return spaced.length === 0 ? label : spaced;
+}
+
 function authLabel(provider: ProviderSummary): string {
   switch (provider.auth.state) {
-    case "authenticated":
-      return provider.auth.accountLabel ?? "Connected";
+    case "authenticated": {
+      const account = provider.auth.accountLabel;
+      const plan = provider.auth.plan;
+      // The state first, then how, because the state is what is being asked.
+      return [
+        "Signed in",
+        account ? `· ${accountWording(account)}` : "",
+        plan ? `· ${plan}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
     case "authenticationRequired":
       return provider.auth.detail ?? "Sign-in required";
     case "authenticationExpired":
@@ -449,6 +476,19 @@ function authLabel(provider: ProviderSummary): string {
     default:
       return provider.auth.detail ?? "Unknown";
   }
+}
+
+/**
+ * Usage says what is known and, when nothing is, why — "unavailable" on its
+ * own leaves the user unable to tell a missing feature from a broken one.
+ */
+function usageLabel(provider: ProviderSummary): string {
+  const usage = provider.usage;
+  if (!usage) {
+    return "Not reported";
+  }
+  // The tool's own note is the specific answer; the state is the fallback.
+  return usage.note ?? usageStateLabel(usage.state);
 }
 
 function usageStateLabel(state: string): string {

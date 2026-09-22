@@ -17,6 +17,7 @@ const streamCli = join(fixtures, "stream-cli.mjs");
 const argvCli = join(fixtures, "argv-cli.mjs");
 const replayCli = join(fixtures, "replay-cli.mjs");
 const claudeStream = join(fixtures, "claude-stream.jsonl");
+const claudeAuth = join(fixtures, "claude-auth.mjs");
 
 const nullLogger = {
   debug: () => {},
@@ -193,6 +194,25 @@ describe("CliProviderAdapter with a streaming JSON CLI", () => {
     const status = await loggedOut.getAuthenticationStatus();
     expect(status.state).toBe("authenticationRequired");
     expect(status.detail).toBe("Run the login command.");
+  });
+
+  it("reads Claude Code's own sign-in state before any turn has run", async () => {
+    // The shipped profile, pointed at a replay of what the tool really prints.
+    const signedIn = new CliProviderAdapter(parseProfile(claudeCodeProfile));
+    await signedIn.initialize(contextFor(claudeAuth));
+
+    const status = await signedIn.getAuthenticationStatus();
+    expect(status.state).toBe("authenticated");
+    // The tool names the method; it is shown as the tool names it.
+    expect(status.accountLabel).toBe("oauth_token");
+
+    const signedOut = new CliProviderAdapter(parseProfile(claudeCodeProfile));
+    await signedOut.initialize(
+      contextFor(claudeAuth, { arguments: [claudeAuth, "--logged-out"] }),
+    );
+    const out = await signedOut.getAuthenticationStatus();
+    expect(out.state).toBe("authenticationRequired");
+    expect(out.detail).toContain("claude auth login");
   });
 
   it("streams normalized events for a turn", async () => {
@@ -427,6 +447,43 @@ describe("profile-driven model discovery", () => {
     expect(parseModelLines("gemini-3.8-flash-high\tGemini 3.8 Flash (High)\n")).toEqual([
       { id: "gemini-3.8-flash-high", displayName: "Gemini 3.8 Flash (High)" },
     ]);
+  });
+
+  it("reads the other shapes tools print their model lists in", () => {
+    // Aligned columns, which a tool produces when it pads for a terminal.
+    expect(parseModelLines("gpt-5.5      GPT-5.5\ngpt-5.4-mini    GPT-5.4 mini\n")).toEqual([
+      { id: "gpt-5.5", displayName: "GPT-5.5" },
+      { id: "gpt-5.4-mini", displayName: "GPT-5.4 mini" },
+    ]);
+
+    // Bullets and an annotation beside the default.
+    expect(parseModelLines("* gpt-5.5  (default)\n- gpt-5.4\n")).toEqual([
+      { id: "gpt-5.5", displayName: "(default)" },
+      { id: "gpt-5.4", displayName: "gpt-5.4" },
+    ]);
+
+    // A heading and a rule above the list, which is how a table is printed.
+    expect(parseModelLines("Available models\n----------------\nacme/atlas\n")).toEqual([
+      { id: "acme/atlas", displayName: "acme/atlas" },
+    ]);
+
+    // JSON, in each of the shapes tools use for it.
+    expect(parseModelLines('["a","b"]')).toEqual([
+      { id: "a", displayName: "a" },
+      { id: "b", displayName: "b" },
+    ]);
+    expect(parseModelLines('{"data":[{"id":"a","display_name":"Model A"}]}')).toEqual([
+      { id: "a", displayName: "Model A" },
+    ]);
+    expect(parseModelLines('{"models":[{"id":"b"}]}')).toEqual([
+      { id: "b", displayName: "b" },
+    ]);
+  });
+
+  it("does not turn a tool's prose into models", () => {
+    // A tool that refuses, or prints help, must not become a model list.
+    expect(parseModelLines("You are not signed in. Run `agy login` first.\n")).toEqual([]);
+    expect(parseModelLines("Usage: agy models [options]\n\n  Lists models\n")).toEqual([]);
   });
 
   it("discovers the tool's models without manual entry", async () => {

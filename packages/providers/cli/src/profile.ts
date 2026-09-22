@@ -72,6 +72,17 @@ export const cliAuthSchema = z.object({
   /** Regular expressions matched against the probe's combined output. */
   authenticatedPattern: z.string().optional(),
   unauthenticatedPattern: z.string().optional(),
+  /**
+   * When the probe prints JSON, the dot-path of the boolean that says whether
+   * the tool is signed in. Preferred over the patterns above: reading the
+   * field the tool documents does not break when its wording changes, and it
+   * distinguishes "signed out" from "could not tell".
+   */
+  signedInPath: z.string().optional(),
+  /** Dot-path of a value naming the account or method, shown to the user. */
+  accountPath: z.string().optional(),
+  /** Dot-path of the plan or subscription, shown as the tool names it. */
+  planPath: z.string().optional(),
   /** Shown to the user when authentication is missing. */
   loginHint: z.string().optional(),
 });

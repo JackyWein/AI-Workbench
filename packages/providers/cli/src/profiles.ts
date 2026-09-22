@@ -29,7 +29,13 @@ export const claudeCodeProfile: CliProviderProfileInput = {
   versionArgs: ["--version"],
   auth: {
     method: "cli",
-    loginHint: "Start `claude` once in a terminal and sign in.",
+    // `claude auth status` prints JSON and spends no quota, so the sign-in
+    // state is known before the first turn rather than after it. Checked
+    // against the installed tool.
+    probeArgs: ["auth", "status"],
+    signedInPath: "loggedIn",
+    accountPath: "authMethod",
+    loginHint: "Run `claude auth login` once in a terminal.",
   },
   capabilities: [
     "chat",

@@ -35,7 +35,7 @@ import { buildInteractiveArgs, buildTurnArgs } from "./invocation.js";
 import { buildMcpLaunch, mcpServersFor, NO_MCP, type CliMcpLaunch } from "./mcp.js";
 import { ModelStore, parseModelLines, validModels } from "./models.js";
 import { classifyError, parseWithRules } from "./parse.js";
-import type { CliProviderProfile } from "./profile.js";
+import { readPath, type CliAuth, type CliProviderProfile } from "./profile.js";
 import { UsageStore, parseOpencodeStatsUsage } from "./usage.js";
 
 /** One account of a tool that keeps several side by side. */
@@ -701,6 +701,14 @@ export class CliProviderAdapter implements AIProviderAdapter {
       });
       const output = `${stdout}\n${exit.stderr}`;
 
+      // A field the tool documents beats a pattern over its prose.
+      if (auth.signedInPath) {
+        const fromJson = readAuthJson(stdout, auth);
+        if (fromJson) {
+          return fromJson;
+        }
+      }
+
       if (auth.unauthenticatedPattern && new RegExp(auth.unauthenticatedPattern, "i").test(output)) {
         return {
           state: "authenticationRequired",
@@ -817,4 +825,53 @@ function forwardingLogger(current: () => Logger | null): Logger {
 
 function firstLine(text: string): string {
   return text.trim().split("\n")[0]?.trim() ?? "";
+}
+
+/**
+ * Reads a sign-in state out of a probe that prints JSON, using the paths the
+ * profile names. Returns null when the output is not JSON or does not carry
+ * the field, so the caller falls back to its patterns rather than guessing.
+ */
+function readAuthJson(stdout: string, auth: CliAuth): AuthStatus | null {
+  const start = stdout.indexOf("{");
+  const end = stdout.lastIndexOf("}");
+  if (start === -1 || end <= start) {
+    return null;
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(stdout.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+
+  const signedIn = readPath(payload, auth.signedInPath ?? "");
+  if (typeof signedIn !== "boolean") {
+    return null;
+  }
+
+  const text = (path: string | undefined): string | undefined => {
+    if (!path) {
+      return undefined;
+    }
+    const value = readPath(payload, path);
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  };
+
+  if (!signedIn) {
+    return {
+      state: "authenticationRequired",
+      method: auth.method,
+      ...(auth.loginHint === undefined ? {} : { detail: auth.loginHint }),
+    };
+  }
+
+  const accountLabel = text(auth.accountPath);
+  const plan = text(auth.planPath);
+  return {
+    state: "authenticated",
+    method: auth.method,
+    ...(accountLabel === undefined ? {} : { accountLabel }),
+    ...(plan === undefined ? {} : { plan }),
+  };
 }

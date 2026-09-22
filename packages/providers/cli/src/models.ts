@@ -27,22 +27,115 @@ export function validModels(input: unknown): ModelInfo[] {
   return models;
 }
 
-/**
- * Parses a tool's model list: one `provider/model` id per line, as printed by
- * commands like `opencode models`. A tab separates a display name
- * (`id\tDisplay`, like `agy models`); blank lines and surrounding whitespace
- * are ignored; anything else becomes a model with its own id as display name.
- */
-export function parseModelLines(stdout: string): ModelInfo[] {
+/** Reads a model list a tool printed as JSON, in the shapes tools use. */
+function parseModelJson(stdout: string): ModelInfo[] | null {
+  const trimmed = stdout.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return null;
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+
+  // `[...]`, `{data:[...]}` and `{models:[...]}` are all in use.
+  const list = Array.isArray(payload)
+    ? payload
+    : typeof payload === "object" && payload !== null
+      ? ((payload as Record<string, unknown>)["data"] ??
+        (payload as Record<string, unknown>)["models"])
+      : undefined;
+  if (!Array.isArray(list)) {
+    return null;
+  }
+
   const seen = new Set<string>();
   const models: ModelInfo[] = [];
-  for (const line of stdout.split("\n")) {
-    const [rawId, ...rest] = line.split("\t");
-    const id = (rawId ?? "").trim();
-    const displayName = rest.join("\t").trim();
+  for (const entry of list) {
+    const id =
+      typeof entry === "string"
+        ? entry
+        : typeof entry === "object" && entry !== null
+          ? String(
+              (entry as Record<string, unknown>)["id"] ??
+                (entry as Record<string, unknown>)["name"] ??
+                "",
+            )
+          : "";
     if (id.length === 0 || seen.has(id)) {
       continue;
     }
+    const named =
+      typeof entry === "object" && entry !== null
+        ? (entry as Record<string, unknown>)["displayName"] ??
+          (entry as Record<string, unknown>)["display_name"] ??
+          (entry as Record<string, unknown>)["label"]
+        : undefined;
+    seen.add(id);
+    models.push({
+      id,
+      displayName: typeof named === "string" && named.length > 0 ? named : id,
+    });
+  }
+  return models.length > 0 ? models : null;
+}
+
+/** A line that is a heading, a rule, or prose rather than a model. */
+function isNoise(line: string): boolean {
+  if (line.length === 0) {
+    return true;
+  }
+  // Separator rules and box drawing.
+  if (/^[-=_~|+\s]+$/.test(line)) {
+    return true;
+  }
+  // A sentence: several words, no token that could be an id.
+  return !/[A-Za-z0-9][A-Za-z0-9._:/-]*/.test(line);
+}
+
+/**
+ * Parses a tool's model list.
+ *
+ * Tools print these lists very differently, and a list that cannot be read is
+ * the same to the user as a tool with no list at all — so this accepts the
+ * shapes they actually use rather than one:
+ *
+ *   claude-opus-5
+ *   anthropic/claude-opus-5            provider-qualified ids
+ *   gemini-3-pro\tGemini 3 Pro          a tab before a display name
+ *   gemini-3-pro    Gemini 3 Pro       aligned columns
+ *   * gpt-5.5 (default)                bullets and annotations
+ *   {"data":[{"id":"…"}]}              JSON
+ *
+ * Headings, rules and prose are skipped. Anything left becomes a model with
+ * its own id as the display name, which is honest: the id is what the tool
+ * gave us.
+ */
+export function parseModelLines(stdout: string): ModelInfo[] {
+  const fromJson = parseModelJson(stdout);
+  if (fromJson) {
+    return fromJson;
+  }
+
+  const seen = new Set<string>();
+  const models: ModelInfo[] = [];
+  for (const raw of stdout.split("\n")) {
+    // Strip a bullet, then split on a tab or a run of spaces used as a column.
+    const line = raw.replace(/\r$/, "").trim().replace(/^[*\u2022-]\s+/, "");
+    if (isNoise(line)) {
+      continue;
+    }
+
+    const [rawId = "", ...rest] = line.split(/\t|\s{2,}/);
+    const id = rawId.trim();
+    // An id has no spaces; a line whose first field does is a sentence.
+    if (id.length === 0 || /\s/.test(id) || seen.has(id)) {
+      continue;
+    }
+
+    const displayName = rest.join(" ").replace(/\s+/g, " ").trim();
     seen.add(id);
     models.push({ id, displayName: displayName.length > 0 ? displayName : id });
   }
