@@ -42,6 +42,8 @@
   --success: #5fcf95;
   --warning: #e5b65c;
   --danger: #ef7b72;
+  /* Backing for a destructive control under the pointer. */
+  --danger-quiet: rgba(239, 123, 114, 0.14);
   --running: #5bc8a7;
   --live: #5bc8a7;
 
@@ -130,6 +132,7 @@
   --success: #218a57;
   --warning: #a36f00;
   --danger: #c43d31;
+  --danger-quiet: rgba(196, 61, 49, 0.1);
   --running: #16977a;
   --live: #16977a;
 

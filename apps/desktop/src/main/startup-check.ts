@@ -424,6 +424,25 @@ export async function runStartupCheck(
   );
 
   await check(
+    "a delete control sits on the row it deletes",
+    `(async () => {
+       const row = [...document.querySelectorAll('.sidebar__row')]
+         .find(node => node.textContent?.includes('Check workspace'));
+       if (!row) return false;
+       const label = row.querySelector('.row__text');
+       const remove = row.querySelector('.sidebar__delete');
+       if (!label || !remove) return false;
+
+       const name = label.getBoundingClientRect();
+       const button = remove.getBoundingClientRect();
+       // Same line: the control's centre is inside the label's height, and it
+       // sits beside the name rather than under it.
+       const centre = button.top + button.height / 2;
+       return centre > name.top && centre < name.bottom && button.left > name.left;
+     })()`,
+  );
+
+  await check(
     "a long screen scrolls and leaves the navigation reachable",
     `(async () => {
        [...document.querySelectorAll('.sidebar__foot .row')]
@@ -1122,6 +1141,24 @@ export async function runStartupCheck(
         `[...document.querySelectorAll('.sidebar__scroll .row')]
            .find(node => node.textContent?.includes('Check session'))?.click();`,
       );
+      // The agents grid, which only says anything with real panes in it: one
+      // pane should fill the panel, a second should bring a column.
+      const openShell = `[...document.querySelectorAll('button')]
+           .find(node => node.textContent?.trim() === 'Shell')?.click();
+         await new Promise(resolve => setTimeout(resolve, 900));`;
+      await capture(
+        "agents-one",
+        `[...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Check session'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 200));
+         window.dispatchEvent(new KeyboardEvent('keydown',
+           { key: 'A', ctrlKey: true, shiftKey: true, bubbles: true }));
+         await new Promise(resolve => setTimeout(resolve, 300));
+         ${openShell}`,
+      );
+      await capture("agents-two", openShell);
+      // The third pane is where the grid stops growing and starts scrolling.
+      await capture("agents-three", openShell);
       await capture("providers", sidebar("Providers"));
       await capture("teams", sidebar("Teams"));
       await capture("settings", sidebar("Settings"));

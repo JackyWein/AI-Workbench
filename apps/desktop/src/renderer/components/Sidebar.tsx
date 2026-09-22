@@ -133,37 +133,43 @@ export function Sidebar({
             {sessions.length === 0 ? (
               <p className="row__meta sidebar__empty">No sessions</p>
             ) : (
-              sessions.map((session) => (
-                <Popover
-                  key={session.id}
-                  title="Working directory"
-                  triggerClassName="row"
-                  current={session.id === activeSessionId && view === "chat"}
-                  toggleOnClick={false}
-                  onTriggerClick={() => void selectSession(session.id)}
-                  trigger={
-                    <>
-                      <span
-                        className="status-dot"
-                        data-state={dotState(status[session.id])}
-                        aria-hidden="true"
-                      />
-                      <span className="row__text">{session.name}</span>
-                    </>
-                  }
-                >
-                  <p className="popover__detail">{session.workingDirectory}</p>
-                  <button
-                    type="button"
-                    className="quiet-button"
-                    onClick={() => void deleteSession(session.id)}
-                    aria-label={`Delete session ${session.name}`}
-                  >
-                    <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
-                    Delete session
-                  </button>
-                </Popover>
-              ))
+              sessions.map((session) => {
+                const current = session.id === activeSessionId && view === "chat";
+                return (
+                  // The same shape as a workspace row: the thing, then the
+                  // action on it, on one line.
+                  <div key={session.id} className="sidebar__row" data-current={current}>
+                    <Popover
+                      title="Working directory"
+                      triggerClassName="row"
+                      current={current}
+                      toggleOnClick={false}
+                      onTriggerClick={() => void selectSession(session.id)}
+                      trigger={
+                        <>
+                          <span
+                            className="status-dot"
+                            data-state={dotState(status[session.id])}
+                            aria-hidden="true"
+                          />
+                          <span className="row__text">{session.name}</span>
+                        </>
+                      }
+                    >
+                      <p className="popover__detail">{session.workingDirectory}</p>
+                    </Popover>
+                    <button
+                      type="button"
+                      className="icon-button sidebar__delete"
+                      onClick={() => void deleteSession(session.id)}
+                      aria-label={`Delete session ${session.name}`}
+                      title={`Delete session ${session.name}`}
+                    >
+                      <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         ) : null}
