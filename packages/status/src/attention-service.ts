@@ -96,6 +96,7 @@ export class StatusAttentionService {
 
   /** Pinning, or null for automatic (spec §100). */
   pin(widget: IslandWidgetId | null): IslandState {
+    this.#settle();
     return this.setPreferences({ pinnedWidget: widget });
   }
 
@@ -117,8 +118,35 @@ export class StatusAttentionService {
 
   /** Lets the island settle back after the user handled something (spec §97). */
   dismissOverride(): IslandState {
-    this.#override = null;
+    this.#settle();
     return this.#refresh();
+  }
+
+  /**
+   * Touching the island acknowledges what it was showing: the entry holding it
+   * lets go, and the news it was about does not take it again a moment later.
+   * Without this an explicit choice — pinning, cycling, dismissing — would be
+   * undone by the next refresh while that news is still unseen.
+   */
+  /** Notes that a piece of news has had its moment, with bounded memory. */
+  #remember(key: string): void {
+    this.#seen.add(key);
+    // Long-lived app, bounded memory: forget the oldest news first.
+    if (this.#seen.size > 200) {
+      const oldest = this.#seen.values().next().value;
+      if (oldest !== undefined) {
+        this.#seen.delete(oldest);
+      }
+    }
+  }
+
+  #settle(): void {
+    this.#override = null;
+    for (const entry of this.#state.entries) {
+      if (entry.priority >= ISLAND_PRIORITY.workCompleted) {
+        this.#remember(entry.key);
+      }
+    }
   }
 
   #refresh(): IslandState {
@@ -158,14 +186,7 @@ export class StatusAttentionService {
       (entry) => entry.priority >= ISLAND_PRIORITY.workCompleted && !this.#seen.has(entry.key),
     );
     if (urgent) {
-      this.#seen.add(urgent.key);
-      // Long-lived app, bounded memory: forget the oldest news first.
-      if (this.#seen.size > 200) {
-        const oldest = this.#seen.values().next().value;
-        if (oldest !== undefined) {
-          this.#seen.delete(oldest);
-        }
-      }
+      this.#remember(urgent.key);
       this.#override = { entry: urgent, until: new Date(now.getTime() + this.#expandMs) };
     } else if (this.#override && this.#override.until.getTime() <= now.getTime()) {
       this.#override = null;

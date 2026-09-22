@@ -1093,37 +1093,41 @@ export async function runStartupCheck(
   if (screenshotPath) {
     try {
       await mkdir(dirname(screenshotPath), { recursive: true });
-      await window.webContents.executeJavaScript(
-        `(async () => {
-         const rows = [...document.querySelectorAll('.sidebar__scroll .row')];
-         rows.find(node => node.textContent?.includes('Check workspace'))?.click();
-         await new Promise(resolve => setTimeout(resolve, 300));
-         // Show the workspace tools, since that is what changed most recently.
-         [...document.querySelectorAll('.panel__tab')]
-           .find(node => node.textContent === 'Terminal')?.click();
-         return true;
-       })()`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      await writeFile(screenshotPath, (await window.webContents.capturePage()).toPNG());
 
-      // The providers screen is captured too, since it is where a user fixes a
-      // command line provider that does not work.
-      const providersPath = screenshotPath.replace(/\.png$/, "-providers.png");
-      await window.webContents.executeJavaScript(
-        `(() => {
-         const rows = [...document.querySelectorAll('.sidebar__foot .row')];
-         rows.find(node => node.textContent?.includes('Providers'))?.click();
-         return true;
-       })()`,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      await writeFile(providersPath, (await window.webContents.capturePage()).toPNG());
+      /** Captures one screen, with nothing left over on top of it. */
+      const capture = async (name: string, navigate: string): Promise<void> => {
+        await window.webContents.executeJavaScript(
+          `(async () => {
+             // An overlay from an earlier check would hide the screen.
+             document.querySelector('.palette__input')?.dispatchEvent(
+               new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+             document.activeElement?.blur?.();
+             await new Promise(resolve => setTimeout(resolve, 120));
+             ${navigate}
+             return true;
+           })()`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const file =
+          name === "chat" ? screenshotPath : screenshotPath.replace(/\.png$/, `-${name}.png`);
+        await writeFile(file, (await window.webContents.capturePage()).toPNG());
+      };
 
-      logger.info("Startup check screenshots written", {
-        chat: screenshotPath,
-        providers: providersPath,
-      });
+      const sidebar = (label: string): string =>
+        `[...document.querySelectorAll('.sidebar__foot .row')]
+           .find(node => node.textContent?.includes(${JSON.stringify(label)}))?.click();`;
+
+      await capture(
+        "chat",
+        `[...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Check session'))?.click();`,
+      );
+      await capture("providers", sidebar("Providers"));
+      await capture("teams", sidebar("Teams"));
+      await capture("settings", sidebar("Settings"));
+      await capture("skills", sidebar("Skills"));
+
+      logger.info("Startup check screenshots written", { directory: dirname(screenshotPath) });
     } catch (error) {
       logger.warn("Startup check screenshots failed", {
         error: error instanceof Error ? error.message : String(error),

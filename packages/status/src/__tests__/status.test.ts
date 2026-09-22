@@ -197,6 +197,25 @@ describe("the priority engine", () => {
     expect(service.pin(null).current.widget).toBe("teamProgress");
   });
 
+  it("obeys a pin at once, even while something is holding the island", () => {
+    const service = boot();
+    service.update({
+      usage: usageWith(40),
+      runs: [runWith([{ status: "running" }])],
+      attention: [
+        { key: "ask-1", title: "Needs you", detail: "", runId: "run_1", at: NOW },
+      ],
+      now: NOW,
+    });
+    // The attention is new, so it is holding the island.
+    expect(service.state.current.widget).toBe("needsAttention");
+
+    // Pinning is an explicit choice and wins immediately (spec §100).
+    expect(service.pin("providerUsage").current.widget).toBe("providerUsage");
+    // And it stays pinned on the next refresh rather than snapping back.
+    expect(service.update({ now: NOW }).current.widget).toBe("providerUsage");
+  });
+
   it("cycles through the widgets that have something to say", () => {
     const service = boot();
     service.update({ usage: usageWith(40), runs: [runWith([{ status: "running" }])], now: NOW });
