@@ -8,7 +8,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "package": "electron-vite build && electron-builder --publish never",
-    "package:dir": "electron-vite build && electron-builder --dir"
+    "package:dir": "electron-vite build && electron-builder --dir --publish never"
   },
   "dependencies": {
     "@libsql/client": "^0.15.0",
