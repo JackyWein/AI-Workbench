@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
-import type { AppEvent, ChatMessage } from "@ai-workbench/shared";
+import type { AppEvent, ChatMessage, ProviderEvent } from "@ai-workbench/shared";
 import { EventBus } from "../event-bus.js";
 import { createNullLogger } from "../logger.js";
 import { ProviderManager } from "../provider-manager.js";
@@ -191,6 +191,50 @@ describe("session vertical slice", () => {
     } finally {
       await slowApp.dispose();
       await removeTempDirectory(slowDirectory);
+    }
+  });
+
+  it("saves a stopped turn as stopped even when the tool finishes it anyway", async () => {
+    // A tool that ignores the stop and ends its turn normally, as a command
+    // line tool whose process outlives the request can.
+    class Stubborn extends MockProviderAdapter {
+      override async cancel(): Promise<void> {}
+      override async *sendMessage(): AsyncIterable<ProviderEvent> {
+        for (const word of ["one ", "two ", "three"]) {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          yield { type: "text_delta", text: word };
+        }
+        yield { type: "completed", reason: "finished" };
+      }
+    }
+    const stubbornDirectory = await makeTempDirectory("ai-workbench-stubborn-");
+    const logger = createNullLogger();
+    const database = createDatabase({ file: join(stubbornDirectory, "test.db") });
+    await runMigrations(database.client);
+    const events = new EventBus();
+    const providers = new ProviderManager({ logger, stateDirectory: join(stubbornDirectory, "p") });
+    await providers.register(new Stubborn({ chunkDelayMs: 0, startupDelayMs: 0 }));
+    const workspaces = new WorkspaceManager({ db: database.db, events, logger });
+    const sessions = new SessionManager({ db: database.db, events, logger, providers, workspaces });
+    try {
+      const workspace = await workspaces.create({ name: "Demo", path: directory });
+      const session = await sessions.create({ workspaceId: workspace.id, name: "Chat", type: "solo" });
+      const { messageId } = await sessions.sendMessage(session.id, "count");
+      const finished = waitForMessage(events, messageId);
+      // What it is doing is said while it does it.
+      const deadline = Date.now() + 2000;
+      while (sessions.activity(session.id) !== "writing" && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      expect(sessions.activity(session.id)).toBe("writing");
+      await sessions.cancel(session.id);
+      expect((await finished).status).toBe("cancelled");
+      expect(sessions.activity(session.id)).toBeNull();
+    } finally {
+      await sessions.shutdown();
+      await providers.dispose();
+      database.close();
+      await removeTempDirectory(stubbornDirectory);
     }
   });
 

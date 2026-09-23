@@ -91,6 +91,9 @@ export const islandTargetSchema = z.object({
   view: z.enum(["chat", "teams", "providers", "mcp", "settings"]),
   sessionId: z.string().min(1).optional(),
   runId: z.string().min(1).optional(),
+  /** An agent's terminal tile, shown in its workspace's agents view. */
+  workspaceId: z.string().min(1).optional(),
+  tileId: z.string().min(1).optional(),
 });
 export type IslandTarget = z.infer<typeof islandTargetSchema>;
 

@@ -58,6 +58,10 @@ interface TerminalState {
    * so a fast command does not copy the whole buffer on every data event.
    */
   scrollback: string[];
+  /** The window title the program last set (OSC 0 or 2), if any. */
+  title: string | null;
+  /** When the program last wrote anything. */
+  lastOutputAt: number;
   scrollbackChars: number;
   readonly disposables: Array<{ dispose(): void }>;
 }
@@ -141,12 +145,19 @@ export class TerminalManager {
       rows,
       scrollback: [],
       scrollbackChars: 0,
+      title: null,
+      lastOutputAt: Date.now(),
       disposables: [],
     };
     this.#terminals.set(id, state);
 
     state.disposables.push(
       pty.onData((chunk) => {
+        state.lastOutputAt = Date.now();
+        const title = lastTitle(chunk);
+        if (title !== null) {
+          state.title = title;
+        }
         appendScrollback(state, chunk, this.#scrollbackLimit);
         this.#options.onData(id, chunk);
       }),
@@ -188,6 +199,16 @@ export class TerminalManager {
     return full.length <= this.#reattachLimit
       ? full
       : full.slice(full.length - this.#reattachLimit);
+  }
+
+  /**
+   * What a terminal's program says about itself without being asked: the
+   * window title it set (tools like Claude Code put their current task
+   * there) and when it last wrote anything. Null for an unknown terminal.
+   */
+  activity(id: string): { title: string | null; lastOutputAt: Date } | null {
+    const state = this.#terminals.get(id);
+    return state ? { title: state.title, lastOutputAt: new Date(state.lastOutputAt) } : null;
   }
 
   /** Returns the session's terminal, starting one when there is none yet. */
@@ -300,4 +321,20 @@ function defaultShell(): string {
     return process.env["COMSPEC"] ?? "powershell.exe";
   }
   return process.env["SHELL"] ?? "/bin/bash";
+}
+
+/**
+ * The last window title a chunk of output sets: OSC 0 or 2, ended by BEL or
+ * ST. Null when the chunk sets none. Control characters are dropped and the
+ * result is bounded, since it is shown elsewhere as plain text.
+ */
+export function lastTitle(chunk: string): string | null {
+  let title: string | null = null;
+  // eslint-disable-next-line no-control-regex
+  const pattern = /\x1b\][02];([^\x07\x1b]*)(?:\x07|\x1b\\)/g;
+  for (let match = pattern.exec(chunk); match; match = pattern.exec(chunk)) {
+    // eslint-disable-next-line no-control-regex
+    title = (match[1] ?? "").replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, 160);
+  }
+  return title;
 }

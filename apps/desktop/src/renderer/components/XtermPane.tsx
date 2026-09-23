@@ -136,9 +136,13 @@ export function XtermPane({
       observer.disconnect();
       container.removeEventListener("focusin", focusIn);
       input.dispose();
-      terminal.dispose();
       terminalRef.current = null;
       fitRef.current = null;
+      // xterm 5.5 schedules a measurement when it opens (a timeout) and on a
+      // reset (a frame). Disposed before those run, it reads a renderer that
+      // is gone ("reading 'dimensions'"), which a quick switch between the
+      // conversation and the agents did. Its own pending work runs first.
+      setTimeout(() => terminal.dispose(), 50);
     };
     // Created once: a font size change must not rebuild the terminal and
     // lose its buffer; it arrives through `terminal.options` below.

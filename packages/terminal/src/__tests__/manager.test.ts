@@ -3,6 +3,7 @@ import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-suppo
 import {
   TerminalLimitError,
   TerminalManager,
+  lastTitle,
   TerminalNotFoundError,
 } from "../manager.js";
 
@@ -253,5 +254,17 @@ describe("TerminalManager", () => {
     manager.resize(info.id, 80, 24);
     expect(spy).toHaveReturned();
     expect(manager.list()[0]).toMatchObject({ cols: 80, rows: 24 });
+  });
+});
+
+describe("what a terminal's program says about itself", () => {
+  it("reads the window title a program sets, ended either way", () => {
+    expect(lastTitle("\x1b]0;✳ Refactor the parser\x07")).toBe("✳ Refactor the parser");
+    expect(lastTitle("text\x1b]2;opencode\x1b\\more")).toBe("opencode");
+    // The last one in a chunk wins; a chunk without one says nothing.
+    expect(lastTitle("\x1b]2;first\x07\x1b]2;second\x07")).toBe("second");
+    expect(lastTitle("plain output\r\n")).toBeNull();
+    // Other OSC sequences (hyperlinks, colours) are not titles.
+    expect(lastTitle("\x1b]8;;https://example.com\x07link\x1b]8;;\x07")).toBeNull();
   });
 });

@@ -1819,6 +1819,45 @@ export async function runStartupCheck(
       throw new Error(`the island still had ${seen}`);
     });
 
+    // Its turn ended, and the island says so with the way back to its tile.
+    await checkMain(`the island says ${agent.label} finished, and opens its tile`, async () => {
+      const tileId = await window.webContents.executeJavaScript("window.__checkWaitingTile");
+      const deadline = Date.now() + 6_000;
+      let seen = "nothing";
+      while (Date.now() < deadline) {
+        const state = await island.refresh();
+        const done = state.entries.find(
+          (item) => item.widget === "completedWork" && item.title === `${agent.label} finished`,
+        );
+        seen = JSON.stringify(state.entries.map((item) => [item.widget, item.title]));
+        const target = done?.action?.target;
+        if (target && target.tileId === tileId) {
+          island.open(target);
+          const landed = await window.webContents.executeJavaScript(
+            `(async () => {
+               const deadline = Date.now() + 4000;
+               while (Date.now() < deadline) {
+                 const tile = document.querySelector('.agent-tile[data-tile-id=${JSON.stringify(String(tileId))}]');
+                 if (tile?.dataset.focused === 'true') return true;
+                 await new Promise(resolve => setTimeout(resolve, 100));
+               }
+               return false;
+             })()`,
+          );
+          // Back to the conversation for the checks that follow.
+          await window.webContents.executeJavaScript(
+            `[...document.querySelectorAll('button')].find(node => node.textContent?.trim() === 'Chat')?.click()`,
+          );
+          if (landed === true) {
+            return true;
+          }
+          throw new Error("the island opened the window, but not on the tile");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error(`no finished entry for the tile; the island had ${seen}`);
+    });
+
     // The stand-in goes, and the tool is found on the PATH again.
     await check(
       `the stand-in for ${agent.label} is removed again`,

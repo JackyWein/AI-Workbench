@@ -105,6 +105,10 @@ export interface IslandSources {
     title: string;
     detail: string;
     runId?: string;
+    /** Where "Open" lands for work that is not a team run. */
+    target?: IslandTarget;
+    /** The mark of the tool whose work finished. */
+    icon?: string | null;
     at: Date;
   }>;
   readonly now: Date;
@@ -301,10 +305,13 @@ export const completedWorkWidget: IslandWidget = {
       priority: ISLAND_PRIORITY.workCompleted,
       title: first.title,
       detail: first.detail,
+      ...(first.icon ? { icon: first.icon } : {}),
       progress: null,
-      action: first.runId
-        ? { label: "Open", target: { view: "teams", runId: first.runId } }
-        : null,
+      action: first.target
+        ? { label: "Open", target: first.target }
+        : first.runId
+          ? { label: "Open", target: { view: "teams", runId: first.runId } }
+          : null,
       key: first.key,
       at: first.at,
     };

@@ -32,6 +32,23 @@ export function AgentsView({ workspaceId, workspaceName }: AgentsViewProps): JSX
   const refreshAgentTerminals = useWorkbench((state) => state.refreshAgentTerminals);
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const live = terminals.filter((terminal) => terminal.state === "running").length;
+  const focusTileId = useWorkbench((state) => state.focusTileId);
+  const clearFocusTile = useWorkbench((state) => state.clearFocusTile);
+
+  // A tile someone asked to see (from the island): in focus, in view, typing
+  // goes to its terminal.
+  useEffect(() => {
+    if (!focusTileId || !terminals.some((terminal) => terminal.id === focusTileId)) {
+      return;
+    }
+    setFocusedId(focusTileId);
+    clearFocusTile();
+    requestAnimationFrame(() => {
+      const tile = document.querySelector(`[data-tile-id="${CSS.escape(focusTileId)}"]`);
+      tile?.scrollIntoView({ block: "nearest" });
+      tile?.querySelector("textarea")?.focus();
+    });
+  }, [focusTileId, terminals, clearFocusTile]);
 
   useEffect(() => {
     void refreshAgentTerminals(workspaceId);
@@ -271,6 +288,7 @@ function AgentTile({
     <article
       ref={tileRef}
       className="agent-tile"
+      data-tile-id={terminal.id}
       data-focused={focused}
       data-state={terminal.state}
       role="group"

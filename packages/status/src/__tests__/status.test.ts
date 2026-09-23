@@ -535,3 +535,28 @@ describe("the island's agent rows and quiet picture", () => {
     expect(state.sessions.last?.name).toBe("Claude");
   });
 });
+
+describe("finished work that is not a team run", () => {
+  it("opens where the work was, with the mark of the tool that did it", () => {
+    const service = boot();
+    const state = service.update({
+      completed: [
+        {
+          key: "done:tile:t1:1",
+          title: "Claude Code finished",
+          detail: "Back at its prompt",
+          icon: "claude-code",
+          target: { view: "chat", workspaceId: "ws", tileId: "t1" },
+          at: NOW,
+        },
+      ],
+      now: NOW,
+    });
+    expect(state.current).toMatchObject({
+      widget: "completedWork",
+      title: "Claude Code finished",
+      icon: "claude-code",
+      action: { label: "Open", target: { view: "chat", workspaceId: "ws", tileId: "t1" } },
+    });
+  });
+});

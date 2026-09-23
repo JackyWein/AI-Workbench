@@ -54,8 +54,10 @@ export class NoProviderSelectedError extends Error {
 interface ActiveRun {
   readonly handle: ProviderSessionHandle;
   readonly adapter: AIProviderAdapter;
-  readonly finished: Promise<void>;
+  finished: Promise<void>;
   cancelled: boolean;
+  /** What the turn is doing, from the tool's own events; see `activity`. */
+  activity?: string;
 }
 
 export interface SessionManagerOptions {
@@ -232,6 +234,15 @@ export class SessionManager {
   }
 
   /**
+   * What a busy session's turn is doing right now, in the tool's own words:
+   * the command or file of the tool call in flight, or "writing" while text
+   * arrives. Null when idle or before the tool said anything.
+   */
+  activity(sessionId: string): string | null {
+    return this.#runs.get(sessionId)?.activity ?? null;
+  }
+
+  /**
    * Persists the user turn and starts the provider run. Returns as soon as the
    * assistant message exists; the answer itself arrives as domain events.
    */
@@ -318,12 +329,15 @@ export class SessionManager {
       cancelled: placeholder.cancelled,
       finished: Promise.resolve(),
     };
-    const finished = this.#stream(run, session.providerId, assistantMessage, text).finally(
+    // The object the stream reads is the one registered: a cancel marks it,
+    // and the stream must see that mark (it used to land on a copy, so a turn
+    // stopped by the person was saved as complete when the tool finished).
+    run.finished = this.#stream(run, session.providerId, assistantMessage, text).finally(
       () => {
         this.#runs.delete(sessionId);
       },
     );
-    this.#runs.set(sessionId, { ...run, finished });
+    this.#runs.set(sessionId, run);
 
     return { messageId: assistantMessage.id };
   }
@@ -434,6 +448,7 @@ export class SessionManager {
 
         switch (event.type) {
           case "text_delta": {
+            run.activity = "writing";
             content += event.text;
             this.#events.publish({
               type: "message.delta",
@@ -454,6 +469,10 @@ export class SessionManager {
           case "tool_call":
           case "tool_result": {
             upsertToolCall(toolCalls, event.toolCall);
+            const call = event.toolCall;
+            const what = (call.summary ?? call.name).slice(0, 140);
+            run.activity =
+              event.type === "tool_call" || call.state === "running" ? `${call.name}: ${what}` : "thinking";
             break;
           }
           case "usage": {

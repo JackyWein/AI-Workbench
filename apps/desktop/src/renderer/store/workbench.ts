@@ -173,6 +173,9 @@ interface WorkbenchState {
   toggleWorkspacePanel(tab?: WorkspaceTab): void;
   setWorkspaceTab(tab: WorkspaceTab): void;
   setWorkspaceMode(mode: WorkspaceMode): void;
+  /** An agent tile someone asked to see (from the island); the grid focuses it. */
+  focusTileId: string | null;
+  clearFocusTile(): void;
   setInspectorOpen(open: boolean): void;
 
   refreshAgentTerminals(workspaceId?: string): Promise<void>;
@@ -390,6 +393,10 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   activeSessionId: null,
   view: "chat",
   paletteOpen: false,
+  focusTileId: null,
+  clearFocusTile() {
+    set({ focusTileId: null });
+  },
   paletteQuery: "",
   teamPreview: false,
   workspacePanelOpen: false,
@@ -1045,11 +1052,31 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   },
 
   async goTo(target) {
+    // An agent's tile: its workspace, the agents grid, that tile in focus.
+    if (target.tileId && target.workspaceId) {
+      if (get().activeWorkspaceId !== target.workspaceId) {
+        await get().selectWorkspace(target.workspaceId);
+      }
+      set({ view: "chat", workspaceMode: "terminals", focusTileId: target.tileId });
+      return;
+    }
     if (target.sessionId) {
       await get().selectSession(target.sessionId);
+      set({ workspaceMode: "chat" });
       return;
     }
     if (target.runId) {
+      // A run that works in a session is shown there, not on the Teams screen.
+      const sessions = await invoke("session.list", {}).catch(() => []);
+      const host = sessions.find((session) => session.uiState["teamRunId"] === target.runId);
+      if (host) {
+        if (get().activeWorkspaceId !== host.workspaceId) {
+          await get().selectWorkspace(host.workspaceId);
+        }
+        await get().selectSession(host.id);
+        set({ workspaceMode: "chat" });
+        return;
+      }
       set({ view: "teams" });
       await get().refreshTeams();
       await get().openTeamRun(target.runId);

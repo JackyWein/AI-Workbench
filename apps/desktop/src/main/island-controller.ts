@@ -7,7 +7,7 @@ import {
   type IslandWidgetId,
   type TerminalAttentionResponse,
 } from "@ai-workbench/shared";
-import type { IslandSources } from "@ai-workbench/status";
+import { COMPLETED_WORK_WINDOW_MS, type IslandSources } from "@ai-workbench/status";
 import type { AppServices } from "./services.js";
 import { StatusIslandWindow } from "./status-island.js";
 import { StatusTray } from "./tray.js";
@@ -52,6 +52,16 @@ export class IslandController {
    * (within one refresh) rather than restarting on every refresh.
    */
   readonly #busySince = new Map<string, Date>();
+  /**
+   * Work that was working on the last refresh, to notice the moment it
+   * stops: a chat whose turn ended, a tool that went back to its prompt.
+   */
+  #working = new Map<
+    string,
+    { name: string; icon: string | null; target: IslandTarget; detail: string }
+  >();
+  /** Work that finished lately, newest first; shown while it is news. */
+  #finished: Array<IslandSources["completed"][number]> = [];
   /** Whether each provider is installed, checked at most once a minute. */
   readonly #installed = new Map<string, { installed: boolean; at: number }>();
   /** Where each listed agent can take a typed prompt, by its island key. */
@@ -307,6 +317,8 @@ export class IslandController {
         status: "working",
         startedAt: since(`session:${session.id}`),
         icon: iconOf(session.providerId),
+        // What the turn is doing, from the tool's own events.
+        detail: this.#services.sessions.activity(session.id) ?? "working",
       }));
     for (const session of busySessions) {
       askTargets.set(`session:${session.sessionId}`, { sessionId: session.sessionId });
@@ -318,6 +330,8 @@ export class IslandController {
     const tileTerminalIds = new Set<string>();
     /** Agents whose tool said it is idle at its prompt: resting, not at work. */
     const restingTiles: Array<IslandSources["sessions"][number]> = [];
+    /** Tiles waiting on the person: still in the middle of their work. */
+    const tilesWaiting = new Set<string>();
     try {
       const workspaces = await this.#services.workspaces.list();
       for (const workspace of workspaces) {
@@ -358,12 +372,29 @@ export class IslandController {
                   : activity?.state === "working"
                     ? "working"
                     : "running";
+            // What the program says about itself without being asked: the
+            // title it gave its window (Claude Code names its task there) and
+            // whether it is writing output right now.
+            const screen = tile.terminalId ? this.#services.terminals.activity(tile.terminalId) : null;
+            const quietFor = screen ? Date.now() - screen.lastOutputAt.getTime() : null;
+            const fromScreen = screen
+              ? [
+                  screen.title,
+                  quietFor !== null && quietFor < 3_000
+                    ? "output now"
+                    : quietFor !== null
+                      ? `quiet ${quietLabel(quietFor)}`
+                      : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")
+              : "";
             busySessions.push({
               key,
               sessionId: tile.id,
               name: tile.label,
               status,
-              target: { view: "chat" },
+              target: { view: "chat", workspaceId: tile.workspaceId, tileId: tile.id },
               // A turn's clock runs from when the tool started on it.
               startedAt: activity?.state === "working" ? activity.since : tile.startedAt,
               icon: iconOf(tile.providerId),
@@ -373,16 +404,17 @@ export class IslandController {
               detail: waiting
                 ? `waiting for you · ${waiting.summary || waiting.kind}`
                 : activity?.state === "working"
-                  ? ["working", tile.detail, tile.metrics ? metricsLine(tile.metrics) : ""]
+                  ? ["working", tile.detail ?? screen?.title, tile.metrics ? metricsLine(tile.metrics) : ""]
                       .filter(Boolean)
                       .join(" · ")
-                  : (tile.detail ?? (tile.metrics ? metricsLine(tile.metrics) : status)),
+                  : (tile.detail ?? (fromScreen || (tile.metrics ? metricsLine(tile.metrics) : status))),
             });
           }
           // The tool itself said it waits on the person (spec §99): the
           // island shows it with that tool's mark, and offers the answers the
           // tool takes from outside its terminal.
           if (waiting) {
+            tilesWaiting.add(key);
             const attentionKey = `tile:${tile.id}:${waiting.id}`;
             if (waiting.answerable) {
               respondTargets.set(attentionKey, {
@@ -398,7 +430,7 @@ export class IslandController {
                 detail: tile.label,
                 icon: iconOf(tile.providerId),
                 options: waiting.answerable ? waiting.choices : [],
-                target: { view: "chat" },
+                target: { view: "chat", workspaceId: tile.workspaceId, tileId: tile.id },
                 at: waiting.since,
               });
             } else {
@@ -406,7 +438,7 @@ export class IslandController {
                 key: attentionKey,
                 title: `${tile.label} wants to use ${waiting.tool ?? "a tool"}`,
                 detail: waiting.summary,
-                target: { view: "chat" },
+                target: { view: "chat", workspaceId: tile.workspaceId, tileId: tile.id },
                 icon: iconOf(tile.providerId),
                 options: waiting.answerable
                   ? [
@@ -453,6 +485,43 @@ export class IslandController {
         this.#busySince.delete(key);
       }
     }
+
+    // Work that was working and no longer is has finished: said once, with
+    // the way back into it. A tool that reports no activity of its own never
+    // counts as working here, so it is never said to have finished either.
+    const working = new Map<
+      string,
+      { name: string; icon: string | null; target: IslandTarget; detail: string }
+    >();
+    for (const entry of busySessions) {
+      const key = entry.key ?? `session:${entry.sessionId}`;
+      const kind = key.split(":")[0];
+      if (kind === "session" || (kind === "tile" && (entry.status === "working" || tilesWaiting.has(key)))) {
+        working.set(key, {
+          name: entry.name,
+          icon: entry.icon ?? null,
+          target: entry.target ?? { view: "chat", sessionId: entry.sessionId },
+          detail: kind === "session" ? "Answer ready" : "Back at its prompt",
+        });
+      }
+    }
+    for (const [key, entry] of this.#working) {
+      if (!working.has(key) && !tilesWaiting.has(key)) {
+        this.#finished.unshift({
+          key: `done:${key}:${now.getTime()}`,
+          title: `${entry.name} finished`,
+          detail: entry.detail,
+          target: entry.target,
+          icon: entry.icon,
+          at: now,
+        });
+      }
+    }
+    this.#working = working;
+    this.#finished = this.#finished
+      .filter((entry) => now.getTime() - entry.at.getTime() < COMPLETED_WORK_WINDOW_MS)
+      .slice(0, 10);
+    completed.push(...this.#finished);
 
     const sortByNewest = <T extends { at: Date }>(entries: T[]): T[] =>
       entries.sort((left, right) => right.at.getTime() - left.at.getTime());
@@ -932,4 +1001,14 @@ export class IslandController {
     }
     await this.refresh();
   }
+}
+
+/** "12 s", "4 min", "2 h": how long a terminal has been quiet. */
+function quietLabel(ms: number): string {
+  const seconds = Math.round(ms / 1000);
+  if (seconds < 60) {
+    return `${seconds} s`;
+  }
+  const minutes = Math.round(seconds / 60);
+  return minutes < 60 ? `${minutes} min` : `${Math.round(minutes / 60)} h`;
 }
