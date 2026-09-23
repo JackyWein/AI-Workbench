@@ -14,6 +14,7 @@ import {
   dockPoint,
   dragFrame,
   edgeDistances,
+  px,
   railOf,
   settleEase,
   type Point,
@@ -433,6 +434,7 @@ export class StatusIslandWindow {
       area,
       edge: drag.edge,
       depth: drag.depth,
+      snap: drag.snap,
     });
     if (frame.regrab) {
       drag.grab = { x: 0.5, y: 0.5 };
@@ -469,8 +471,8 @@ export class StatusIslandWindow {
     const t = Math.min(1, (Date.now() - settling.startedAt) / SETTLE_MS);
     const eased = settleEase(t);
     const to = settling.target();
-    const x = Math.round(settling.from.x + (to.x - settling.from.x) * eased);
-    const y = Math.round(settling.from.y + (to.y - settling.from.y) * eased);
+    const x = px(settling.from.x + (to.x - settling.from.x) * eased);
+    const y = px(settling.from.y + (to.y - settling.from.y) * eased);
     window.setPosition(x, y, false);
     if (t >= 1) {
       this.#stopSettling();
@@ -611,7 +613,7 @@ export function clampToDisplay(
   const rawY = Number.isFinite(position.y) ? position.y : area.y;
   const x = Math.min(Math.max(rawX, area.x), area.x + area.width - width);
   const y = Math.min(Math.max(rawY, area.y), area.y + area.height - height);
-  return [Math.round(x), Math.round(y)];
+  return [px(x), px(y)];
 }
 
 export function resolveIslandFile(appDirectory: string): string {

@@ -434,6 +434,23 @@ function Island(): JSX.Element | null {
   };
 
   const open = docked ? pinned || expanded || serviceCard || closing : false;
+  const snapping = drag.active && !docked ? drag.snap : null;
+  const circle = (
+    <button
+      type="button"
+      className="isl__circle"
+      onClick={onCircleClick}
+      aria-label={derived.label}
+      title={circleHint(derived.face, hoverMode)}
+    >
+      <span className="isl__blobin">
+        <span className="isl__morph" key={morphKey}>
+          <FaceMark derived={derived} size={17} />
+        </span>
+      </span>
+      {derived.badge !== null ? <span className="isl__badge">{derived.badge}</span> : null}
+    </button>
+  );
   // The sheet starts as the pill's outline and grows from its edge.
   const sheetRef = (node: HTMLDivElement | null): void => {
     node?.style.setProperty("--pw", `${pillSize.current.width}px`);
@@ -577,20 +594,17 @@ function Island(): JSX.Element | null {
           )
         ) : (
           <>
-            <button
-              type="button"
-              className="isl__circle"
-              onClick={onCircleClick}
-              aria-label={derived.label}
-              title={circleHint(derived.face, hoverMode)}
-            >
-              <span className="isl__blobin">
-                <span className="isl__morph" key={morphKey}>
-                  <FaceMark derived={derived} size={17} />
-                </span>
+            {snapping ? (
+              // Drawn onto a rail: the outline of the pill it will become.
+              <span
+                className="isl__ghost"
+                data-vertical={snapping === "left" || snapping === "right"}
+              >
+                {circle}
               </span>
-              {derived.badge !== null ? <span className="isl__badge">{derived.badge}</span> : null}
-            </button>
+            ) : (
+              circle
+            )}
             {blobCard ? (
               <div
                 className="isl__side"

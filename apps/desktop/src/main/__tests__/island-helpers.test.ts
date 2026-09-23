@@ -4,6 +4,7 @@ import {
   dockPoint,
   dragFrame,
   metricsLine,
+  px,
   railOf,
   settleEase,
   snapEdge,
@@ -55,6 +56,22 @@ const area = { x: 0, y: 0, width: 1920, height: 1040 };
 const pillWindow = { width: 296, height: 62 };
 
 describe("island rails", () => {
+  it("never hands Electron a -0 or NaN coordinate", () => {
+    expect(Object.is(px(-0.3), 0)).toBe(true);
+    expect(px(Number.NaN)).toBe(0);
+    expect(px(-3.6)).toBe(-4);
+    const edge = dragFrame({
+      pointer: { x: 33.3, y: 33.2 },
+      grab: { x: 0.5, y: 0.5 },
+      size: { width: 66, height: 66 },
+      area,
+      edge: null,
+      depth: 0,
+      snap: null,
+    });
+    expect(Object.is(edge.x, -0) || Object.is(edge.y, -0)).toBe(false);
+  });
+
   it("docks a pill centered on its spot with an even gap to the edge", () => {
     // The painted pill sits 8px from the edge; the window's 12px padding hangs past it.
     expect(dockPoint("top", 500, pillWindow, area)).toEqual({ x: 352, y: -4 });
@@ -89,15 +106,16 @@ describe("island drag", () => {
       area,
       edge: "top",
       depth: 30,
+      snap: null,
     });
     expect(frame).toMatchObject({ edge: "top", x: 552, y: -4, regrab: false });
   });
 
   it("gives a little when pulled, then lets go past the detach distance", () => {
-    const held = dragFrame({ pointer: { x: 700, y: 90 }, grab, size: pillWindow, area, edge: "top", depth: 30 });
+    const held = dragFrame({ pointer: { x: 700, y: 90 }, grab, size: pillWindow, area, edge: "top", depth: 30, snap: null });
     expect(held.edge).toBe("top");
     expect(held.y).toBe(14);
-    const free = dragFrame({ pointer: { x: 700, y: 140 }, grab, size: pillWindow, area, edge: "top", depth: 30 });
+    const free = dragFrame({ pointer: { x: 700, y: 140 }, grab, size: pillWindow, area, edge: "top", depth: 30, snap: null });
     expect(free).toMatchObject({ edge: null, regrab: true });
   });
 
@@ -109,20 +127,26 @@ describe("island drag", () => {
       area,
       edge: "top",
       depth: 30,
+      snap: null,
     });
     expect(frame).toMatchObject({ edge: "right", regrab: true });
   });
 
-  it("carries a free blob and names the rail it would dock to", () => {
+  it("carries a free blob, and draws it onto a rail it comes near", () => {
     const blob = { width: 66, height: 66 };
-    const middle = dragFrame({ pointer: { x: 900, y: 500 }, grab, size: blob, area, edge: null, depth: 0 });
+    const middle = dragFrame({ pointer: { x: 900, y: 500 }, grab, size: blob, area, edge: null, depth: 0, snap: null });
     expect(middle).toMatchObject({ edge: null, snap: null, x: 867, y: 467 });
-    const nearTop = dragFrame({ pointer: { x: 900, y: 60 }, grab, size: blob, area, edge: null, depth: 0 });
-    expect(nearTop.snap).toBe("top");
+    const nearTop = dragFrame({ pointer: { x: 900, y: 60 }, grab, size: blob, area, edge: null, depth: 0, snap: null });
+    // On the rail, exactly where the pill will sit.
+    expect(nearTop).toMatchObject({ snap: "top", x: 867, y: -4 });
   });
 
-  it("finds no rail for a blob in open space", () => {
-    expect(snapEdge({ x: 400, y: 400 }, { width: 66, height: 66 }, area)).toBeNull();
-    expect(snapEdge({ x: 1880, y: 400 }, { width: 66, height: 66 }, area)).toBe("right");
+  it("holds a snapped blob a little longer before letting it go", () => {
+    expect(snapEdge({ x: 400, y: 400 }, area)).toBeNull();
+    expect(snapEdge({ x: 1860, y: 400 }, area)).toBe("right");
+    expect(snapEdge({ x: 900, y: 85 }, area)).toBeNull();
+    expect(snapEdge({ x: 900, y: 85 }, area, "top")).toBe("top");
+    const released = dragFrame({ pointer: { x: 900, y: 200 }, grab, size: { width: 264, height: 68 }, area, edge: null, depth: 0, snap: "top" });
+    expect(released).toMatchObject({ snap: null, regrab: true });
   });
 });

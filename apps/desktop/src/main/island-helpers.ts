@@ -6,6 +6,16 @@ import { ISLAND_TIMING, type IslandEdge, type TerminalMetrics } from "@ai-workbe
  */
 
 /**
+ * A window coordinate Electron accepts: a whole number that is never -0 or
+ * NaN. Electron rejects -0 outright ("conversion failure"), and rounding a
+ * small negative offset near a screen edge produces exactly that.
+ */
+export function px(value: number): number {
+  const rounded = Math.round(value);
+  return Number.isFinite(rounded) && rounded !== 0 ? rounded : 0;
+}
+
+/**
  * Where a resized island keeps its footing. A docked pill grows away from its
  * edge and stays centered along it, so it opens in place into its card; a
  * free blob keeps its left side and vertical center, so the circle stays put
@@ -16,19 +26,19 @@ export function anchorResize(
   size: { width: number; height: number },
   edge: IslandEdge | null,
 ): { x: number; y: number } {
-  const centerX = bounds.x + Math.round((bounds.width - size.width) / 2);
-  const centerY = bounds.y + Math.round((bounds.height - size.height) / 2);
+  const centerX = px(bounds.x + (bounds.width - size.width) / 2);
+  const centerY = px(bounds.y + (bounds.height - size.height) / 2);
   switch (edge) {
     case "top":
-      return { x: centerX, y: bounds.y };
+      return { x: centerX, y: px(bounds.y) };
     case "bottom":
-      return { x: centerX, y: bounds.y + bounds.height - size.height };
+      return { x: centerX, y: px(bounds.y + bounds.height - size.height) };
     case "left":
-      return { x: bounds.x, y: centerY };
+      return { x: px(bounds.x), y: centerY };
     case "right":
-      return { x: bounds.x + bounds.width - size.width, y: centerY };
+      return { x: px(bounds.x + bounds.width - size.width), y: centerY };
     case null:
-      return { x: bounds.x, y: centerY };
+      return { x: px(bounds.x), y: centerY };
   }
 }
 
@@ -52,6 +62,13 @@ export const RAIL_GAP = 8;
 const RUBBER = 0.3;
 /** A nearer rail must win by this much before the pill changes rails. */
 const RAIL_STICK = 18;
+/**
+ * How close the pointer (the blob's center) must come to an edge before the
+ * blob is drawn onto that rail: `snapPx` measured from the blob's own rim.
+ */
+const SNAP_REACH = ISLAND_TIMING.snapPx + 21;
+/** Once drawn onto a rail, the blob holds on for this much more pull. */
+const SNAP_HOLD = 16;
 
 const EDGES: readonly IslandEdge[] = ["top", "right", "bottom", "left"];
 
@@ -98,7 +115,7 @@ export function dockPoint(
       edge === "left"
         ? area.x + inset + pull
         : area.x + area.width - inset - size.width - pull;
-    return { x: Math.round(x), y: Math.round(y) };
+    return { x: px(x), y: px(y) };
   }
   const center = along === null ? area.width / 2 : along;
   const x = clamp(
@@ -108,12 +125,12 @@ export function dockPoint(
   );
   const y =
     edge === "top" ? area.y + inset + pull : area.y + area.height - inset - size.height - pull;
-  return { x: Math.round(x), y: Math.round(y) };
+  return { x: px(x), y: px(y) };
 }
 
 /** The along-rail spot of a window's center, as stored in `railT`. */
 export function railOf(edge: IslandEdge, bounds: Rect, area: Rect): number {
-  return Math.round(
+  return px(
     isVertical(edge)
       ? bounds.y + bounds.height / 2 - area.y
       : bounds.x + bounds.width / 2 - area.x,
@@ -123,10 +140,10 @@ export function railOf(edge: IslandEdge, bounds: Rect, area: Rect): number {
 /** Keeps a free window on the area; only its transparent padding may hang off. */
 export function clampFree(point: Point, size: Size, area: Rect): Point {
   return {
-    x: Math.round(
+    x: px(
       clamp(point.x, area.x - ISLAND_PAD, area.x + area.width + ISLAND_PAD - size.width),
     ),
-    y: Math.round(
+    y: px(
       clamp(point.y, area.y - ISLAND_PAD, area.y + area.height + ISLAND_PAD - size.height),
     ),
   };
@@ -145,6 +162,8 @@ export interface DragInput {
   readonly edge: IslandEdge | null;
   /** How deep into the rail the pointer held the pill when it got there. */
   readonly depth: number;
+  /** The rail a free blob is currently drawn onto, if any. */
+  readonly snap: IslandEdge | null;
 }
 
 export interface DragFrame extends Point {
@@ -191,34 +210,41 @@ export function dragFrame(input: DragInput): DragFrame {
       size,
       area,
     );
-    return { ...free, edge: null, snap: snapEdge(free, size, area), depth: 0, regrab: true };
+    return { ...free, edge: null, snap: null, depth: 0, regrab: true };
   }
 
+  // Near a rail the blob is drawn onto it, centered under the pointer along
+  // the rail, inside the outline of the pill it would become.
+  const snap = snapEdge(pointer, area, input.snap);
+  if (snap) {
+    const along = isVertical(snap) ? pointer.y - area.y : pointer.x - area.x;
+    return { ...dockPoint(snap, along, size, area), edge: null, snap, depth: 0, regrab: false };
+  }
   const free = clampFree(
     { x: pointer.x - grab.x * size.width, y: pointer.y - grab.y * size.height },
     size,
     area,
   );
-  return { ...free, edge: null, snap: snapEdge(free, size, area), depth: 0, regrab: false };
+  // Leaving a rail's pull, the blob comes back centered under the pointer.
+  return { ...free, edge: null, snap: null, depth: 0, regrab: input.snap !== null };
 }
 
-/** The rail a free unit is within `snapPx` of, nearest first; null when none. */
-export function snapEdge(position: Point, size: Size, area: Rect): IslandEdge | null {
-  const unit = {
-    left: position.x + ISLAND_PAD,
-    top: position.y + ISLAND_PAD,
-    right: position.x + size.width - ISLAND_PAD,
-    bottom: position.y + size.height - ISLAND_PAD,
-  };
-  const gaps: Record<IslandEdge, number> = {
-    top: unit.top - area.y,
-    bottom: area.y + area.height - unit.bottom,
-    left: unit.left - area.x,
-    right: area.x + area.width - unit.right,
-  };
+/**
+ * The rail a blob held at this pointer is drawn onto: the nearest edge within
+ * reach, with a little extra hold on the rail it is already on.
+ */
+export function snapEdge(
+  pointer: Point,
+  area: Rect,
+  current: IslandEdge | null = null,
+): IslandEdge | null {
+  const distance = edgeDistances(pointer, area);
+  if (current && distance[current] <= SNAP_REACH + SNAP_HOLD) {
+    return current;
+  }
   let best: IslandEdge | null = null;
   for (const edge of EDGES) {
-    if (gaps[edge] <= ISLAND_TIMING.snapPx && (best === null || gaps[edge] < gaps[best])) {
+    if (distance[edge] <= SNAP_REACH && (best === null || distance[edge] < distance[best])) {
       best = edge;
     }
   }
