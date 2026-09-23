@@ -22,8 +22,14 @@ branch `design/approved-rollout` is merged into it.
 | G7 Hardening | 13/19 — performance and polish pass |
 | G8 SDK / packaging | 1/10 |
 
-`bun run verify` passes end to end: lockfile, lint, typecheck, 356 tests,
-build, and both startup phases (119 checks).
+`bun run verify` passes end to end: lockfile, lint, typecheck, 375 tests,
+build, and both startup phases (129 checks).
+
+Newest: Claude Code in a terminal tile reports through its own hooks when it
+waits for a permission or asks a question, and whether it is working or idle.
+The island shows that with Claude's mark and answers it in place (Allow/Deny,
+or the question's choices). Verified against the real Claude Code 2.1.280;
+see `PROGRESS.md`, "Agents that wait on the person".
 
 ## How to run it
 
@@ -47,12 +53,13 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
 
 ## What is not built yet
 
-1. **Answering from the island.** The island shows an agent's question and a
-   permission request, but its Approve and Answer actions only open the run
-   in the main window. There is no backend for answering a question or
-   granting a permission, and nothing produces the `agentQuestion` widget, so
-   a team agent's question appears as a waiting entry to approve. This is the
-   largest open piece of product work.
+1. **Waiting and working for tools other than Claude Code.** Only Claude Code
+   tiles report that they wait on the person, and whether they work or idle.
+   Codex, Gemini, Antigravity and OpenCode tiles report neither; the island
+   shows them as "running" and cannot answer them. Each would need its own
+   channel in its provider package, measured against the real tool first, as
+   `packages/providers/claude/src/attention.ts` was. A team agent's question
+   still appears as a waiting entry whose Approve only opens the run.
 2. **Agents in a remote workspace.** Files on another machine can be browsed,
    opened, edited and saved over SSH. Git reports "no repository" there and a
    terminal still opens on this computer, so agents cannot work remotely yet.
@@ -70,6 +77,22 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
 
 ## Things that will bite you
 
+- **Claude Code runs with extra hooks.** Every tile's `--settings` file adds
+  hooks next to the person's own (Claude Code merges them). Only the
+  permission hook waits — for an answer file from the application, for a
+  "withdrawn" note, or for Claude Code to end it — and it prints the answer
+  as is; the others run with `async: true`. The measured behaviour this relies
+  on is written at the top of `attention.ts`; re-measure after a major Claude
+  Code update with `real-claude-attention.test.ts`.
+- **Running the real Claude tests in a fresh environment.** A first start of
+  Claude Code shows a theme picker and, per folder, a trust question; the
+  test answers the trust question itself, but onboarding must be done (or
+  `CLAUDE_CONFIG_DIR` pointed at a configuration with
+  `hasCompletedOnboarding`). Inside a Claude Code session, remove that
+  session's own `CLAUDE_*` variables first, or the child talks to it.
+- **The test SSH server now ends its connections when closed.** Before, the
+  startup check waited five minutes per phase for the application's idle SSH
+  connection to let go.
 - **The startup check only logs at the end.** A check that hangs leaves a log
   with no PASS/FAIL lines at all. Every check has a time limit; a hidden
   window never answers `capturePage`, which is why the island capture has one.

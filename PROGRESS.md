@@ -26,7 +26,7 @@ Weighted contribution = weight x completion.
 **G7 — UX, security, reliability and performance.** As of 2026-09-23 the
 approved design rollout, the SSH remote workspaces and the move to bun are one
 branch, and `bun run verify` passes on it end to end: lockfile, lint,
-typecheck, 356 tests, the build and both startup phases (119 checks, none
+typecheck, 375 tests, the build and both startup phases (129 checks, none
 failing). What remains in G6 is the tray, multi-monitor handling and the
 idle-unobtrusiveness judgement; in G5, two real providers collaborating; in
 G2, running the Codex and Antigravity profiles against those tools.
@@ -56,10 +56,41 @@ bridge, tested through a real `/bin/sh`), where it used to be PowerShell only
 and took the person's own status line with it.
 
 Not exercised anywhere yet: the island's real drag through the OS cursor.
-Not built yet: answering an agent's question or approving a permission from
-the island. Its Approve action opens the run that asked, and the
-`agentQuestion` widget is defined but nothing produces it, so an agent's
-question appears as a waiting entry to approve.
+
+### Agents that wait on the person, on the island (2026-09-23)
+
+When Claude Code in a terminal tile asks for a permission or puts a question,
+the island now shows it with Claude's own mark in the circle, and it can be
+answered right there: Allow and Deny for a permission, the offered choices for
+a question. Claude Code's own prompt in the tile stays usable the whole time;
+whichever answer comes first counts. The same hooks tell the island whether
+Claude is working on a turn or idle at its prompt, so an idle Claude tile
+counts as resting, not as work.
+
+This rests on Claude Code's documented hooks, and on measurements against the
+installed Claude Code 2.1.280 made before building it (recorded in
+`packages/providers/claude/src/attention.ts`): the permission dialog stays
+usable while a hook waits; a late `decision.behavior` allow or deny still
+settles it; Esc in the terminal ends the waiting hook; a question is answered
+with `updatedInput.answers`; an interrupted turn fires no hook but is written
+to the session transcript.
+
+Verified against the real Claude Code, through the application's own terminal
+stack (`real-claude-attention.test.ts`, run deliberately, see below): Allow
+from outside the terminal runs the command; Deny does not; a question answered
+from outside, followed by a permission, writes the chosen answer; the tile
+reports idle after starting, working mid-turn, idle after the turn, and idle
+again after an Esc interrupt. Verified in the application by the startup
+check, with a stand-in for Claude Code's executable that calls the hooks the
+way Claude Code does: the island shows the Claude mark, Allow and Deny, a
+click on Allow reaches the hook in Claude Code's format, and the finished turn
+rests.
+
+Not covered: Codex, Gemini, Antigravity and OpenCode tiles report neither
+waiting nor working; the island shows them as "running" rather than claiming
+work. A team agent's question still appears as a waiting entry whose Approve
+opens the run. The Windows (PowerShell) hook bridge is written but was not run
+here.
 
 ## How this file is verified
 
@@ -69,7 +100,7 @@ Everything ticked below is proven by `bun run verify`, which runs:
   every `package.json`, so a frozen install cannot fail only on a build machine
 - `lint` — ESLint over the workspace
 - `typecheck` — strict TypeScript over Node and web projects
-- `test` — 356 unit and integration tests (4 more are skipped here: 2 spend
+- `test` — 375 unit and integration tests (8 more are skipped here: 6 spend
   real provider quota, see below, and 2 exercise the Windows status line
   bridge and only run on Windows)
 - `build` — electron-vite production build
@@ -93,8 +124,13 @@ Everything ticked below is proven by `bun run verify`, which runs:
   workspace on another machine over SSH: a real SSH server with a real SFTP
   subsystem, started in the check, a connection whose host key is learned,
   and a file listed, opened, edited and saved, the edit read back from the
-  served directory. It then runs a second time against the same database to
-  prove a conversation, its provider session, the island's preferences and
+  served directory. A terminal agent started through the Claude Code
+  provider — with a stand-in executable that calls the run's hooks the way
+  Claude Code does — reports that it waits for a permission and is working;
+  the island shows it with Claude's mark and Allow and Deny, a click on Allow
+  reaches the permission hook in Claude Code's own answer format, and the
+  finished turn leaves the agent resting. It then runs a second time against
+  the same database to prove a conversation, its provider session, the island's preferences and
   the remote workspace with its host key survive a restart.
 
 Additionally, and deliberately outside the default run:
@@ -103,8 +139,13 @@ Additionally, and deliberately outside the default run:
   through the whole stack. It was run once for this milestone: the tool was
   detected with its version, an answer streamed back, real account usage was
   reported by the provider, and a second turn resumed the same conversation.
+- The same variable runs `real-claude-attention.test.ts`: the installed Claude
+  Code 2.1.280 in a real terminal, through the provider, the terminal service
+  and the hook bridge. Run on 2026-09-23 with the smallest model: all four
+  cases passed (Allow, Deny, a question then a permission, and idle after an
+  interrupt).
 
-Last full run: 2026-09-23, all checks passed (both startup phases, 119 checks).
+Last full run: 2026-09-23, all checks passed (both startup phases, 129 checks).
 
 A packaged Linux build (`electron-builder --linux dir` under bun) was also
 started and ran the startup check: terminal, database and SSH worked from
