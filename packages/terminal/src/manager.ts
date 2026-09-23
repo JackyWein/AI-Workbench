@@ -119,6 +119,10 @@ export class TerminalManager {
         ...(process.env as Record<string, string>),
         ...options.env,
         TERM: "xterm-256color",
+        // The terminal's own folder, not the one the application was started
+        // from: programs that read PWD before their working folder (OpenCode
+        // does) would otherwise work in the application's folder.
+        ...(options.cwd ? { PWD: options.cwd } : {}),
       },
     });
 

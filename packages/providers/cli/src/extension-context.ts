@@ -11,6 +11,8 @@ export interface ExtensionContextInput {
   readonly env: Readonly<Record<string, string>>;
   readonly accountHome: string | null;
   readonly transport: CliTransport;
+  /** The installed version as detection read it; shared, not probed again. */
+  readonly version: () => Promise<string | null>;
 }
 
 /**
@@ -28,6 +30,7 @@ export function createExtensionContext(input: ExtensionContextInput): CliExtensi
     env: input.env,
     accountHome: input.accountHome,
     locate: () => transport.locate(),
+    version: input.version,
     exec: (args, options) => transport.exec({ args, ...options }),
     start: (args, options) => transport.start({ args, ...options }),
   };

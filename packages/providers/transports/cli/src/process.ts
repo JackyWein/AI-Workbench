@@ -69,7 +69,16 @@ export function startCli(options: CliSpawnOptions): CliRun {
     const target = resolveSpawnTarget(options.executablePath, options.args);
     child = spawn(target.command, target.args, {
       ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
-      env: { ...process.env, ...options.env, ...target.env },
+      // PWD follows the folder the tool runs in, as a shell would set it.
+      // Inherited, it names the folder the application was started from, and
+      // tools that prefer PWD over their real working folder (OpenCode's
+      // `run` and terminal interface do) then work there instead.
+      env: {
+        ...process.env,
+        ...options.env,
+        ...target.env,
+        ...(options.cwd === undefined ? {} : { PWD: options.cwd }),
+      },
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       windowsVerbatimArguments: target.windowsVerbatimArguments,

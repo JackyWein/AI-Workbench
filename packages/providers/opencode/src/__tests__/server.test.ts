@@ -6,9 +6,11 @@ import {
   OpencodeServerLink,
   OpencodeServerState,
   answerRequest,
+  argsForOpencode2,
   mergeOpencodeModels,
   parseOpencodeLine,
   parseOpencodeModels,
+  parseMajor,
   parseStatsTable,
   statsLimits,
 } from "../index.js";
@@ -370,6 +372,49 @@ describe("OpenCode's server connection", () => {
     }
   });
 
+  it("tries again when the stream accepted the connection but never answered", async () => {
+    // OpenCode 1.18 while its server starts: the first request is taken and
+    // left without an answer for good.
+    let calls = 0;
+    const expected = `Basic ${Buffer.from("opencode:secret").toString("base64")}`;
+    server = createServer((request, response) => {
+      if (request.headers.authorization !== expected) {
+        response.writeHead(401).end();
+        return;
+      }
+      if (request.url === "/event") {
+        calls += 1;
+        if (calls === 1) {
+          return;
+        }
+        response.writeHead(200, { "content-type": "text/event-stream" });
+        response.write(
+          `data: ${JSON.stringify({ type: "session.status", properties: { sessionID: "ses_1", status: { type: "busy" } } })}\n\n`,
+        );
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json" }).end("[]");
+    });
+    await new Promise<void>((resolve) => server?.listen(0, "127.0.0.1", resolve));
+    const port = (server?.address() as AddressInfo).port;
+    const state = new OpencodeServerState();
+    const link = new OpencodeServerLink(port, "secret", state, () => undefined);
+    link.start();
+    try {
+      const deadline = Date.now() + 10_000;
+      while (state.activity?.state !== "working") {
+        if (Date.now() > deadline) {
+          throw new Error("never heard the server");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(calls).toBeGreaterThan(1);
+    } finally {
+      link.stop();
+      server?.closeAllConnections();
+    }
+  }, 15_000);
+
   it("hears nothing with a wrong password", async () => {
     await fakeServer("secret");
     const port = (server?.address() as AddressInfo).port;
@@ -380,5 +425,34 @@ describe("OpenCode's server connection", () => {
     link.stop();
     expect(state.attention).toBeNull();
     expect(state.activity).toBeNull();
+  });
+});
+
+describe("OpenCode 2's command line", () => {
+  it("reads the major version from what --version prints", () => {
+    expect(parseMajor("2.0.15\n")).toBe(2);
+    expect(parseMajor("opencode 1.18.32")).toBe(1);
+    expect(parseMajor("0.0.0-dev-202609221946")).toBe(0);
+    expect(parseMajor("unknown")).toBeNull();
+  });
+
+  it("moves a turn's variant into its model, as `--model provider/model#variant`", () => {
+    expect(
+      argsForOpencode2(
+        ["run", "--format", "json", "--model", "openai/gpt-5.5", "--variant", "high", "--auto", "hi"],
+        "turn",
+      ),
+    ).toEqual(["run", "--format", "json", "--model", "openai/gpt-5.5#high", "--auto", "hi"]);
+    // Without a model there is nothing to attach a variant to.
+    expect(argsForOpencode2(["run", "--variant", "high", "hi"], "turn")).toEqual(["run", "hi"]);
+  });
+
+  it("starts the terminal interface without the flags it no longer takes", () => {
+    expect(
+      argsForOpencode2(
+        ["--port", "4123", "--hostname", "127.0.0.1", "--model", "a/b", "--variant", "high", "--auto"],
+        "interactive",
+      ),
+    ).toEqual(["--auto"]);
   });
 });

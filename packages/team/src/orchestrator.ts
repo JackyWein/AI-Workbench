@@ -491,9 +491,24 @@ export class TeamOrchestrator {
     );
 
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let cap: ReturnType<typeof setTimeout> | null = null;
     let progressTimer: ReturnType<typeof setInterval> | null = null;
     let lastDetail = "";
+    let lastSent = { detail: "", at: 0 };
     let rejectDeadline: ((error: Error) => void) | null = null;
+
+    // What the agent is doing, said when it changes and otherwise at most
+    // once a second: a streaming answer produces text many times a second,
+    // and each event crosses to the window.
+    const progress = (detail: string): void => {
+      lastDetail = detail.length > 200 ? `${detail.slice(0, 199)}…` : detail;
+      const now = Date.now();
+      if (lastDetail === lastSent.detail && now - lastSent.at < 1_000) {
+        return;
+      }
+      lastSent = { detail: lastDetail, at: now };
+      this.#service.emitAgentProgress(agent.id, lastDetail);
+    };
 
     const restartSilence = (): void => {
       if (timer) {
@@ -513,7 +528,7 @@ export class TeamOrchestrator {
       rejectDeadline = reject;
       restartSilence();
       // The absolute cap is not slid: it ends the turn no matter what.
-      const cap = setTimeout(() => {
+      cap = setTimeout(() => {
         reject(
           new Error(
             `turn exceeded ${Math.round(hardCapMs / 60_000)} minutes and was stopped`,
@@ -530,22 +545,17 @@ export class TeamOrchestrator {
         restartSilence();
         if (event.type === "text_delta") {
           collected.push(event.text);
-          lastDetail = "writing";
-          this.#service.emitAgentProgress(agent.id, lastDetail);
+          progress("writing");
         } else if (event.type === "message") {
           // A provider that answers in one piece rather than streaming.
           collected.push(event.text);
-          lastDetail = "writing";
-          this.#service.emitAgentProgress(agent.id, lastDetail);
+          progress("writing");
         } else if (event.type === "tool_call") {
-          lastDetail = event.toolCall.summary ?? event.toolCall.name;
-          this.#service.emitAgentProgress(agent.id, lastDetail);
+          progress(event.toolCall.summary ?? event.toolCall.name);
         } else if (event.type === "tool_result") {
-          lastDetail = `${event.toolCall.summary ?? event.toolCall.name} — ${event.toolCall.state}`;
-          this.#service.emitAgentProgress(agent.id, lastDetail);
+          progress(`${event.toolCall.summary ?? event.toolCall.name} — ${event.toolCall.state}`);
         } else if (event.type === "status") {
-          lastDetail = event.status;
-          this.#service.emitAgentProgress(agent.id, lastDetail);
+          progress(event.status);
         } else if (event.type === "error") {
           throw new Error(event.error.message);
         }
@@ -578,6 +588,9 @@ export class TeamOrchestrator {
       }
       if (progressTimer) {
         clearInterval(progressTimer);
+      }
+      if (cap) {
+        clearTimeout(cap);
       }
     }
   }

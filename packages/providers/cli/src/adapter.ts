@@ -79,6 +79,7 @@ const HOOK_TIMEOUT_MS = {
   probeAuth: 30_000,
   integration: 30_000,
   discoverImportables: 60_000,
+  adaptArgs: 20_000,
 } as const;
 
 interface RunState {
@@ -234,6 +235,10 @@ export class CliProviderAdapter implements AIProviderAdapter {
       env: this.#env,
       accountHome: this.#accountHome(),
       transport,
+      version: async () => {
+        const installation = await this.detectInstallation();
+        return installation.state === "installed" ? (installation.version ?? null) : null;
+      },
     });
 
     if (this.#extensions.discoverModels || this.#profile.modelsArgs.length > 0) {
@@ -407,7 +412,7 @@ export class CliProviderAdapter implements AIProviderAdapter {
       yield { type: "warning", message: mcp.warning };
     }
 
-    const args = buildTurnArgs(profile, {
+    const built = buildTurnArgs(profile, {
       prompt: message.text,
       sessionId: session.sessionId,
       // Resume arguments resolve to nothing while the provider session id is
@@ -422,6 +427,7 @@ export class CliProviderAdapter implements AIProviderAdapter {
       workingDirectory: setup?.workingDirectory,
       mcp: mcp.launch,
     });
+    const args = await this.#adaptArgs(built, "turn");
 
     let run: CliRun;
     try {
@@ -586,9 +592,8 @@ export class CliProviderAdapter implements AIProviderAdapter {
               }) ?? Promise.resolve(null),
           )
         : null;
-    return {
-      command,
-      args: [
+    const args = await this.#adaptArgs(
+      [
         // Configured arguments come first on every run of the tool.
         ...(this.#context?.config.arguments ?? []),
         ...(telemetry?.args ?? []),
@@ -601,6 +606,11 @@ export class CliProviderAdapter implements AIProviderAdapter {
           mcp: mcp.launch,
         }),
       ],
+      "interactive",
+    );
+    return {
+      command,
+      args,
       env: { ...this.#env, ...mcp.launch.env, ...telemetry?.env },
       cwd: request.workingDirectory,
       ...(telemetry ? { telemetry: this.#forwardTelemetry(telemetry) } : {}),
@@ -866,6 +876,17 @@ export class CliProviderAdapter implements AIProviderAdapter {
   }
 
   /** Runs a hook against this entry's context; null when not initialized or on failure. */
+  /** The arguments as the installed tool takes them (extension `adaptArgs`). */
+  async #adaptArgs(args: string[], kind: "turn" | "interactive"): Promise<string[]> {
+    if (!this.#extensions.adaptArgs) {
+      return args;
+    }
+    const adapted = await this.#runExtension("adaptArgs", HOOK_TIMEOUT_MS.adaptArgs, (extensions, context) =>
+      extensions.adaptArgs?.(args, kind, context) ?? Promise.resolve(null),
+    );
+    return adapted ?? args;
+  }
+
   async #runExtension<T>(
     hook: string,
     timeoutMs: number,

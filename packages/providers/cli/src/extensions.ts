@@ -39,6 +39,12 @@ export interface CliExtensionContext {
   readonly accountHome: string | null;
   /** The executable, or null when the tool is not installed. */
   locate(): Promise<string | null>;
+  /**
+   * The installed version as the application's detection read it, or null.
+   * Reuses that reading: starting the tool again only to ask costs a process
+   * and can collide with a run starting at the same moment.
+   */
+  version(): Promise<string | null>;
   /** Runs the tool to completion and buffers its output. For probes. */
   exec(
     args: string[],
@@ -138,6 +144,16 @@ export interface CliProviderExtensions {
     status(context: CliExtensionContext): Promise<ProviderIntegration | null>;
     setupArgs(context: CliExtensionContext): Promise<string[] | null>;
   };
+  /**
+   * Adjusts the arguments of a headless turn or of an interactive run just
+   * before the tool starts, for a tool whose command line differs between
+   * its releases. Returning null keeps the arguments as built.
+   */
+  adaptArgs?(
+    args: readonly string[],
+    kind: "turn" | "interactive",
+    context: CliExtensionContext,
+  ): Promise<string[] | null>;
   /**
    * Decodes one line of turn output. Returning undefined hands the line to the
    * profile's rules instead, so an extension only has to cover what the rules

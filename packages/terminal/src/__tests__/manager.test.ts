@@ -87,6 +87,28 @@ describe("TerminalManager", () => {
     expect(seen).toContain(marker);
   });
 
+  it("hands a program its own folder in PWD, not the application's", async () => {
+    // OpenCode reads PWD before its working folder; inherited from the
+    // application it pointed at the folder the application started in.
+    const info = manager.create({
+      sessionId: "s1",
+      cwd: directory,
+      command: {
+        file: process.execPath,
+        args: ["-e", "process.stdout.write('pwd=' + process.env.PWD + '\\n')"],
+      },
+      env: { PWD: "/where/the/app/started" },
+    });
+    expect(info.cwd).toBe(directory);
+    const seen = await waitFor(
+      () => output,
+      (value) => value.includes("pwd="),
+    );
+    const marker = directory.split(/[\\/]/).filter(Boolean).at(-1) ?? directory;
+    expect(seen).toContain(marker);
+    expect(seen).not.toContain("/where/the/app/started");
+  });
+
   it("streams command output back", async () => {
     const info = manager.create({ sessionId: "s1", cwd: directory, shell });
 

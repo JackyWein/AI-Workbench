@@ -22,10 +22,12 @@ import type {
 import { parseOpencodeLine } from "./events.js";
 import { mergeOpencodeModels, parseOpencodeModels } from "./models.js";
 import { opencodeServerTelemetry, sessionMetrics } from "./server.js";
+import { adaptOpencodeArgs, opencodeMajor } from "./version.js";
 
 export * from "./events.js";
 export * from "./models.js";
 export * from "./server.js";
+export * from "./version.js";
 
 /**
  * What OpenCode needs beyond its profile data.
@@ -187,6 +189,13 @@ async function interactiveTelemetry(
   context: CliExtensionContext,
   run: CliInteractiveRun,
 ): Promise<CliInteractiveTelemetry | null> {
+  // OpenCode 2's terminal interface has no server of its own to follow; it
+  // talks to OpenCode's background service. Without live status it still
+  // starts, rather than failing on flags it no longer has.
+  const major = await opencodeMajor(context);
+  if (major !== null && major >= 2) {
+    return null;
+  }
   const server = await opencodeServerTelemetry();
   if (!server) {
     return null;
@@ -335,6 +344,7 @@ async function discoverModels(context: CliExtensionContext): Promise<ModelInfo[]
 
 /** What OpenCode needs beyond its profile data. */
 export const opencodeExtensions: CliProviderExtensions = {
+  adaptArgs: adaptOpencodeArgs,
   discoverModels,
   readUsage,
   interactiveTelemetry,

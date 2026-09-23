@@ -110,6 +110,23 @@ describe("startCli", () => {
     expect(await collect(run.lines)).toEqual(["stdin:hello from the host", "line 1"]);
   });
 
+  it("tells the process its own folder in PWD, not the application's", async () => {
+    // OpenCode takes PWD before its working folder; an inherited PWD made it
+    // work in the folder the application was started from.
+    const folder = await makeTempDirectory("cli-pwd-");
+    try {
+      const run = startCli({
+        executablePath: process.execPath,
+        args: ["-e", "process.stdout.write(`${process.env.PWD}\\n`)"],
+        cwd: folder,
+        env: { PWD: "/where/the/app/started" },
+      });
+      expect(await collect(run.lines)).toEqual([folder]);
+    } finally {
+      await removeTempDirectory(folder);
+    }
+  });
+
   it("captures stderr and a non-zero exit code", async () => {
     const run = startCli({
       executablePath: process.execPath,
