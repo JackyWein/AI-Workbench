@@ -4,5 +4,6 @@ export * from "./profile.js";
 export * from "./profiles.js";
 export * from "./extensions.js";
 export * from "./follow.js";
+export * from "./hooks.js";
 export * from "./usage.js";
 export * from "./factory.js";

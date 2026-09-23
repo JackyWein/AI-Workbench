@@ -1,15 +1,14 @@
-import { rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import {
-  JsonLinesFollower,
+  HOOK_WAIT_TIMEOUT_S,
+  HookState,
+  describeToolInput,
   field,
-  listDirectory,
-  modifiedAt,
-  readJsonFile,
+  oneLine,
   stringField,
+  type HookDialect,
+  type HookRequest,
 } from "@ai-workbench/provider-cli";
 import type {
-  TerminalActivity,
   TerminalAttention,
   TerminalAttentionChoice,
   TerminalAttentionResponse,
@@ -41,6 +40,9 @@ import type {
  * always; whichever comes first counts. The run's other hooks only report,
  * in the background: a request that was settled elsewhere is let go, and
  * whether Claude is working or idle at its prompt follows from them.
+ *
+ * The mechanics are shared with other tools (`HookState` in the CLI
+ * package); this file is what is Claude Code's own.
  */
 
 export const ATTENTION_SOURCE = "Claude Code hooks";
@@ -49,7 +51,7 @@ export const ATTENTION_SOURCE = "Claude Code hooks";
  * How long a permission hook may wait for an answer from the application.
  * Claude Code cancels it after this and simply keeps its own dialog.
  */
-export const PERMISSION_HOOK_TIMEOUT_S = 86_400;
+export const PERMISSION_HOOK_TIMEOUT_S = HOOK_WAIT_TIMEOUT_S;
 
 /** What Claude is told when the person declines from outside the terminal. */
 export const DENY_MESSAGE = "The person declined this from the AI Workbench status island.";
@@ -65,79 +67,6 @@ export const HOOK_EVENTS = [
   "StopFailure",
 ] as const;
 export type HookEvent = (typeof HOOK_EVENTS)[number];
-
-/** Checks in the waiting hook; bounds how long an orphaned one can linger. */
-const WAIT_STEPS = PERMISSION_HOOK_TIMEOUT_S * 5;
-
-/**
- * The hook bridge on macOS and Linux, run with /bin/sh like the status line
- * bridge. Arguments: this run's event directory and the event's name.
- *
- * Every event is saved atomically as a file of its own — hook input is JSON
- * that may span lines, so one shared log would not do. A permission request
- * then waits for an answer file from the application, for a note that it was
- * settled elsewhere, or for Claude Code to end it; it prints the answer as is,
- * so no JSON is ever parsed in sh.
- */
-export const POSIX_HOOK_SCRIPT = `dir=$1
-name=$2
-base="$dir/$name.$$"
-if cat > "$base.tmp"; then
-  mv -f "$base.tmp" "$base.json"
-else
-  rm -f "$base.tmp"
-  exit 0
-fi
-[ "$name" = "PermissionRequest" ] || exit 0
-parent=$PPID
-n=0
-while [ "$n" -lt ${WAIT_STEPS} ]; do
-  if [ -f "$base.answer" ]; then
-    cat "$base.answer"
-    rm -f "$base.answer"
-    exit 0
-  fi
-  if [ -f "$base.withdrawn" ]; then
-    rm -f "$base.withdrawn"
-    exit 0
-  fi
-  kill -0 "$parent" 2>/dev/null || exit 0
-  sleep 0.2 2>/dev/null || sleep 1
-  n=$((n + 1))
-done
-exit 0
-`;
-
-/**
- * The same bridge for Windows, where Claude Code runs hook commands through
- * Git Bash or PowerShell and \`powershell -File\` works from both.
- */
-export const POWERSHELL_HOOK_SCRIPT = `param([string]$Dir, [string]$Name)
-$ErrorActionPreference = 'SilentlyContinue'
-$utf8 = New-Object System.Text.UTF8Encoding $false
-[Console]::InputEncoding = $utf8
-[Console]::OutputEncoding = $utf8
-$json = [Console]::In.ReadToEnd()
-$base = Join-Path $Dir "$Name.$PID"
-try {
-  [IO.File]::WriteAllText("$base.tmp", $json, $utf8)
-  Move-Item -LiteralPath "$base.tmp" -Destination "$base.json" -Force
-} catch { exit 0 }
-if ($Name -ne 'PermissionRequest') { exit 0 }
-for ($i = 0; $i -lt ${WAIT_STEPS}; $i++) {
-  if (Test-Path -LiteralPath "$base.answer") {
-    [Console]::Out.Write([IO.File]::ReadAllText("$base.answer", $utf8))
-    Remove-Item -LiteralPath "$base.answer" -Force
-    exit 0
-  }
-  if (Test-Path -LiteralPath "$base.withdrawn") {
-    Remove-Item -LiteralPath "$base.withdrawn" -Force
-    exit 0
-  }
-  Start-Sleep -Milliseconds 200
-}
-exit 0
-`;
 
 /**
  * The hooks section of a run's settings. The permission hook blocks — that is
@@ -169,54 +98,8 @@ export function hookSettings(command: (event: HookEvent) => string): Record<stri
   return hooks;
 }
 
-/** Whether a process still runs. Signal 0 checks without touching it. */
-export function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    // It exists but belongs to someone else: still alive.
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
-
-interface OpenRequest {
-  readonly attention: TerminalAttention;
-  /** Path prefix of the hook's answer and withdrawn files. */
-  readonly base: string;
-  /** The waiting hook's process. */
-  readonly pid: number;
-  readonly tool: string;
-  readonly input: unknown;
-  /** The subagent that asked, when it was not the main conversation. */
-  readonly agentId: string | undefined;
-}
-
-const EVENT_FILE = /^([A-Za-z]+)\.(\d+)\.json$/;
 /** How Claude Code records a turn the person interrupted, in its transcript. */
 const INTERRUPTED = "[Request interrupted by user";
-const MAX_SUMMARY = 300;
-
-/** One line of at most `max` characters. */
-function oneLine(text: string, max = MAX_SUMMARY): string {
-  const flat = text.replace(/\s+/g, " ").trim();
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
-}
-
-/** What a tool call wants, in the tool's own terms: the command, the file. */
-export function describeToolInput(input: unknown): string {
-  const text =
-    stringField(input, "command") ??
-    stringField(input, "file_path") ??
-    stringField(input, "notebook_path") ??
-    stringField(input, "path") ??
-    stringField(input, "url") ??
-    stringField(input, "query") ??
-    stringField(input, "pattern") ??
-    stringField(input, "description") ??
-    "";
-  return oneLine(text);
-}
 
 /** A permission request as the application shows it. */
 export function attentionOf(
@@ -285,118 +168,19 @@ export function isInterruption(record: unknown): boolean {
   return texts.some((text) => text.startsWith(INTERRUPTED));
 }
 
-/**
- * The run's state as its hooks report it: the requests waiting on the person,
- * and whether Claude is working or idle. Built from the hook files as they
- * arrive; only this class knows the file layout and Claude Code's answer
- * format.
- */
-export class ClaudeHookState {
-  readonly #directory: string;
-  readonly #alive: (pid: number) => boolean;
-  #open: OpenRequest[] = [];
-  #activity: TerminalActivity | null = null;
-  /** The session transcript, read from where it stood when first seen. */
-  #transcript: JsonLinesFollower | null = null;
-
-  constructor(directory: string, options: { readonly alive?: (pid: number) => boolean } = {}) {
-    this.#directory = directory;
-    this.#alive = options.alive ?? processAlive;
-  }
-
-  /** The oldest request still waiting; null when nothing waits. */
-  get current(): TerminalAttention | null {
-    return this.#open[0]?.attention ?? null;
-  }
-
-  /** Working or idle; null until Claude Code has said either. */
-  get activity(): TerminalActivity | null {
-    return this.#activity;
-  }
-
-  /** Takes in what the hooks reported since the last call. */
-  async read(): Promise<void> {
-    const files = (await listDirectory(this.#directory)).filter((name) => EVENT_FILE.test(name));
-    const stamped = await Promise.all(
-      files.map(async (name) => ({ name, at: await modifiedAt(join(this.#directory, name)) })),
-    );
-    // In the order they were written; a hook's file appears at once.
-    const ordered = stamped
-      .filter((entry): entry is { name: string; at: number } => entry.at !== null)
-      .sort((left, right) => left.at - right.at || left.name.localeCompare(right.name));
-    for (const { name, at } of ordered) {
-      const path = join(this.#directory, name);
-      const match = EVENT_FILE.exec(name);
-      const body = await readJsonFile(path);
-      await rm(path, { force: true });
-      if (!match?.[1] || !match[2] || body === null) {
-        continue;
-      }
-      await this.#apply(match[1], Number(match[2]), body, at);
+/** What the permission hook prints: Claude Code's own decision format. */
+function answerOf(request: HookRequest, response: TerminalAttentionResponse): string | null {
+  const { attention } = request;
+  let decision: Record<string, unknown>;
+  if ("decision" in response) {
+    if (attention.kind !== "permission") {
+      return null;
     }
-    // A hook that is gone no longer waits: Claude Code ended it because the
-    // person answered in the terminal, or its time ran out.
-    for (const request of this.#open.filter((entry) => !this.#alive(entry.pid))) {
-      await this.#close(request, false);
-    }
-    // An interrupted turn ends without a hook; the transcript says so.
-    for (const record of (await this.#transcript?.readNew()) ?? []) {
-      const at = Date.parse(stringField(record, "timestamp") ?? "");
-      const activity = this.#activity;
-      if (
-        activity?.state === "working" &&
-        isInterruption(record) &&
-        (Number.isNaN(at) || at >= activity.since.getTime())
-      ) {
-        this.#activity = { state: "idle", since: Number.isNaN(at) ? new Date() : new Date(at) };
-      }
-    }
-  }
-
-  /**
-   * Hands an answer to the waiting hook, which passes it to Claude Code.
-   * False when the request no longer waits or cannot take this answer.
-   */
-  async respond(attentionId: string, response: TerminalAttentionResponse): Promise<boolean> {
-    const request = this.#open.find((entry) => entry.attention.id === attentionId);
-    if (!request?.attention.answerable) {
-      return false;
-    }
-    if (!this.#alive(request.pid)) {
-      await this.#close(request, false);
-      return false;
-    }
-    const decision = this.#decision(request, response);
-    if (!decision) {
-      return false;
-    }
-    const output = JSON.stringify({
-      hookSpecificOutput: { hookEventName: "PermissionRequest", decision },
-    });
-    // Renamed into place, so the hook never prints half an answer.
-    await writeFile(`${request.base}.answer.tmp`, output, "utf8");
-    await rename(`${request.base}.answer.tmp`, `${request.base}.answer`);
-    this.#open = this.#open.filter((entry) => entry !== request);
-    return true;
-  }
-
-  /** Lets every waiting hook go; Claude Code's own dialogs stay. */
-  async withdrawAll(): Promise<void> {
-    for (const request of [...this.#open]) {
-      await this.#close(request, true);
-    }
-  }
-
-  #decision(request: OpenRequest, response: TerminalAttentionResponse): Record<string, unknown> | null {
-    const { attention } = request;
-    if ("decision" in response) {
-      if (attention.kind !== "permission") {
-        return null;
-      }
-      return response.decision === "allow"
+    decision =
+      response.decision === "allow"
         ? { behavior: "allow" }
         : { behavior: "deny", message: DENY_MESSAGE };
-    }
+  } else {
     const choice = attention.choices.find((entry) => entry.id === response.choice);
     const questions = field(request.input, "questions");
     const text = Array.isArray(questions) ? stringField(questions[0], "question") : undefined;
@@ -411,86 +195,29 @@ export class ClaudeHookState {
     }
     // Claude Code's documented way to answer a question: the original input,
     // with the chosen label under the question's own text.
-    return {
+    decision = {
       behavior: "allow",
       updatedInput: { ...request.input, answers: { [text]: choice.label } },
     };
   }
+  return JSON.stringify({ hookSpecificOutput: { hookEventName: "PermissionRequest", decision } });
+}
 
-  async #apply(event: string, pid: number, body: unknown, at: number): Promise<void> {
-    const agentId = stringField(body, "agent_id");
-    await this.#follow(stringField(body, "transcript_path"));
-    switch (event) {
-      case "PermissionRequest": {
-        const tool = stringField(body, "tool_name") ?? "a tool";
-        const input = field(body, "tool_input");
-        this.#open.push({
-          attention: attentionOf(`${pid}-${Math.round(at)}`, tool, input, new Date(at)),
-          base: join(this.#directory, `PermissionRequest.${pid}`),
-          pid,
-          tool,
-          input,
-          agentId,
-        });
-        return;
-      }
-      case "PostToolUse":
-      case "PostToolUseFailure": {
-        // The tool ran, so its request was allowed somewhere: in the terminal.
-        const tool = stringField(body, "tool_name");
-        const request = this.#open.find((entry) => entry.tool === tool && entry.agentId === agentId);
-        if (request) {
-          await this.#close(request, true);
-        }
-        return;
-      }
-      case "SessionStart":
-      case "UserPromptSubmit":
-      case "Stop":
-      case "StopFailure": {
-        // A subagent's turn and requests are its own; this is the session's.
-        if (agentId !== undefined) {
-          return;
-        }
-        // A new prompt, or the end of the turn: the conversation waits on
-        // nothing it asked before.
-        for (const request of this.#open.filter((entry) => entry.agentId === undefined)) {
-          await this.#close(request, true);
-        }
-        this.#activity = {
-          state: event === "UserPromptSubmit" ? "working" : "idle",
-          since: new Date(at),
-        };
-        return;
-      }
-      default:
-        return;
-    }
-  }
+/** Claude Code's hooks, as the shared hook state reads them. */
+export const claudeDialect: HookDialect = {
+  waitEvent: "PermissionRequest",
+  toolDone: ["PostToolUse", "PostToolUseFailure"],
+  turnStart: ["UserPromptSubmit"],
+  turnEnd: ["SessionStart", "Stop", "StopFailure"],
+  describe: attentionOf,
+  answer: answerOf,
+  // An interrupted turn fires no hook, but it is written to the transcript.
+  endsTurn: isInterruption,
+};
 
-  /** Starts reading a transcript from where it stands now; earlier turns are over. */
-  async #follow(path: string | undefined): Promise<void> {
-    if (!path || this.#transcript?.path === path) {
-      return;
-    }
-    const follower = new JsonLinesFollower(path);
-    for (let chunk = 0; chunk < 64 && (await follower.readNew()).length > 0; chunk += 1) {
-      // Skipping what is already written.
-    }
-    this.#transcript = follower;
-  }
-
-  async #close(request: OpenRequest, withdraw: boolean): Promise<void> {
-    this.#open = this.#open.filter((entry) => entry !== request);
-    try {
-      if (withdraw && this.#alive(request.pid)) {
-        await writeFile(`${request.base}.withdrawn`, "", "utf8");
-      } else {
-        await rm(`${request.base}.withdrawn`, { force: true });
-        await rm(`${request.base}.answer`, { force: true });
-      }
-    } catch {
-      // The directory went with the run; nothing is left to let go.
-    }
+/** The state of one Claude Code run, from its hooks. */
+export class ClaudeHookState extends HookState {
+  constructor(directory: string, options: { readonly alive?: (pid: number) => boolean } = {}) {
+    super(directory, claudeDialect, options);
   }
 }

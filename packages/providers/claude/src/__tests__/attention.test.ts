@@ -3,16 +3,15 @@ import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
+import { POSIX_HOOK_SCRIPT, posixHookCommand } from "@ai-workbench/provider-cli";
 import {
   ClaudeHookState,
   DENY_MESSAGE,
   PERMISSION_HOOK_TIMEOUT_S,
-  POSIX_HOOK_SCRIPT,
   attentionOf,
   hookSettings,
   type HookEvent,
 } from "../attention.js";
-import { posixHookCommand } from "../telemetry.js";
 
 /** A permission request exactly as Claude Code 2.1.280 sent it to a hook. */
 const bashRequest = {
@@ -152,7 +151,10 @@ describe.runIf(process.platform !== "win32")("Claude Code hook bridge", () => {
     event: HookEvent,
     input: unknown,
   ): { readonly pid: number; readonly done: Promise<{ stdout: string; code: number | null }>; kill(): void } {
-    const child = spawn("/bin/sh", ["-c", posixHookCommand({ script, directory: events, event })]);
+    const child = spawn("/bin/sh", [
+      "-c",
+      posixHookCommand({ script, directory: events, event, waits: event === "PermissionRequest" }),
+    ]);
     running.push(child);
     child.stdin.end(JSON.stringify(input));
     let stdout = "";
