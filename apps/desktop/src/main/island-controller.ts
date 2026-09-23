@@ -192,13 +192,23 @@ export class IslandController {
     const errors: Array<IslandSources["errors"][number]> = [];
     const completed: Array<IslandSources["completed"][number]> = [];
 
+    // A message names its sender by agent id, which means nothing to a person;
+    // the island says who is asking by the name the team gave that agent.
+    const agentNames = new Map<string, string>();
+    for (const teamId of new Set(runs.map((snapshot) => snapshot.run.teamId))) {
+      const team = await this.#services.teams.get(teamId).catch(() => null);
+      for (const agent of team?.agents ?? []) {
+        agentNames.set(agent.id, agent.displayName);
+      }
+    }
+
     for (const snapshot of runs) {
       // An agent that asked for help is waiting on a person (spec §99).
       for (const message of snapshot.messages) {
         if (message.type === "question" && message.readAt === null) {
           attention.push({
             key: `msg:${message.id}`,
-            title: `${message.from} needs your attention`,
+            title: `${agentNames.get(message.from) ?? message.from} needs your attention`,
             detail: message.content.slice(0, 120),
             runId: snapshot.run.id,
             at: message.timestamp,
@@ -386,8 +396,17 @@ export class IslandController {
       busy: this.#services.sessions.isBusy(session.id),
     }));
 
+    // The snapshots follow the same filter as the names. Handing over every
+    // snapshot while the list of providers came out empty would let the
+    // widget fall back to naming rows by id — and show the simulated provider
+    // after all, but only on a machine where no real tool is installed.
+    const visible = new Set(providers.map((provider) => provider.id));
+    const shownUsage = usage
+      ? { ...usage, snapshots: usage.snapshots.filter((snapshot) => visible.has(snapshot.providerId)) }
+      : usage;
+
     return this.#services.attention.update({
-      usage,
+      usage: shownUsage,
       runs,
       busySessions,
       providers,

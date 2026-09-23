@@ -198,12 +198,24 @@ export async function runStartupCheck(
   await check(
     "the island turns on and reports the mocked usage",
     `(async () => {
-       const state = await window.workbench.invoke('statusIsland.setPreferences', {
+       const api = window.workbench;
+       // The simulated provider is a developer's tool, so its usage reaches the
+       // island only in developer mode — on every machine, whether or not a
+       // real tool happens to be installed next to it.
+       await api.invoke('settings.update', { developerMode: false });
+       const plain = await api.invoke('statusIsland.setPreferences', {
          enabled: true,
          autoExpand: true,
        });
-       if (!state.preferences.enabled) return false;
-       return state.entries.some(entry => entry.widget === 'providerUsage')
+       if (!plain.preferences.enabled) return false;
+       if (plain.entries.some(entry => entry.widget === 'providerUsage'
+         && /Mock/.test(entry.title ?? ''))) {
+         return 'the simulated provider showed outside developer mode';
+       }
+       await api.invoke('settings.update', { developerMode: true });
+       const state = await api.invoke('statusIsland.getState', undefined);
+       return state.entries.some(entry => entry.widget === 'providerUsage'
+           && /Mock Provider \\d+%/.test(entry.title ?? ''))
          && state.entries.every((entry, index, all) =>
            index === 0 || all[index - 1].priority >= entry.priority);
      })()`,
@@ -256,7 +268,9 @@ export async function runStartupCheck(
     return (
       typeof label === "string" &&
       label.startsWith("Status Island:") &&
-      (names.some((name) => label.includes(name)) || label.includes("No agents")) &&
+      (names.some((name) => label.includes(name)) ||
+        label.includes(state.current.title) ||
+        label.includes("No agents")) &&
       sized
     );
   });
@@ -545,8 +559,10 @@ export async function runStartupCheck(
   await check(
     "a long screen scrolls and leaves the navigation reachable",
     `(async () => {
+       // Settings is the longest screen; Providers became one line per tool
+       // and no longer overflows a normal window, so it proves nothing here.
        [...document.querySelectorAll('.sidebar__foot .row')]
-         .find(row => row.textContent?.includes('Providers'))?.click();
+         .find(row => row.textContent?.includes('Settings'))?.click();
        await new Promise(resolve => setTimeout(resolve, 300));
 
        // The window itself must never be the thing that overflows, or the
@@ -671,8 +687,9 @@ export async function runStartupCheck(
       : "changes view reports a directory without git",
     repository
       ? `(async () => {
+           // The tab carries its count ("Changes · 2"), so it is found by name.
            [...document.querySelectorAll('.panel__tab')]
-             .find(node => node.textContent === 'Changes')?.click();
+             .find(node => node.textContent?.startsWith('Changes'))?.click();
            await new Promise(resolve => setTimeout(resolve, 600));
            const branch = document.querySelector('.changes__branch')?.textContent ?? '';
            const items = [...document.querySelectorAll('.changes__item')]
@@ -681,7 +698,7 @@ export async function runStartupCheck(
          })()`
       : `(async () => {
            [...document.querySelectorAll('.panel__tab')]
-             .find(node => node.textContent === 'Changes')?.click();
+             .find(node => node.textContent?.startsWith('Changes'))?.click();
            await new Promise(resolve => setTimeout(resolve, 600));
            return (document.querySelector('.changes')?.textContent ?? '')
              .includes('not a git repository');
@@ -903,6 +920,197 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // The failing team runs before the asking one: on a fresh start no
+  // question is waiting yet, so the failure's own card is what shows.
+  // A third team whose worker cannot do the work: the failure must surface as
+  // an error entry with the reason, and take the island while it is news.
+  // The entry persists after the run (a failed task stays failed), but the
+  // expansion only holds for a moment, so the loop latches both.
+  await check(
+    "a failed task surfaces its error on the island",
+    `(async () => {
+       const api = window.workbench;
+       const workspaceId = window.__checkWorkspaceId;
+       const existing = (await api.invoke('team.list', { workspaceId }))
+         .find(entry => entry.name === 'Check failing team');
+       const team = existing ?? await api.invoke('team.create', {
+         workspaceId,
+         name: 'Check failing team',
+         agents: [
+           { displayName: 'Lead', providerId: 'mock', role: 'plans', skills: [], plugins: [], mcpServers: [], settings: {} },
+           { displayName: 'Worker', providerId: 'mock', role: 'works', skills: [], plugins: [], mcpServers: [], settings: {} },
+         ],
+       });
+       await api.invoke('statusIsland.setPreferences', { autoExpand: true });
+       // A failure takes the island while it is news and then settles (spec
+       // §97), so an old run that was already announced proves nothing. The
+       // team is reused; the failure is always a fresh one.
+       const run = await api.invoke('team.startRun', {
+         teamId: team.id,
+         goal: 'Check failure surfacing [fail: the test API is down]',
+       });
+
+       const deadline = Date.now() + 25000;
+       let snapshot = null;
+       let expandedForError = false;
+       while (Date.now() < deadline) {
+         await new Promise(resolve => setTimeout(resolve, 200));
+         snapshot = await api.invoke('team.getRun', { runId: run.id });
+         const state = await api.invoke('statusIsland.getState', undefined);
+         if (state.expanded && state.current.widget === 'errors') {
+           expandedForError = true;
+         }
+         if (snapshot.run.status !== 'running' && snapshot.run.status !== 'pending') break;
+       }
+       if (!snapshot || snapshot.run.status !== 'completed') return false;
+       // The entry is still there after the run: the failure was not consumed.
+       const state = await api.invoke('statusIsland.getState', undefined);
+       const entry = state.entries.find(item => item.widget === 'errors');
+       const surfaced = Boolean(entry) && entry.priority === 80
+         && (entry.detail ?? '').includes('the test API is down');
+       return surfaced && expandedForError;
+     })()`,
+    60_000,
+  );
+
+  // Whether a question is already waiting decides what the island may show
+  // for the failure; see the second branch.
+  if (mode === "create") {
+    await checkMain("the expanded island offers to open the run", async () => {
+      const target = islandWindow();
+      if (!target) {
+        return false;
+      }
+      // The page measures its card and reports back, so the window settles a
+      // few hops after the service: poll for the card, not a single read.
+      const deadline = Date.now() + 8_000;
+      while (Date.now() < deadline) {
+        const bounds = target.getBounds();
+        const actions = await islandJs(
+          "[...document.querySelectorAll('.isl__actions button')].map(node => node.textContent)",
+        );
+        if (
+          // The card opens beside the circle, so the window holds both.
+          bounds.width >= 340 &&
+          bounds.height > 90 &&
+          Array.isArray(actions) &&
+          actions.some((label) => typeof label === "string" && label.includes("Open"))
+        ) {
+          return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return false;
+    });
+
+    // The deep link the island offers, clicked where a user clicks it: the main
+    // window lands on the run the entry is about, and the island settles back.
+    await checkMain("the island opens the run it is about", async () => {
+      try {
+        const clicked = await islandJs(
+          `(() => {
+             const button = [...document.querySelectorAll('.isl__actions button')]
+               .find(node => node.textContent === 'Open');
+             if (!button) return false;
+             button.click();
+             return true;
+           })()`,
+        );
+        return clicked === true;
+      } catch {
+        return false;
+      }
+    });
+
+    await check(
+      "opening from the island shows the run it is about",
+      `(async () => {
+         return ${waitFor("document.querySelector('.run-detail')?.textContent?.includes('failure surfacing') ?? false", 8000)};
+       })()`,
+    );
+
+    await checkMain("handling the entry returns the island to compact", async () => {
+      const target = islandWindow();
+      if (!target) {
+        return false;
+      }
+      // Same async settle in reverse: the circle (42px plus the room for its
+      // ring and badge) measures back.
+      const deadline = Date.now() + 8_000;
+      while (Date.now() < deadline) {
+        const bounds = target.getBounds();
+        const actions = await islandJs(
+          "document.querySelectorAll('.isl__actions').length",
+        );
+        const state = await island.refresh();
+        if (
+          bounds.width <= 72 &&
+          bounds.height <= 72 &&
+          actions === 0 &&
+          state.expanded === false
+        ) {
+          return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      return false;
+    });
+
+  } else {
+    // A question an agent asked outranks news on the island: while one is
+    // waiting on a person, the island stays on the question and does not open
+    // the failure's card on its own. Nobody can answer a question inside the
+    // application yet, so the one asked in the first phase is still waiting in
+    // the second — which is exactly where this rule shows.
+    await checkMain("a waiting question keeps the island on the question", async () => {
+      const target = islandWindow();
+      if (!target) {
+        return false;
+      }
+      const label = await islandJs(
+        "document.querySelector('.isl')?.getAttribute('aria-label') ?? ''",
+      );
+      const cards = await islandJs("document.querySelectorAll('.isl__actions').length");
+      return (
+        typeof label === "string" &&
+        label.includes("needs your attention") &&
+        // Named by the agent, not by its id.
+        !/agent_[0-9a-f-]{8,}/.test(label) &&
+        cards === 0
+      );
+    });
+
+    // An agent's question is shown as a waiting entry with Dismiss and
+    // Approve; until answering lands in the application, Approve takes the
+    // person to the run that asked.
+    await checkMain("the island opens the waiting entry it is about", async () => {
+      try {
+        const answered = await islandJs(
+          `(async () => {
+             document.querySelector('.isl__circle')?.click();
+             await new Promise(resolve => setTimeout(resolve, 600));
+             const button = [...document.querySelectorAll('.isl__actions button')]
+               .find(node => node.textContent?.trim() === 'Approve');
+             if (!button) return false;
+             button.click();
+             return true;
+           })()`,
+        );
+        return answered === true;
+      } catch {
+        return false;
+      }
+    });
+
+    await check(
+      "opening the waiting entry shows the run that asked",
+      `(async () => {
+         return ${waitFor("document.querySelector('.run-detail')?.textContent?.includes('attention flow') ?? false", 8000)};
+       })()`,
+    );
+
+  }
+
   // A second team whose workers ask a mate: the run stays green while the
   // questions stay unread, because nobody they were sent to ever reads them.
   await check(
@@ -1052,7 +1260,8 @@ export async function runStartupCheck(
 
        const pinned = await api.invoke('statusIsland.pinWidget', { widget: 'providerUsage' });
        if (pinned.current.widget !== 'providerUsage') return false;
-       if (!/mock \\d+%/.test(pinned.current.title ?? '')) return false;
+       // Rows are named by the provider, as the island shows them.
+       if (!/Mock Provider \\d+%/.test(pinned.current.title ?? '')) return false;
 
        // A pinned widget with nothing to say stays honest (spec §103).
        const idle = await api.invoke('statusIsland.pinWidget', { widget: 'teamProgress' });
@@ -1060,143 +1269,16 @@ export async function runStartupCheck(
 
        // Automatic mode is the priority order, highest first.
        const automatic = await api.invoke('statusIsland.pinWidget', { widget: null });
-       return automatic.preferences.pinnedWidget === null
+       const ordered = automatic.preferences.pinnedWidget === null
          && automatic.current.widget === order[0]
          && automatic.entries.every((entry, index, all) =>
            index === 0 || all[index - 1].priority >= entry.priority);
+       // Developer mode was only for the simulated provider's usage; the rest
+       // of the run looks at the application as a user would.
+       await api.invoke('settings.update', { developerMode: false });
+       return ordered;
      })()`,
   );
-
-  // A third team whose worker cannot do the work: the failure must surface as
-  // an error entry with the reason, and take the island while it is news.
-  // The entry persists after the run (a failed task stays failed), but the
-  // expansion only holds for a moment, so the loop latches both.
-  await check(
-    "a failed task surfaces its error on the island",
-    `(async () => {
-       const api = window.workbench;
-       const workspaceId = window.__checkWorkspaceId;
-       const existing = (await api.invoke('team.list', { workspaceId }))
-         .find(entry => entry.name === 'Check failing team');
-       const team = existing ?? await api.invoke('team.create', {
-         workspaceId,
-         name: 'Check failing team',
-         agents: [
-           { displayName: 'Lead', providerId: 'mock', role: 'plans', skills: [], plugins: [], mcpServers: [], settings: {} },
-           { displayName: 'Worker', providerId: 'mock', role: 'works', skills: [], plugins: [], mcpServers: [], settings: {} },
-         ],
-       });
-       await api.invoke('statusIsland.setPreferences', { autoExpand: true });
-       // A failure takes the island while it is news and then settles (spec
-       // §97), so an old run that was already announced proves nothing. The
-       // team is reused; the failure is always a fresh one.
-       const run = await api.invoke('team.startRun', {
-         teamId: team.id,
-         goal: 'Check failure surfacing [fail: the test API is down]',
-       });
-
-       const deadline = Date.now() + 25000;
-       let snapshot = null;
-       let expandedForError = false;
-       while (Date.now() < deadline) {
-         await new Promise(resolve => setTimeout(resolve, 200));
-         snapshot = await api.invoke('team.getRun', { runId: run.id });
-         const state = await api.invoke('statusIsland.getState', undefined);
-         if (state.expanded && state.current.widget === 'errors') {
-           expandedForError = true;
-         }
-         if (snapshot.run.status !== 'running' && snapshot.run.status !== 'pending') break;
-       }
-       if (!snapshot || snapshot.run.status !== 'completed') return false;
-       // The entry is still there after the run: the failure was not consumed.
-       const state = await api.invoke('statusIsland.getState', undefined);
-       const entry = state.entries.find(item => item.widget === 'errors');
-       const surfaced = Boolean(entry) && entry.priority === 80
-         && (entry.detail ?? '').includes('the test API is down');
-       return surfaced && expandedForError;
-     })()`,
-    60_000,
-  );
-
-  await checkMain("the expanded island offers to open the run", async () => {
-    const target = islandWindow();
-    if (!target) {
-      return false;
-    }
-    // The page measures its card and reports back, so the window settles a
-    // few hops after the service: poll for the card, not a single read.
-    const deadline = Date.now() + 8_000;
-    while (Date.now() < deadline) {
-      const bounds = target.getBounds();
-      const actions = await islandJs(
-        "[...document.querySelectorAll('.isl__actions button')].map(node => node.textContent)",
-      );
-      if (
-        // The card opens beside the circle, so the window holds both.
-        bounds.width >= 340 &&
-        bounds.height > 90 &&
-        Array.isArray(actions) &&
-        actions.some((label) => typeof label === "string" && label.includes("Open"))
-      ) {
-        return true;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    return false;
-  });
-
-  // The deep link the island offers, clicked where a user clicks it: the main
-  // window lands on the run the entry is about, and the island settles back.
-  await checkMain("the island opens the run it is about", async () => {
-    try {
-      const clicked = await islandJs(
-        `(() => {
-           const button = [...document.querySelectorAll('.isl__actions button')]
-             .find(node => node.textContent === 'Open');
-           if (!button) return false;
-           button.click();
-           return true;
-         })()`,
-      );
-      return clicked === true;
-    } catch {
-      return false;
-    }
-  });
-
-  await check(
-    "opening from the island shows the run it is about",
-    `(async () => {
-       return ${waitFor("document.querySelector('.run-detail')?.textContent?.includes('failure surfacing') ?? false", 8000)};
-     })()`,
-  );
-
-  await checkMain("handling the entry returns the island to compact", async () => {
-    const target = islandWindow();
-    if (!target) {
-      return false;
-    }
-    // Same async settle in reverse: the circle (42px plus the room for its
-    // ring and badge) measures back.
-    const deadline = Date.now() + 8_000;
-    while (Date.now() < deadline) {
-      const bounds = target.getBounds();
-      const actions = await islandJs(
-        "document.querySelectorAll('.isl__actions').length",
-      );
-      const state = await island.refresh();
-      if (
-        bounds.width <= 72 &&
-        bounds.height <= 72 &&
-        actions === 0 &&
-        state.expanded === false
-      ) {
-        return true;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-    return false;
-  });
 
   await checkMain("the main window hides while the runtime continues", () => {
     window.hide();
@@ -1328,6 +1410,23 @@ export async function runStartupCheck(
       await capture("providers-light", sidebar("Providers"));
       await window.webContents.executeJavaScript(
         `document.documentElement.dataset.theme = 'dark'`,
+      );
+
+      // The agents captures switched the workspace to its terminals, and that
+      // choice is remembered across a restart. The window goes back to the
+      // conversation, so the next start is the one a user would get.
+      await window.webContents.executeJavaScript(
+        `(async () => {
+           [...document.querySelectorAll('.sidebar__scroll .row')]
+             .find(node => node.textContent?.includes('Check session'))?.click();
+           await new Promise(resolve => setTimeout(resolve, 300));
+           if (!document.querySelector('.composer')) {
+             window.dispatchEvent(new KeyboardEvent('keydown',
+               { key: 'A', ctrlKey: true, shiftKey: true, bubbles: true }));
+             await new Promise(resolve => setTimeout(resolve, 300));
+           }
+           return Boolean(document.querySelector('.composer'));
+         })()`,
       );
 
       logger.info("Startup check screenshots written", { directory: dirname(screenshotPath) });
