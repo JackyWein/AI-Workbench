@@ -395,6 +395,8 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "statusIsland.ask": (input) => island.ask(input.key, input.text),
     "statusIsland.resetPosition": () => island.resetPosition(),
     "statusIsland.resize": (input) => ({ visible: island.resize(input.width, input.height) }),
+    "statusIsland.dragStart": (input) => island.beginDrag(input.grabX, input.grabY),
+    "statusIsland.dragEnd": () => island.endDrag(),
 
     "settings.get": () => services.settings.get(),
     "settings.update": (input) => services.settings.update(input),

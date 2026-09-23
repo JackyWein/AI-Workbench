@@ -1,16 +1,21 @@
 import {
   StrictMode,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  type AnimationEvent as ReactAnimationEvent,
   type JSX,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ISLAND_TIMING,
   type IslandAgentRow,
+  type IslandDrag,
+  type IslandEdge,
   type IslandEntry,
   type IslandSessionSummary,
   type IslandState,
@@ -22,6 +27,12 @@ import "./island.css";
 
 type HoverMode = "agents" | "usage";
 type Face = "approval" | "question" | "working" | "idle" | "none";
+/** How the unit just arrived in its shape, for its entrance motion. */
+type Arrival = "dock" | "free" | null;
+
+/** Pointer travel that turns a press into a drag; below it, it is a click. */
+const DRAG_START_PX = 4;
+const RESTING_DRAG: IslandDrag = { active: false, edge: null, snap: null };
 
 interface AskResult {
   readonly sent: boolean;
@@ -38,11 +49,29 @@ interface IslandBridge {
   cycle(direction: 1 | -1): Promise<void>;
   resetPosition(): Promise<void>;
   resize(width: number, height: number): Promise<void>;
+  onDrag(listener: (drag: IslandDrag) => void): () => void;
+  dragStart(grabX: number, grabY: number): Promise<void>;
+  dragEnd(): Promise<void>;
 }
 
 /** True when an event started on something that handles its own clicks. */
 function onControl(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("button, input, textarea") !== null;
+}
+
+/**
+ * The grip is the whole unit: the pill, the circle and any card background.
+ * Inner controls (rows, buttons, the prompt line) keep their clicks.
+ */
+function isGrip(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  return target.closest(".isl__pill, .isl__circle") !== null || !onControl(target);
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 /** A clock that ticks once a second, so elapsed times move on their own. */
@@ -81,8 +110,19 @@ function Island(): JSX.Element | null {
   const [hiding, setHiding] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  // The open sheet folding back into its pill; it stays mounted until then.
+  const [closing, setClosing] = useState(false);
+  // Live drag from main: which rail the pill rides, where a blob would dock.
+  const [drag, setDrag] = useState<IslandDrag>(RESTING_DRAG);
+  // Where a finished drag left the unit, until the stored preference agrees.
+  const [settled, setSettled] = useState<{ edge: IslandEdge | null } | null>(null);
+  const [arrival, setArrival] = useState<Arrival>(null);
   const now = useNow();
-  const dragFrom = useRef<{ x: number; y: number } | null>(null);
+  const press = useRef<{ sx: number; sy: number; cx: number; cy: number } | null>(null);
+  const dragging = useRef(false);
+  const swallowClick = useRef(false);
+  const pillSize = useRef({ width: 240, height: 38 });
+  const lastDocked = useRef<IslandEdge | null | undefined>(undefined);
   const peekTimer = useRef<number | null>(null);
   const hideTimer = useRef<number | null>(null);
   const wheelAt = useRef(0);
@@ -96,6 +136,53 @@ function Island(): JSX.Element | null {
     }
     return bridge.onState(setState);
   }, [bridge]);
+
+  useEffect(() => {
+    if (!bridge) {
+      return undefined;
+    }
+    return bridge.onDrag((next) => {
+      setDrag(next);
+      if (!next.active) {
+        setSettled({ edge: next.edge });
+      }
+    });
+  }, [bridge]);
+
+  // The drop's outcome holds until the stored preference catches up, so the
+  // unit never flickers back to its old shape in between.
+  const storedEdge = state?.preferences.dockedEdge ?? null;
+  useEffect(() => {
+    if (!settled) {
+      return undefined;
+    }
+    if (settled.edge === storedEdge) {
+      setSettled(null);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setSettled(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [settled, storedEdge]);
+
+  const docked: IslandEdge | null = drag.active
+    ? drag.edge
+    : settled
+      ? settled.edge
+      : storedEdge;
+
+  // A change of shape plays its entrance once: a blob landing on a rail grows
+  // into a pill, a pill pulled free pops into a blob. Laid out before paint so
+  // no frame shows the new shape unanimated.
+  useLayoutEffect(() => {
+    const previous = lastDocked.current;
+    lastDocked.current = docked;
+    if (previous === undefined || previous === docked) {
+      return undefined;
+    }
+    setArrival(docked ? "dock" : "free");
+    const timer = window.setTimeout(() => setArrival(null), 520);
+    return () => window.clearTimeout(timer);
+  }, [docked]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-color-scheme: dark)");
@@ -130,6 +217,7 @@ function Island(): JSX.Element | null {
       setPinned(false);
     }
     setExpanded(false);
+    setClosing(false);
   }, [derived, faceKey]);
 
   // The window fits the unit: report what the content measures so main can
@@ -154,7 +242,7 @@ function Island(): JSX.Element | null {
     const observer = new ResizeObserver(report);
     observer.observe(root);
     return () => observer.disconnect();
-  }, [bridge, state, hovering, pinned, expanded, hoverMode]);
+  }, [bridge, state, hovering, pinned, expanded, closing, hoverMode, docked]);
 
   useEffect(
     () => () => {
@@ -174,7 +262,6 @@ function Island(): JSX.Element | null {
     return null;
   }
 
-  const docked = state.preferences.dockedEdge;
   const attentionFace = derived.face === "approval" || derived.face === "question";
   // News the service holds the island for (an error, a finished run) opens
   // its card on its own when the user allowed that.
@@ -191,6 +278,9 @@ function Island(): JSX.Element | null {
     }
   };
   const startHover = (): void => {
+    if (dragging.current || drag.active) {
+      return;
+    }
     clearHoverTimers();
     setHiding(false);
     setHovering(true);
@@ -217,25 +307,70 @@ function Island(): JSX.Element | null {
   const collapse = (): void => {
     setPinned(false);
     setExpanded(false);
+    setClosing(false);
   };
-  /**
-   * A drag release never counts as a click: past 5px of pointer travel the
-   * press was a drag, not an activation.
-   */
-  const releasedFromDrag = (event: ReactMouseEvent): boolean => {
-    const from = dragFrom.current;
-    if (!from) {
-      return false;
-    }
-    return Math.hypot(event.clientX - from.x, event.clientY - from.y) > 5;
-  };
-  const onCardClick = (event: ReactMouseEvent): void => {
-    // An open card collapses on plain background clicks, never on its
-    // controls — and never on a drag release.
-    if (onControl(event.target) || releasedFromDrag(event)) {
+  // A docked sheet folds back into its pill before it goes; everything else
+  // simply closes.
+  const fold = (): void => {
+    if (docked && (pinned || expanded) && !prefersReducedMotion()) {
+      setClosing(true);
       return;
     }
     collapse();
+  };
+  const onSheetAnimationEnd = (event: ReactAnimationEvent): void => {
+    if (event.target === event.currentTarget && event.animationName.startsWith("isl-close")) {
+      collapse();
+    }
+  };
+  const onCardClick = (event: ReactMouseEvent): void => {
+    // An open card folds on plain background clicks, never on its controls.
+    if (onControl(event.target)) {
+      return;
+    }
+    fold();
+  };
+
+  // Drag: a press on the grip that travels past a few pixels hands the unit to
+  // main, which moves the window with the pointer. Below that it stays a click.
+  const onPointerDown = (event: ReactPointerEvent): void => {
+    if (event.button !== 0 || !isGrip(event.target)) {
+      return;
+    }
+    press.current = {
+      sx: event.screenX,
+      sy: event.screenY,
+      cx: event.clientX,
+      cy: event.clientY,
+    };
+  };
+  const onPointerMove = (event: ReactPointerEvent): void => {
+    const from = press.current;
+    if (!from || dragging.current) {
+      return;
+    }
+    if (Math.hypot(event.screenX - from.sx, event.screenY - from.sy) < DRAG_START_PX) {
+      return;
+    }
+    dragging.current = true;
+    // Captured only now, so a plain click still reaches its button.
+    event.currentTarget.setPointerCapture(event.pointerId);
+    killHover();
+    collapse();
+    void bridge.dragStart(from.cx, from.cy).catch(() => undefined);
+  };
+  const endPress = (): void => {
+    press.current = null;
+    if (!dragging.current) {
+      return;
+    }
+    dragging.current = false;
+    // The release of a drag is never a click on whatever sits under it.
+    swallowClick.current = true;
+    window.setTimeout(() => {
+      swallowClick.current = false;
+    }, 0);
+    void bridge.dragEnd().catch(() => undefined);
   };
   const resetAll = (): void => {
     setHoverMode("agents");
@@ -255,10 +390,7 @@ function Island(): JSX.Element | null {
     });
   };
 
-  const onCircleClick = (event: ReactMouseEvent): void => {
-    if (releasedFromDrag(event)) {
-      return;
-    }
+  const onCircleClick = (): void => {
     if (derived.face === "working") {
       toggleMode();
       return;
@@ -269,9 +401,9 @@ function Island(): JSX.Element | null {
   };
 
   const onPillClick = (event: ReactMouseEvent): void => {
-    if (releasedFromDrag(event)) {
-      return;
-    }
+    // The sheet unfolds out of the pill's own outline.
+    const rect = event.currentTarget.getBoundingClientRect();
+    pillSize.current = { width: Math.round(rect.width), height: Math.round(rect.height) };
     if (attentionFace) {
       setPinned((value) => !value);
     } else {
@@ -301,7 +433,12 @@ function Island(): JSX.Element | null {
     }
   };
 
-  const open = docked ? pinned || expanded || serviceCard : false;
+  const open = docked ? pinned || expanded || serviceCard || closing : false;
+  // The sheet starts as the pill's outline and grows from its edge.
+  const sheetRef = (node: HTMLDivElement | null): void => {
+    node?.style.setProperty("--pw", `${pillSize.current.width}px`);
+    node?.style.setProperty("--ph", `${pillSize.current.height}px`);
+  };
 
   // The free circle's side card: pinned attention, held news, or hover.
   const blobCard = ((): JSX.Element | null => {
@@ -338,117 +475,136 @@ function Island(): JSX.Element | null {
   })();
 
   return (
-    <div
-      ref={rootRef}
-      className="isl"
-      data-face={derived.face}
-      data-docked={docked ?? "free"}
-      data-open={open}
-      onMouseEnter={docked ? undefined : startHover}
-      onMouseLeave={docked ? undefined : endHover}
-      onMouseDown={(event) => {
-        dragFrom.current = { x: event.clientX, y: event.clientY };
-        if (!onControl(event.target)) {
-          killHover();
-        }
-      }}
-      onDoubleClick={(event) => {
-        if (onControl(event.target)) {
-          return;
-        }
-        resetAll();
-      }}
-      onKeyDown={(event) => {
-        if (event.target instanceof HTMLInputElement) {
-          return;
-        }
-        if (event.key === "ArrowRight") {
-          event.preventDefault();
-          void bridge.cycle(1);
-        } else if (event.key === "ArrowLeft") {
-          event.preventDefault();
-          void bridge.cycle(-1);
-        } else if (event.key === "Enter") {
+    <div className="isl-stage" data-edge={docked ?? "free"}>
+      <div
+        ref={rootRef}
+        className="isl"
+        data-face={derived.face}
+        data-docked={docked ?? "free"}
+        data-open={open}
+        data-dragging={drag.active}
+        data-snap={drag.active && drag.snap ? drag.snap : undefined}
+        data-arrival={arrival ?? undefined}
+        onMouseEnter={docked ? undefined : startHover}
+        onMouseLeave={docked ? undefined : endHover}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPress}
+        onPointerCancel={endPress}
+        onLostPointerCapture={endPress}
+        onClickCapture={(event) => {
+          if (swallowClick.current) {
+            swallowClick.current = false;
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        }}
+        onDoubleClick={(event) => {
           if (onControl(event.target)) {
             return;
           }
-          event.preventDefault();
-          const target =
-            derived.approvals[0]?.action?.target ??
-            derived.questions[0]?.action?.target ??
-            derived.agents[0]?.target ??
-            null;
-          if (target) {
-            void bridge.open(target);
+          resetAll();
+        }}
+        onKeyDown={(event) => {
+          if (event.target instanceof HTMLInputElement) {
+            return;
           }
-        } else if (event.key === "Escape") {
-          collapse();
-          void bridge.dismiss();
-        } else if (event.ctrlKey && /^[1-9]$/.test(event.key)) {
-          // Answering a visible question from the keyboard. Until the
-          // question backend lands, an option deep-links to its context.
-          const question = derived.questions[0];
-          const option = question?.options[Number(event.key) - 1];
-          const target = question?.action?.target;
-          if (option && target) {
+          if (event.key === "ArrowRight") {
             event.preventDefault();
-            void bridge.open(target);
+            void bridge.cycle(1);
+          } else if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            void bridge.cycle(-1);
+          } else if (event.key === "Enter") {
+            if (onControl(event.target)) {
+              return;
+            }
+            event.preventDefault();
+            const target =
+              derived.approvals[0]?.action?.target ??
+              derived.questions[0]?.action?.target ??
+              derived.agents[0]?.target ??
+              null;
+            if (target) {
+              void bridge.open(target);
+            }
+          } else if (event.key === "Escape") {
+            fold();
+            void bridge.dismiss();
+          } else if (event.ctrlKey && /^[1-9]$/.test(event.key)) {
+            // Answering a visible question from the keyboard. Until the
+            // question backend lands, an option deep-links to its context.
+            const question = derived.questions[0];
+            const option = question?.options[Number(event.key) - 1];
+            const target = question?.action?.target;
+            if (option && target) {
+              event.preventDefault();
+              void bridge.open(target);
+            }
           }
-        }
-      }}
-      onWheel={(event) => {
-        const stamp = Date.now();
-        if (stamp - wheelAt.current < ISLAND_TIMING.wheelThrottleMs) {
-          return;
-        }
-        wheelAt.current = stamp;
-        void bridge.cycle(event.deltaY > 0 ? 1 : -1);
-      }}
-      onContextMenu={(event) => {
-        event.preventDefault();
-        void bridge.cycle(-1);
-      }}
-      role="group"
-      tabIndex={0}
-      aria-label={`Status Island: ${derived.unitTitle}`}
-    >
-      {docked ? (
-        open ? (
-          <div className="isl__sheet" key={morphKey} onClick={onCardClick}>
-            {faceCard()}
-          </div>
-        ) : (
-          <Pill derived={derived} edge={docked} now={now} morphKey={morphKey} onClick={onPillClick} />
-        )
-      ) : (
-        <>
-          <button
-            type="button"
-            className="isl__circle"
-            onClick={onCircleClick}
-            aria-label={derived.label}
-            title={circleHint(derived.face, hoverMode)}
-          >
-            <span className="isl__blobin">
-              <span className="isl__morph" key={morphKey}>
-                <FaceMark derived={derived} size={17} />
-              </span>
-            </span>
-            {derived.badge !== null ? <span className="isl__badge">{derived.badge}</span> : null}
-          </button>
-          {blobCard ? (
+        }}
+        onWheel={(event) => {
+          const stamp = Date.now();
+          if (stamp - wheelAt.current < ISLAND_TIMING.wheelThrottleMs) {
+            return;
+          }
+          wheelAt.current = stamp;
+          void bridge.cycle(event.deltaY > 0 ? 1 : -1);
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          void bridge.cycle(-1);
+        }}
+        role="group"
+        tabIndex={0}
+        aria-label={`Status Island: ${derived.unitTitle}`}
+      >
+        {docked ? (
+          open ? (
             <div
-              className="isl__side"
-              data-hiding={hiding && !pinned && !serviceCard}
+              className="isl__sheet"
+              key={morphKey}
+              ref={sheetRef}
+              data-edge={docked}
+              data-closing={closing}
               onClick={onCardClick}
-              onMouseEnter={startHover}
-              onMouseLeave={endHover}
+              onAnimationEnd={onSheetAnimationEnd}
             >
-              {blobCard}
+              {faceCard()}
             </div>
-          ) : null}
-        </>
-      )}
+          ) : (
+            <Pill derived={derived} edge={docked} now={now} morphKey={morphKey} onClick={onPillClick} />
+          )
+        ) : (
+          <>
+            <button
+              type="button"
+              className="isl__circle"
+              onClick={onCircleClick}
+              aria-label={derived.label}
+              title={circleHint(derived.face, hoverMode)}
+            >
+              <span className="isl__blobin">
+                <span className="isl__morph" key={morphKey}>
+                  <FaceMark derived={derived} size={17} />
+                </span>
+              </span>
+              {derived.badge !== null ? <span className="isl__badge">{derived.badge}</span> : null}
+            </button>
+            {blobCard ? (
+              <div
+                className="isl__side"
+                data-hiding={hiding && !pinned && !serviceCard}
+                onClick={onCardClick}
+                onMouseEnter={startHover}
+                onMouseLeave={endHover}
+              >
+                {blobCard}
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
     </div>
   );
 }

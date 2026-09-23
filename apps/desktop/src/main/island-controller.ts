@@ -76,54 +76,21 @@ export class IslandController {
       islandFile: options.islandFile,
       preloadFile: options.preloadFile,
       devServerUrl: options.devServerUrl,
-      onMoved: ({ x, y, displayId }) => {
-        // A dragged island keeps where it was put, across restarts (spec §95).
-        // Positions that are already stored are not written again, so settling
-        // the window cannot turn into a write loop.
-        const current = this.#services.attention.preferences;
-        if (
-          current.position === "custom" &&
-          current.customX === x &&
-          current.customY === y &&
-          current.displayId === displayId
-        ) {
-          return;
-        }
-        void this.setPreferences({
-          position: "custom",
-          customX: x,
-          customY: y,
-          displayId,
-        }).catch((error: unknown) =>
-          this.#services.logger.warn("Could not persist dragged island position", {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
-      },
-      onSnapEdge: ({ edge, railT, displayId }) => {
-        // A blob released at a rail becomes a docked pill; the pill keeps the
-        // exact along-rail spot it was released at.
-        void this.setPreferences({
-          dockedEdge: edge,
-          railT,
-          displayId,
-        }).catch((error: unknown) =>
-          this.#services.logger.warn("Could not dock the island", {
-            error: error instanceof Error ? error.message : String(error),
-          }),
-        );
-      },
-      onDetach: ({ x, y, displayId }) => {
-        // Pulled off its rail, the pill is a free blob again at the pointer.
-        void this.setPreferences({
-          dockedEdge: null,
-          railT: null,
-          position: "custom",
-          customX: x,
-          customY: y,
-          displayId,
-        }).catch((error: unknown) =>
-          this.#services.logger.warn("Could not undock the island", {
+      onSettle: (settle) => {
+        // A dragged island keeps where it was left, across restarts (spec
+        // §95): docked at its spot on a rail, or free where it was dropped.
+        const patch: Partial<IslandPreferences> = settle.dockedEdge
+          ? { dockedEdge: settle.dockedEdge, railT: settle.railT, displayId: settle.displayId }
+          : {
+              dockedEdge: null,
+              railT: null,
+              position: "custom",
+              customX: settle.x,
+              customY: settle.y,
+              displayId: settle.displayId,
+            };
+        void this.setPreferences(patch).catch((error: unknown) =>
+          this.#services.logger.warn("Could not keep where the island was dragged", {
             error: error instanceof Error ? error.message : String(error),
           }),
         );
@@ -550,6 +517,16 @@ export class IslandController {
       dockedEdge: null,
       railT: null,
     });
+  }
+
+  /** The island page grabbed its unit; the window follows the pointer. */
+  beginDrag(grabX: number, grabY: number): { dragging: boolean } {
+    return { dragging: this.#window.beginDrag(grabX, grabY) };
+  }
+
+  /** The island page let go; the unit settles and its spot is kept. */
+  endDrag(): { dragging: boolean } {
+    return { dragging: this.#window.endDrag() };
   }
 
   /** Applies the size the island page measured for its current face. */

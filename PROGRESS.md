@@ -49,6 +49,17 @@ face against the mocks, and, in the running app, the following:
 Codex limits come from its session files and OpenCode amounts from its own
 CLI, both seen live. Gemini telemetry is written but was not run.
 
+Island drag and dock now run on page pointer events instead of the OS drag
+region, which on Windows swallowed clicks, so the docked pill could not
+open. Main follows the cursor on an 8 ms beat. A docked pill slides along
+its rail, turns corners onto the next rail, gives a little when pulled and
+detaches past `detachPx`. A free blob dropped within `snapPx` of an edge
+settles onto that rail. The pill opens into its sheet and folds back
+through a clip-path morph from its own outline. The drag geometry is
+unit-tested and the animations were rendered headlessly. The real drag
+through the OS cursor has **not** been exercised yet. There is no dock
+ghost-slot or trailer; the blob instead shows a snap cue.
+
 `verify:app` was **not** re-run after these changes, and its island size
 expectations were adjusted to the new layout, so no criterion above was
 ticked or unticked on this basis.

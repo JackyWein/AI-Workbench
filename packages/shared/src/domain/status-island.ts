@@ -33,6 +33,18 @@ export type IslandPosition = z.infer<typeof islandPositionSchema>;
 export const islandEdgeSchema = z.enum(["top", "right", "bottom", "left"]);
 export type IslandEdge = z.infer<typeof islandEdgeSchema>;
 
+/**
+ * What a drag looks like right now: the rail the pill rides (null while it is
+ * a free blob), and the rail a free blob would dock to if dropped here. After
+ * release `active` is false and `edge` is where the unit settled.
+ */
+export const islandDragSchema = z.object({
+  active: z.boolean(),
+  edge: islandEdgeSchema.nullable(),
+  snap: islandEdgeSchema.nullable(),
+});
+export type IslandDrag = z.infer<typeof islandDragSchema>;
+
 export const islandPreferencesSchema = z.object({
   enabled: z.boolean().default(true),
   startWithApp: z.boolean().default(true),
@@ -63,7 +75,7 @@ export const islandPreferencesSchema = z.object({
   closeToTray: z.boolean().default(false),
   /** Edge-dock (Island Apple): the rail the pill sits on, or null for a free blob. */
   dockedEdge: islandEdgeSchema.nullable().default(null),
-  /** Position along the rail in pixels; null means centered. */
+  /** Where the pill's center sits along its rail, in pixels; null means centered. */
   railT: z.number().nullable().default(null),
   /** The minimal circle is the default face; false starts expanded. */
   minimalByDefault: z.boolean().default(true),

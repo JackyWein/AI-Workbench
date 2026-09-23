@@ -3,6 +3,7 @@ import type {
   IpcChannel,
   IpcInput,
   IpcOutput,
+  IslandDrag,
   IslandState,
   IslandTarget,
   TerminalEvent,
@@ -22,7 +23,8 @@ export interface WorkbenchApi {
  * window carries none of the main window's reach (spec §5).
  */
 export interface WorkbenchIslandApi {
-  onState(listener: (state: IslandState) => void): () => void;  /** Brings the main window forward at the place this entry is about. */
+  onState(listener: (state: IslandState) => void): () => void;
+  /** Brings the main window forward at the place this entry is about. */
   open(target: IslandTarget): Promise<void>;
   /** Lets the island settle back to its compact state (spec §97). */
   dismiss(): Promise<void>;
@@ -34,6 +36,12 @@ export interface WorkbenchIslandApi {
   resetPosition(): Promise<void>;
   /** Reports the size the current face needs so the window fits it. */
   resize(width: number, height: number): Promise<void>;
+  /** Live drag state: the rail the pill rides, or where a blob would dock. */
+  onDrag(listener: (drag: IslandDrag) => void): () => void;
+  /** Hands the unit to main, which moves the window with the pointer. */
+  dragStart(grabX: number, grabY: number): Promise<void>;
+  /** Lets go; the unit settles onto a rail or stays where it was put. */
+  dragEnd(): Promise<void>;
 }
 
 declare global {

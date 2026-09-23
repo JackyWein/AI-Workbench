@@ -461,6 +461,21 @@ export const ipcContract = {
   },
   /** Returns the island to its default corner and forgets a dragged spot. */
   "statusIsland.resetPosition": { input: z.void(), output: islandStateSchema },
+  /**
+   * The island page grabbed its unit: main moves the window with the pointer
+   * from here on, sliding a docked pill along its rails or carrying a free
+   * blob, until the page lets go. Grab is where the unit was pressed, in page
+   * pixels.
+   */
+  "statusIsland.dragStart": {
+    input: z.object({
+      grabX: z.number().finite().min(0).max(2000),
+      grabY: z.number().finite().min(0).max(2000),
+    }),
+    output: z.object({ dragging: z.boolean() }),
+  },
+  /** The pointer let go: the island settles on a rail or where it was put. */
+  "statusIsland.dragEnd": { input: z.void(), output: z.object({ dragging: z.boolean() }) },
   /** Lets the island page report the size its current face needs. */
   "statusIsland.resize": {
     input: z.object({
@@ -525,6 +540,9 @@ export const APP_EVENT_CHANNEL = "workbench:event" as const;
 
 /** Island state, pushed to the island window only. */
 export const ISLAND_STATE_CHANNEL = "workbench:island" as const;
+
+/** Live drag state (the rail under the pointer), pushed to the island only. */
+export const ISLAND_DRAG_CHANNEL = "workbench:island-drag" as const;
 
 /** Where the island asked the main window to go (spec §98). */
 export const ISLAND_NAVIGATE_CHANNEL = "workbench:navigate" as const;
