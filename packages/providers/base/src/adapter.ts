@@ -4,6 +4,7 @@ import type {
   ModelInfo,
   ProviderCapabilities,
   ProviderEvent,
+  ProviderIntegration,
   ProviderMetadata,
   ProviderUsageSnapshot,
 } from "@ai-workbench/shared";
@@ -83,6 +84,15 @@ export interface AIProviderAdapter {
    * the tool has no command for it.
    */
   describeLogin?(): Promise<InteractiveLaunch | null>;
+
+  /** A one-time setup the tool needs, and whether it is done; null when none. */
+  getIntegration?(): Promise<ProviderIntegration | null>;
+
+  /**
+   * The tool's own command that performs that setup, run in a terminal so the
+   * person answers the tool's own questions. Null when nothing is to be done.
+   */
+  describeIntegrationSetup?(): Promise<InteractiveLaunch | null>;
 }
 
 /** One account of a tool, as the application hands it to a factory. */

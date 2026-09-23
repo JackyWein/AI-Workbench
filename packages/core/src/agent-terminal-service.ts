@@ -332,19 +332,52 @@ export class AgentTerminalService {
     readonly cols?: number;
     readonly rows?: number;
   }): Promise<AgentTerminal> {
-    const workspace = await this.#workspaces.require(input.workspaceId);
     const adapter = this.#providers.get(input.providerId);
     const launch = await adapter?.describeLogin?.();
     if (!adapter || !launch) {
       throw new Error("This provider has no sign-in command; sign in with the tool itself");
     }
+    return this.#startTransient(input, "login", "Sign in", launch);
+  }
 
+  /**
+   * Runs a provider's own one-time setup in a terminal, so the person answers
+   * the tool's own questions (see ProviderIntegration). The tile goes when the
+   * setup ends, and the provider is asked again whether it is set up.
+   */
+  async startSetup(input: {
+    readonly workspaceId: string;
+    readonly providerId: string;
+    readonly cols?: number;
+    readonly rows?: number;
+  }): Promise<AgentTerminal> {
+    const adapter = this.#providers.get(input.providerId);
+    const launch = await adapter?.describeIntegrationSetup?.();
+    if (!adapter || !launch) {
+      throw new Error("This provider has nothing to set up");
+    }
+    return this.#startTransient(input, "setup", "Set up", launch);
+  }
+
+  async #startTransient(
+    input: {
+      readonly workspaceId: string;
+      readonly providerId: string;
+      readonly cols?: number;
+      readonly rows?: number;
+    },
+    purpose: "login" | "setup",
+    title: string,
+    launch: InteractiveLaunch,
+  ): Promise<AgentTerminal> {
+    const workspace = await this.#workspaces.require(input.workspaceId);
+    const adapter = this.#providers.get(input.providerId);
     const entry: AgentTerminal = {
       id: createId("agt"),
       workspaceId: workspace.id,
-      purpose: "login",
+      purpose,
       providerId: input.providerId,
-      label: `Sign in · ${[adapter.metadata.displayName, adapter.metadata.account?.label]
+      label: `${title} · ${[adapter?.metadata.displayName, adapter?.metadata.account?.label]
         .filter(Boolean)
         .join(" · ")}`,
       modelId: null,
@@ -361,7 +394,8 @@ export class AgentTerminalService {
       createdAt: new Date(),
     };
     this.#transient.set(entry.id, entry);
-    return this.#spawn(entry, { ...launch, cwd: workspace.path }, input);
+    // A sign-in runs in the workspace; a setup where its tool put it.
+    return this.#spawn(entry, purpose === "login" ? { ...launch, cwd: workspace.path } : launch, input);
   }
 
   /** Called by the terminal backend when a process ends. */
@@ -398,8 +432,8 @@ export class AgentTerminalService {
 
     const transient = this.#transient.get(id);
     if (transient) {
-      // A finished sign-in has done its job: the tile goes, and the provider
-      // is asked again who is signed in now.
+      // A finished sign-in or setup has done its job: the tile goes, and the
+      // provider is asked again who is signed in, or whether it is set up.
       this.#transient.delete(id);
       this.#events.publish({ type: "agentTerminal.removed", id, workspaceId: transient.workspaceId });
       if (transient.providerId) {

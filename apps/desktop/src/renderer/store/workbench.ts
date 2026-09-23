@@ -154,6 +154,8 @@ interface WorkbenchState {
   updateAgentTerminal(input: UpdateAgentTerminalInput): Promise<void>;
   /** Opens a provider's own sign-in in the workspace's terminals. */
   startProviderLogin(providerId: string): Promise<void>;
+  /** Runs a provider's own one-time setup in the active workspace's terminals. */
+  startProviderSetup(providerId: string): Promise<void>;
 
   selectWorkspace(id: string | null): Promise<void>;
   selectSession(id: string | null): Promise<void>;
@@ -464,6 +466,22 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
     try {
       await invoke("agentTerminal.login", { workspaceId, providerId });
+      writeStoredUi({ workspaceMode: "terminals" });
+      set({ workspaceMode: "terminals", view: "chat" });
+      await get().refreshAgentTerminals(workspaceId);
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async startProviderSetup(providerId) {
+    const workspaceId = get().activeWorkspaceId;
+    if (!workspaceId) {
+      set({ error: "Open a workspace first; the setup runs in its terminals." });
+      return;
+    }
+    try {
+      await invoke("agentTerminal.setup", { workspaceId, providerId });
       writeStoredUi({ workspaceMode: "terminals" });
       set({ workspaceMode: "terminals", view: "chat" });
       await get().refreshAgentTerminals(workspaceId);

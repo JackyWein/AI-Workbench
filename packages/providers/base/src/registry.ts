@@ -83,7 +83,7 @@ export class ProviderRegistry {
   }
 
   async describe(adapter: AIProviderAdapter): Promise<ProviderSummary> {
-    const [installation, auth, capabilities, models, usage] = await Promise.all([
+    const [installation, auth, capabilities, models, usage, integration] = await Promise.all([
       this.#safe(adapter, "detectInstallation", () => adapter.detectInstallation()),
       this.#safe(adapter, "getAuthenticationStatus", () =>
         adapter.getAuthenticationStatus(),
@@ -92,6 +92,9 @@ export class ProviderRegistry {
       this.#safe(adapter, "listModels", () => adapter.listModels()),
       adapter.getUsage
         ? this.#safe(adapter, "getUsage", () => adapter.getUsage!())
+        : Promise.resolve(null),
+      adapter.getIntegration
+        ? this.#safe(adapter, "getIntegration", () => adapter.getIntegration!())
         : Promise.resolve(null),
     ]);
 
@@ -107,6 +110,7 @@ export class ProviderRegistry {
       modelsUpdatedAt: this.#modelsUpdatedAt(adapter),
       modelsNote: this.#modelsNote(adapter),
       usage: usage ?? null,
+      integration: integration ?? null,
       // The manager overlays the user's choice; unknown to the registry means on.
       enabled: true,
     };

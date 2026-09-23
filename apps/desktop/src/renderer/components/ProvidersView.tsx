@@ -133,6 +133,7 @@ function ProviderEntry({
   const saveProviderConfig = useWorkbench((state) => state.saveProviderConfig);
   const usage = useWorkbench((state) => state.usage);
   const setView = useWorkbench((state) => state.setView);
+  const startProviderSetup = useWorkbench((state) => state.startProviderSetup);
   const now = useNow(60_000);
   const [open, setOpen] = useState(false);
   const [allCapabilities, setAllCapabilities] = useState(false);
@@ -257,6 +258,27 @@ function ProviderEntry({
             <dt className="detail__label">Usage</dt>
             <dd className="detail__value">{usageLabel(provider)}</dd>
           </div>
+          {/* A one-time setup the tool needs, run with the tool's own installer. */}
+          {provider.integration ? (
+            <div className="detail">
+              <dt className="detail__label">{provider.integration.name}</dt>
+              <dd className="detail__value">
+                {integrationLabel(provider.integration.state)}
+                {provider.integration.state !== "ready" ? (
+                  <button
+                    type="button"
+                    className="quiet-button detail__action"
+                    onClick={() => void startProviderSetup(provider.metadata.id)}
+                  >
+                    {provider.integration.state === "updateNeeded" ? "Update" : "Set up"}
+                  </button>
+                ) : null}
+                <span className="detail__note">
+                  {provider.integration.detail ?? provider.integration.description}
+                </span>
+              </dd>
+            </div>
+          ) : null}
         </dl>
 
         {capabilities.length > 0 ? (
@@ -604,6 +626,17 @@ function authLabel(provider: ProviderSummary): string {
  * Usage says what is known and, when nothing is, why — "unavailable" on its
  * own leaves the user unable to tell a missing feature from a broken one.
  */
+function integrationLabel(state: "ready" | "setupNeeded" | "updateNeeded"): string {
+  switch (state) {
+    case "ready":
+      return "Set up";
+    case "updateNeeded":
+      return "Set up, update available";
+    case "setupNeeded":
+      return "Not set up";
+  }
+}
+
 function usageLabel(provider: ProviderSummary): string {
   const usage = provider.usage;
   if (!usage) {

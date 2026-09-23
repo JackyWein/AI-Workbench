@@ -303,6 +303,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     }),
     "agentTerminal.update": (input) => services.agentTerminals.update(input),
     "agentTerminal.login": (input) => services.agentTerminals.startLogin(input),
+    "agentTerminal.setup": (input) => services.agentTerminals.startSetup(input),
 
     "skill.list": () => services.skills.list(),
     "skill.save": (input) => services.skills.save(input),

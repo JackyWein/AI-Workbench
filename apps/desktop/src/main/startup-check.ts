@@ -1495,6 +1495,8 @@ export async function runStartupCheck(
     readonly label: string;
     readonly command: string;
     readonly script: string;
+    /** The tool it asks for, as the island names it. */
+    readonly tool?: string;
     readonly summary: string;
     /** What the stand-in kept of the answer, as the tool would take it. */
     readonly answered: (printed: string) => boolean;
@@ -1528,7 +1530,7 @@ export async function runStartupCheck(
            const waiting = current?.attention;
            // Mid-turn: it works on the prompt and waits for the permission.
            if (waiting && current.activity) {
-             return waiting.kind === 'permission' && waiting.tool === 'Bash'
+             return waiting.kind === 'permission' && waiting.tool === ${JSON.stringify(agent.tool ?? "Bash")}
                && waiting.summary === ${JSON.stringify(agent.summary)} && waiting.answerable
                && current.activity.state === 'working'
                || JSON.stringify({ waiting, activity: current.activity });
@@ -1579,7 +1581,7 @@ export async function runStartupCheck(
             shown.mark &&
             shown.buttons.includes("Allow") &&
             shown.buttons.includes("Deny") &&
-            shown.title.includes("wants to use Bash")
+            shown.title.includes(`wants to use ${agent.tool ?? "Bash"}`)
           ) {
             return true;
           }
@@ -1701,6 +1703,61 @@ export async function runStartupCheck(
       answered: (printed) => (JSON.parse(printed) as { reply?: string }).reply === "once",
       screenshot: "island-approval-opencode",
     });
+
+    // Gemini CLI takes the island's hooks only from an extension the person
+    // installs once with its own installer; the setup runs in a tile where
+    // its question is answered, as a person would.
+    const geminiFixture = join(dirname(workspaceDirectory), "fixture-gemini");
+    const geminiHome = join(geminiFixture, "home");
+    const geminiStandIn = join(geminiFixture, "gemini");
+    const previousGeminiHome = process.env["GEMINI_CLI_HOME"];
+    await rm(geminiHome, { recursive: true, force: true });
+    await mkdir(geminiHome, { recursive: true });
+    await writeFile(geminiStandIn, STAND_IN_GEMINI, { mode: 0o755 });
+    process.env["GEMINI_CLI_HOME"] = geminiHome;
+    await check(
+      "Gemini CLI offers the island's setup, which runs with its own installer in a tile",
+      `(async () => {
+         const api = window.workbench;
+         const workspaceId = window.__checkWorkspaceId;
+         await api.invoke('provider.saveConfig', {
+           providerId: 'gemini', enabled: true, executablePath: ${JSON.stringify(geminiStandIn)},
+         });
+         const integration = async () =>
+           (await api.invoke('provider.list')).find(entry => entry.metadata.id === 'gemini')?.integration;
+         const before = await integration();
+         if (before?.state !== 'setupNeeded') return 'before: ' + JSON.stringify(before ?? null);
+         const tile = await api.invoke('agentTerminal.setup', { workspaceId, providerId: 'gemini' });
+         if (tile.purpose !== 'setup' || !tile.terminalId) return 'tile: ' + JSON.stringify(tile);
+         // Gemini CLI asks before it installs; the person says yes.
+         await new Promise(resolve => setTimeout(resolve, 1500));
+         await api.invoke('terminal.write', { terminalId: tile.terminalId, data: 'y\\r' });
+         const deadline = Date.now() + 15000;
+         while (Date.now() < deadline) {
+           const after = await integration();
+           if (after?.state === 'ready') return true;
+           await new Promise(resolve => setTimeout(resolve, 300));
+         }
+         return 'after: ' + JSON.stringify(await integration());
+       })()`,
+      30_000,
+    );
+    await waitingAgent({
+      providerId: "gemini",
+      label: "Gemini CLI",
+      command: "gemini",
+      script: STAND_IN_GEMINI,
+      tool: "Shell",
+      summary: "touch island-gemini.txt",
+      // "1" is what Gemini CLI's own dialog takes for "allow once".
+      answered: (printed) => (JSON.parse(printed) as { key?: string }).key === "1",
+      screenshot: "island-approval-gemini",
+    });
+    if (previousGeminiHome === undefined) {
+      delete process.env["GEMINI_CLI_HOME"];
+    } else {
+      process.env["GEMINI_CLI_HOME"] = previousGeminiHome;
+    }
   }
 
   // The remote workspace is checked after the screenshots, so the screens
@@ -2139,6 +2196,75 @@ http
   .listen(port, "127.0.0.1", () => {
     process.stdout.write("Stand-in for OpenCode: asks to run touch island-opencode.txt\\r\\n");
   });
+`;
+
+/**
+ * Stands in for Gemini CLI in the startup check. `extensions install <dir>`
+ * asks the way Gemini CLI does and, on "y", copies the extension under
+ * `$GEMINI_CLI_HOME/.gemini/extensions`. Started as the interactive
+ * interface, it runs one turn's hooks from that installed extension in
+ * Gemini CLI's order — after replacing `${extensionPath}` and `${/}` as
+ * Gemini CLI does — shows its approval dialog, and takes "1" (allow once)
+ * from the terminal. Everything else it is asked gets a short answer.
+ */
+const STAND_IN_GEMINI = `#!/usr/bin/env node
+const { spawn } = require("node:child_process");
+const { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const args = process.argv.slice(2);
+const home = join(process.env.GEMINI_CLI_HOME || require("node:os").homedir(), ".gemini", "extensions");
+const installed = join(home, "ai-workbench-island");
+if (args.includes("--version")) {
+  process.stdout.write("0.60.0\\n");
+  process.exit(0);
+}
+if (args[0] === "extensions" && args[1] === "install") {
+  process.stdout.write("Do you want to trust this folder and continue with the installation? [y/N]: ");
+  process.stdin.once("data", (chunk) => {
+    if (!String(chunk).trim().toLowerCase().startsWith("y")) process.exit(1);
+    mkdirSync(home, { recursive: true });
+    cpSync(args[2], installed, { recursive: true });
+    process.stdout.write("Extension installed successfully and enabled.\\r\\n");
+    process.exit(0);
+  });
+  return;
+}
+if (args.length > 0 || !existsSync(join(installed, "hooks", "hooks.json"))) {
+  process.exit(0);
+}
+const hooks = JSON.parse(readFileSync(join(installed, "hooks", "hooks.json"), "utf8")).hooks;
+const run = (event, input) =>
+  new Promise((resolve) => {
+    const command = hooks[event][0].hooks[0].command
+      .split("\${extensionPath}").join(installed)
+      .split("\${/}").join("/");
+    const hook = spawn("/bin/sh", ["-c", command], { stdio: ["pipe", "ignore", "ignore"] });
+    hook.on("close", resolve);
+    hook.stdin.end(JSON.stringify({
+      session_id: "startup-check", hook_event_name: event, timestamp: new Date().toISOString(), ...input,
+    }));
+  });
+const toolInput = { command: "touch island-gemini.txt", description: "Create a file" };
+(async () => {
+  await run("SessionStart", { source: "startup" });
+  await run("BeforeAgent", { prompt: "Create island-gemini.txt" });
+  await run("BeforeTool", { tool_name: "run_shell_command", tool_input: toolInput });
+  await run("Notification", {
+    notification_type: "ToolPermission",
+    message: "Tool Confirm Shell Command requires execution",
+    details: { type: "exec", title: "Confirm Shell Command", command: toolInput.command },
+  });
+  process.stdout.write("Allow execution of [Shell]?  1. Allow once  2. Allow for this session  3. No (esc)\\r\\n");
+  process.stdin.setRawMode?.(true);
+  process.stdin.on("data", async (chunk) => {
+    if (String(chunk) === "1") {
+      writeFileSync(join(__dirname, "answer.json"), JSON.stringify({ key: "1" }));
+      await run("AfterTool", { tool_name: "run_shell_command", tool_input: toolInput, tool_response: {} });
+      await run("AfterAgent", { prompt: "Create island-gemini.txt", prompt_response: "Done." });
+    }
+  });
+})();
+setInterval(() => undefined, 60000);
 `;
 
 /**

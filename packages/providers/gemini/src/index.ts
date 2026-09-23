@@ -6,10 +6,8 @@ import {
   field,
   geminiProfile,
   listDirectory,
-  numberField,
   parseProfile,
   poll,
-  readJsonFile,
   samePath,
   stringField,
   type CliExtensionContext,
@@ -18,20 +16,31 @@ import {
   type CliProviderExtensions,
 } from "@ai-workbench/provider-cli";
 import type { ProviderFactory } from "@ai-workbench/provider-base";
-import type { TerminalMetrics, TerminalTokens } from "@ai-workbench/shared";
+import type { TerminalMetrics } from "@ai-workbench/shared";
+
+import {
+  GEMINI_TRANSCRIPT_SOURCE,
+  geminiHookTelemetry,
+  islandIntegration,
+  islandSetupArgs,
+  metricsFromTranscript,
+} from "./attention.js";
+import { parseGeminiLine } from "./events.js";
+
+export * from "./attention.js";
+export * from "./events.js";
 
 /**
- * Gemini CLI records each chat as a JSON file under
- * `~/.gemini/tmp/<project>/chats/session-*.json`, where the project folder
- * holds a `.project_root` file naming the directory it belongs to. Messages
- * the model answered carry the token counts the API returned.
- *
- * Unverified: no recorded session was available to check the shape against,
- * so every field is read defensively and a file that does not match simply
- * yields nothing.
+ * Gemini CLI records each chat under `~/.gemini/tmp/<project>/chats/`, where
+ * the project folder holds a `.project_root` file naming the directory it
+ * belongs to. Gemini CLI 0.60 writes `session-*.jsonl`, one record per line
+ * (read by `metricsFromTranscript`, checked against real transcripts); older
+ * releases wrote one `session-*.json` document, read by `metricsFromChat`.
+ * With the island's extension installed, its hooks name the run's transcript
+ * exactly; without it, the run's chat is the first one started with it.
  */
 
-export const GEMINI_SESSION_SOURCE = "Gemini CLI session file (unverified)";
+export const GEMINI_SESSION_SOURCE = GEMINI_TRANSCRIPT_SOURCE;
 
 const POLL_MS = 3000;
 const START_TOLERANCE_MS = 10_000;
@@ -56,46 +65,41 @@ async function chatsDirectory(root: string, workingDirectory: string): Promise<s
   return null;
 }
 
-/** Sums the token counts of a recorded chat. */
+/** Sums the token counts of a chat recorded as one JSON document. */
 export function metricsFromChat(chat: unknown, at: Date): TerminalMetrics | null {
   const messages = field(chat, "messages");
   if (!Array.isArray(messages)) {
     return null;
   }
-  let model: string | undefined;
-  const tokens: Required<Pick<TerminalTokens, "input" | "output" | "cacheRead" | "reasoning">> = {
-    input: 0,
-    output: 0,
-    cacheRead: 0,
-    reasoning: 0,
-  };
-  let counted = false;
-  for (const message of messages) {
-    const input = numberField(message, "tokens", "input");
-    const output = numberField(message, "tokens", "output");
-    if (input === undefined || output === undefined) {
-      continue;
-    }
-    counted = true;
-    const cached = numberField(message, "tokens", "cached") ?? 0;
-    tokens.input += Math.max(0, input - cached);
-    tokens.cacheRead += cached;
-    tokens.output += output;
-    tokens.reasoning += numberField(message, "tokens", "thoughts") ?? 0;
-    model = stringField(message, "model") ?? model;
-  }
-  if (!counted) {
+  const lines = messages.map((message) => JSON.stringify({ ...(message as object) }));
+  const sessionId = stringField(chat, "sessionId");
+  const metrics = metricsFromTranscript(
+    [...(sessionId ? [JSON.stringify({ sessionId })] : []), ...lines].join("\n"),
+    at,
+  );
+  return metrics;
+}
+
+/** The run's chat: started with it, the earliest such. */
+async function findChat(root: string, run: CliInteractiveRun): Promise<string | null> {
+  const chats = await chatsDirectory(root, run.workingDirectory);
+  if (!chats) {
     return null;
   }
-  const sessionId = stringField(chat, "sessionId");
-  return {
-    source: GEMINI_SESSION_SOURCE,
-    ...(sessionId === undefined ? {} : { providerSessionId: sessionId }),
-    ...(model === undefined ? {} : { model }),
-    tokens,
-    limits: [],
-    updatedAt: at,
-  };
+  const earliest = run.startedAt.getTime() - START_TOLERANCE_MS;
+  const candidates: { path: string; at: number }[] = [];
+  for (const entry of await listDirectory(chats)) {
+    if (!entry.startsWith("session-") || !/\.jsonl?$/.test(entry)) {
+      continue;
+    }
+    const path = join(chats, entry);
+    const info = await stat(path).catch(() => null);
+    if (info && info.birthtimeMs >= earliest) {
+      candidates.push({ path, at: info.birthtimeMs });
+    }
+  }
+  candidates.sort((a, b) => a.at - b.at);
+  return candidates[0]?.path ?? null;
 }
 
 async function interactiveTelemetry(
@@ -103,41 +107,31 @@ async function interactiveTelemetry(
   run: CliInteractiveRun,
 ): Promise<CliInteractiveTelemetry | null> {
   const root = join(geminiHome(context), ".gemini", "tmp");
-  const earliest = run.startedAt.getTime() - START_TOLERANCE_MS;
+  const hooks = await geminiHookTelemetry(context, run);
   return {
-    source: GEMINI_SESSION_SOURCE,
+    source: GEMINI_TRANSCRIPT_SOURCE,
+    ...(hooks
+      ? {
+          env: hooks.env ?? {},
+          ...(hooks.watchAttention ? { watchAttention: hooks.watchAttention } : {}),
+          ...(hooks.watchActivity ? { watchActivity: hooks.watchActivity } : {}),
+          ...(hooks.respond ? { respond: hooks.respond } : {}),
+        }
+      : {}),
     watch: (onMetrics) => {
-      let file: string | null = null;
+      let found: string | null = null;
       let seen = 0;
       return poll(async () => {
-        if (!file) {
-          const chats = await chatsDirectory(root, run.workingDirectory);
-          if (!chats) {
-            return;
-          }
-          const candidates: { path: string; at: number }[] = [];
-          for (const entry of await listDirectory(chats)) {
-            if (!entry.startsWith("session-") || !entry.endsWith(".json")) {
-              continue;
-            }
-            const path = join(chats, entry);
-            const info = await stat(path).catch(() => null);
-            if (info && info.birthtimeMs >= earliest) {
-              candidates.push({ path, at: info.birthtimeMs });
-            }
-          }
-          candidates.sort((a, b) => a.at - b.at);
-          file = candidates[0]?.path ?? null;
-          if (!file) {
-            return;
-          }
-        }
-        const info = await stat(file).catch(() => null);
-        if (!info || info.mtimeMs === seen) {
+        const file = hooks?.transcriptPath() ?? found ?? (found = await findChat(root, run));
+        const info = file ? await stat(file).catch(() => null) : null;
+        if (!file || !info || info.mtimeMs === seen) {
           return;
         }
         seen = info.mtimeMs;
-        const metrics = metricsFromChat(await readJsonFile(file), new Date(info.mtimeMs));
+        const text = await readFile(file, "utf8");
+        const metrics = file.endsWith(".jsonl")
+          ? metricsFromTranscript(text, new Date(info.mtimeMs))
+          : metricsFromChat(safeJson(text), new Date(info.mtimeMs));
         if (metrics) {
           onMetrics(metrics);
         }
@@ -146,9 +140,19 @@ async function interactiveTelemetry(
   };
 }
 
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 /** What the Gemini CLI needs beyond its profile data. */
 export const geminiExtensions: CliProviderExtensions = {
   interactiveTelemetry,
+  parseLine: parseGeminiLine,
+  integration: { status: islandIntegration, setupArgs: islandSetupArgs },
 };
 
 export function geminiFactory(): ProviderFactory {

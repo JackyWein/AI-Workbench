@@ -3623,3 +3623,9 @@ button.sidebar__user[aria-current="true"] {
   color: var(--text-muted);
   cursor: default;
 }
+
+/* An action beside a detail's value, e.g. setting a provider up. */
+.detail__action {
+  margin-left: 8px;
+  vertical-align: baseline;
+}

@@ -333,7 +333,9 @@ export class IslandController {
             const status =
               tile.purpose === "login"
                 ? "signing in"
-                : tile.purpose === "shell"
+                : tile.purpose === "setup"
+                  ? "setting up"
+                  : tile.purpose === "shell"
                   ? "shell"
                   : activity?.state === "working"
                     ? "working"

@@ -209,7 +209,15 @@ export const geminiProfile: CliProviderProfileInput = {
     method: "cli",
     loginHint: "Run `gemini` once and complete the sign-in.",
   },
-  capabilities: ["chat", "streaming", "modelSelection", "cliAuthentication"],
+  capabilities: [
+    "chat",
+    "streaming",
+    "sessionResume",
+    "modelSelection",
+    "toolCalls",
+    "nativeTools",
+    "cliAuthentication",
+  ],
   // The tool has no command that lists models, but it names its own aliases
   // and resolves them to whatever models are current (GEMINI_MODEL_ALIAS_* in
   // Gemini CLI 0.60, and its `/model` dialog). Offering those names guesses
@@ -222,13 +230,38 @@ export const geminiProfile: CliProviderProfileInput = {
     { id: "flash", displayName: "Flash" },
     { id: "flash-lite", displayName: "Flash Lite" },
   ],
-  args: [],
+  // Checked against Gemini CLI 0.60 with a stand-in for the Gemini API: the
+  // event stream (read by the Gemini package; the rules below are the
+  // fallback), `--resume` with the session id it reported, and a tool call.
+  // A folder Gemini CLI does not trust yet is refused in headless mode; that
+  // is the tool's own safety check, so it is reported, not skipped.
+  args: ["--output-format", "stream-json"],
+  resumeArgs: ["--resume", "{providerSessionId}"],
   modelArgs: ["--model", "{model}"],
+  // Gemini CLI's own approval modes: plan is its read-only mode.
+  permissionArgs: {
+    readOnly: ["--approval-mode", "plan"],
+    edit: ["--approval-mode", "auto_edit"],
+    full: ["--approval-mode", "yolo"],
+  },
   promptVia: "arg",
   promptArgs: ["--prompt", "{prompt}"],
-  output: { format: "text" },
+  output: {
+    format: "json-lines",
+    rules: [
+      { emit: "session", when: { type: "init" }, valueKey: "session_id" },
+      { emit: "text_delta", when: { type: "message", role: "assistant" }, valueKey: "content" },
+      {
+        emit: "usage",
+        when: { type: "result" },
+        inputTokensKey: "stats.input_tokens",
+        outputTokensKey: "stats.output_tokens",
+        durationKey: "stats.duration_ms",
+      },
+      { emit: "error", when: { type: "error" }, valueKey: "message" },
+    ],
+  },
   interactive: { args: [] },
-  unverified: true,
 };
 
 /**

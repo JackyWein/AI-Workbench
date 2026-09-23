@@ -194,6 +194,22 @@ export function readSessionRuntimeSettings(
 }
 
 /** Everything the renderer needs about one provider, in one payload. */
+/**
+ * A one-time step that connects a tool to the application for something it
+ * cannot be given per run, such as an extension installed with the tool's
+ * own installer. It is offered, never done without the person, and run in a
+ * terminal so they answer the tool's own questions.
+ */
+export const providerIntegrationSchema = z.object({
+  /** What it gives, e.g. "Status island". */
+  name: z.string().min(1).max(120),
+  /** What setting it up does, in the tool's own terms. */
+  description: z.string().max(600),
+  state: z.enum(["ready", "setupNeeded", "updateNeeded"]),
+  detail: z.string().max(600).optional(),
+});
+export type ProviderIntegration = z.infer<typeof providerIntegrationSchema>;
+
 export const providerSummarySchema = z.object({
   metadata: providerMetadataSchema,
   installation: installationStatusSchema,
@@ -209,6 +225,8 @@ export const providerSummarySchema = z.object({
    */
   modelsNote: z.string().nullable().default(null),
   usage: providerUsageSnapshotSchema.nullable(),
+  /** A setup the tool needs once, when it has one. */
+  integration: providerIntegrationSchema.nullable().default(null),
   /** False when the user hid the provider; hidden ones offer nothing new. */
   enabled: z.boolean().default(true),
 });

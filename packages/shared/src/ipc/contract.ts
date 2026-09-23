@@ -323,6 +323,15 @@ export const ipcContract = {
     }),
     output: agentTerminalSchema,
   },
+  "agentTerminal.setup": {
+    input: z.object({
+      workspaceId: z.string().min(1),
+      providerId: z.string().min(1),
+      cols: z.number().int().positive().max(1000).optional(),
+      rows: z.number().int().positive().max(1000).optional(),
+    }),
+    output: agentTerminalSchema,
+  },
 
   "skill.list": { input: z.void(), output: z.array(skillManifestSchema) },
   "skill.save": { input: skillManifestSchema, output: skillManifestSchema },

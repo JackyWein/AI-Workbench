@@ -7,6 +7,7 @@ import {
   type ProviderCapabilities,
   type ProviderConfig,
   type ProviderEvent,
+  type ProviderIntegration,
   type ProviderMetadata,
   type ProviderUsageSnapshot,
 } from "@ai-workbench/shared";
@@ -76,6 +77,7 @@ const HOOK_TIMEOUT_MS = {
   readUsage: 60_000,
   interactiveTelemetry: 20_000,
   probeAuth: 30_000,
+  integration: 30_000,
   discoverImportables: 60_000,
 } as const;
 
@@ -131,6 +133,10 @@ export class CliProviderAdapter implements AIProviderAdapter {
   /** Present when the tool has a sign-in command for its accounts (spec §14). */
   describeLogin?: () => Promise<InteractiveLaunch | null>;
 
+  /** Present when the tool needs a one-time setup its package knows. */
+  getIntegration?: () => Promise<ProviderIntegration | null>;
+  describeIntegrationSetup?: () => Promise<InteractiveLaunch | null>;
+
   constructor(profile: CliProviderProfile, options: CliAdapterOptions = {}) {
     this.#profile = profile;
     this.#options = options;
@@ -162,6 +168,13 @@ export class CliProviderAdapter implements AIProviderAdapter {
     }
     if (profile.accounts && profile.accounts.loginArgs.length > 0) {
       this.describeLogin = () => this.#describeLogin();
+    }
+    if (this.#extensions.integration) {
+      this.getIntegration = () =>
+        this.#runExtension("integration.status", HOOK_TIMEOUT_MS.integration, (extensions, context) =>
+          extensions.integration?.status(context) ?? Promise.resolve(null),
+        );
+      this.describeIntegrationSetup = () => this.#describeIntegrationSetup();
     }
 
     this.metadata = {
@@ -591,6 +604,25 @@ export class CliProviderAdapter implements AIProviderAdapter {
       args: [...(this.#context?.config.arguments ?? []), ...loginArgs],
       env: { ...this.#env },
       cwd: this.#accountHome() ?? process.cwd(),
+    };
+  }
+
+  /** The tool's own setup command, run where the person answers its questions. */
+  async #describeIntegrationSetup(): Promise<InteractiveLaunch | null> {
+    const command = await this.#transport?.locate();
+    const setupArgs = await this.#runExtension(
+      "integration.setupArgs",
+      HOOK_TIMEOUT_MS.integration,
+      (extensions, context) => extensions.integration?.setupArgs(context) ?? Promise.resolve(null),
+    );
+    if (!command || !setupArgs) {
+      return null;
+    }
+    return {
+      command,
+      args: [...(this.#context?.config.arguments ?? []), ...setupArgs],
+      env: { ...this.#env },
+      cwd: this.#context?.stateDirectory ?? process.cwd(),
     };
   }
 

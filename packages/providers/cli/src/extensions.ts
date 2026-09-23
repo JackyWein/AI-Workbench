@@ -3,6 +3,7 @@ import type {
   Logger,
   ModelInfo,
   ProviderEvent,
+  ProviderIntegration,
   ProviderUsageSnapshot,
   TerminalActivity,
   TerminalAttention,
@@ -127,6 +128,16 @@ export interface CliProviderExtensions {
     servers: ProviderToolAccess["mcpServers"],
     context: CliExtensionContext,
   ): { readonly args: string[]; readonly env: Record<string, string> };
+  /**
+   * A one-time setup the tool needs for what cannot be given per run, such as
+   * an extension installed with the tool's own installer. `setupArgs` are the
+   * tool's own arguments for it, run in a terminal so the person answers the
+   * tool's questions; null when nothing is to be done.
+   */
+  integration?: {
+    status(context: CliExtensionContext): Promise<ProviderIntegration | null>;
+    setupArgs(context: CliExtensionContext): Promise<string[] | null>;
+  };
   /**
    * Decodes one line of turn output. Returning undefined hands the line to the
    * profile's rules instead, so an extension only has to cover what the rules

@@ -18,6 +18,8 @@ export const agentTerminalPurposeSchema = z.enum([
   "agent",
   /** A provider's own sign-in for one of its accounts; removed when it ends. */
   "login",
+  /** A provider's own one-time setup (see ProviderIntegration); removed when it ends. */
+  "setup",
   /** A plain shell in the workspace. */
   "shell",
 ]);

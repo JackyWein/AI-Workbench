@@ -356,7 +356,11 @@ function AgentTile({
 function stateLabel(terminal: AgentTerminal): string {
   switch (terminal.state) {
     case "running":
-      return terminal.purpose === "login" ? "Signing in" : "Live";
+      return terminal.purpose === "login"
+        ? "Signing in"
+        : terminal.purpose === "setup"
+          ? "Setting up"
+          : "Live";
     case "stopped":
       return "Stopped";
     case "exited":

@@ -1,0 +1,6 @@
+{"type":"init","timestamp":"2026-09-23T16:29:03.015Z","session_id":"ea6c5fb3-0d54-4a15-bfd2-2f18684e57cb","model":"auto"}
+{"type":"message","timestamp":"2026-09-23T16:29:03.016Z","role":"user","content":"Create the file"}
+{"type":"tool_use","timestamp":"2026-09-23T16:29:03.107Z","tool_name":"run_shell_command","tool_id":"run_shell_command__run_shell_command_1790180943083_0","parameters":{"command":"touch gemini-allowed.txt","description":"Create a file"}}
+{"type":"tool_result","timestamp":"2026-09-23T16:29:03.145Z","tool_id":"run_shell_command__run_shell_command_1790180943083_0","status":"success","output":""}
+{"type":"message","timestamp":"2026-09-23T16:29:03.152Z","role":"assistant","content":"done","delta":true}
+{"type":"result","timestamp":"2026-09-23T16:29:03.157Z","status":"success","stats":{"total_tokens":45,"input_tokens":36,"output_tokens":9,"cached":0,"input":36,"duration_ms":142,"tool_calls":1,"models":{"gemini-3.1-flash-lite":{"total_tokens":15,"input_tokens":12,"output_tokens":3,"cached":0,"input":12},"gemini-3.1-pro-preview":{"total_tokens":30,"input_tokens":24,"output_tokens":6,"cached":0,"input":24}}}}

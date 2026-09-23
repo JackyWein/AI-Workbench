@@ -305,6 +305,20 @@ export interface HookDialect {
   answer(request: HookRequest, response: TerminalAttentionResponse): string | null;
   /** A transcript record that ends a turn no hook reports, such as an interruption. */
   endsTurn?(record: unknown): boolean;
+  /**
+   * An event that announces the tool about to run, with `tool_name` and
+   * `tool_input`, for a permission event that does not name the tool itself.
+   */
+  readonly toolStart?: string;
+  /**
+   * Reads what a permission event asks about, given the tool announced last;
+   * null when this occurrence of the event is no permission request. Without
+   * it, the event's own `tool_name` and `tool_input` say.
+   */
+  permissionOf?(
+    body: unknown,
+    announced: { readonly tool: string; readonly input: unknown } | null,
+  ): { tool: string; input: unknown } | null;
 }
 
 interface OpenRequest extends HookRequest {
@@ -340,6 +354,10 @@ export class HookState {
   #activity: TerminalActivity | null = null;
   /** The session transcript, read from where it stood when first seen. */
   #transcript: JsonLinesFollower | null = null;
+  /** Where the tool keeps its transcript, as its hooks last said. */
+  #transcriptPath: string | null = null;
+  /** The tool the dialect's `toolStart` event announced last. */
+  #announced: { tool: string; input: unknown } | null = null;
 
   constructor(
     directory: string,
@@ -359,6 +377,11 @@ export class HookState {
   /** Working or idle; null until the tool has said either. */
   get activity(): TerminalActivity | null {
     return this.#activity;
+  }
+
+  /** The session transcript the hooks named last; null before any did. */
+  get transcriptPath(): string | null {
+    return this.#transcriptPath;
   }
 
   /** Takes in what the hooks reported since the last call. */
@@ -399,6 +422,10 @@ export class HookState {
         (Number.isNaN(at) || at >= activity.since.getTime())
       ) {
         this.#activity = { state: "idle", since: Number.isNaN(at) ? new Date() : new Date(at) };
+        // The turn is over, so nothing it asked for waits any longer.
+        for (const request of this.#open.filter((entry) => entry.agentId === undefined)) {
+          await this.#close(request, true);
+        }
       }
     }
   }
@@ -461,12 +488,24 @@ export class HookState {
   async #apply(event: string, pid: number, body: unknown, at: number): Promise<void> {
     const dialect = this.#dialect;
     const agentId = stringField(body, "agent_id");
+    this.#transcriptPath = stringField(body, "transcript_path") ?? this.#transcriptPath;
     if (dialect.endsTurn) {
       await this.#follow(stringField(body, "transcript_path"));
     }
-    if (event === dialect.permissionEvent) {
-      const tool = stringField(body, "tool_name") ?? "a tool";
-      const input = field(body, "tool_input");
+    if (dialect.toolStart && event === dialect.toolStart) {
+      this.#announced = {
+        tool: stringField(body, "tool_name") ?? "a tool",
+        input: field(body, "tool_input"),
+      };
+    }
+    const asked =
+      event === dialect.permissionEvent
+        ? dialect.permissionOf
+          ? dialect.permissionOf(body, this.#announced)
+          : { tool: stringField(body, "tool_name") ?? "a tool", input: field(body, "tool_input") }
+        : null;
+    if (asked) {
+      const { tool, input } = asked;
       const hookWaits = dialect.answerBy === "hook";
       this.#open.push({
         attention: dialect.describe(`${pid}-${Math.round(at)}`, tool, input, new Date(at)),
