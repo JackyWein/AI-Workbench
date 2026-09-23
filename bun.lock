@@ -90,6 +90,7 @@
         "pino": "^9.6.0",
       },
       "devDependencies": {
+        "@ai-workbench/provider-mock": "workspace:*",
         "@ai-workbench/test-support": "workspace:*",
       },
     },
@@ -163,6 +164,9 @@
         "@ai-workbench/shared": "workspace:*",
         "@ai-workbench/transport-cli": "workspace:*",
         "zod": "^3.25.76",
+      },
+      "devDependencies": {
+        "@ai-workbench/test-support": "workspace:*",
       },
     },
     "packages/providers/codex": {

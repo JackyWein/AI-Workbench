@@ -7,9 +7,11 @@ import {
   ipcContract,
   type IpcChannel,
   type IpcHandlerInput,
+  type DiscoveredSkill,
   type IpcOutput,
 } from "@ai-workbench/shared";
-import { inspectAttachments } from "@ai-workbench/core";
+import { draftSkill, inspectAttachments } from "@ai-workbench/core";
+import { importSkillFile, importSkillFolder } from "@ai-workbench/skills";
 import { remoteRoot } from "@ai-workbench/workspace-ssh";
 import type { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
 import { toProviderConfigOverrides, type AppServices } from "./services.js";
@@ -115,6 +117,41 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       files: services.access.fileSystemFor(workspace),
       root: services.access.rootForSession(workspace, session.workingDirectory),
     };
+  };
+
+  /** Skills the registered tools keep in their own folders, found by their adapters. */
+  const discoverToolSkills = async (workspaceId: string | undefined): Promise<DiscoveredSkill[]> => {
+    const workspace = workspaceId ? await services.workspaces.get(workspaceId) : null;
+    // A workspace on another machine has no folders here to look in.
+    const workspacePath = workspace && !workspace.connectionId ? workspace.path : undefined;
+    const known = new Set(
+      services.skills
+        .list()
+        .map((skill) => skill.source.path)
+        .filter((path): path is string => typeof path === "string"),
+    );
+    const found = new Map<string, DiscoveredSkill>();
+    for (const summary of await services.providers.describeAll()) {
+      const adapter = services.providers.get(summary.metadata.id);
+      if (!adapter?.discoverImportables || summary.enabled === false) {
+        continue;
+      }
+      const importables = await adapter
+        .discoverImportables(workspacePath ? { workspacePath } : {})
+        .catch(() => ({ skills: [], mcpServers: [] }));
+      for (const skill of importables.skills) {
+        // The same folder found through two entries of one tool is listed once.
+        if (!found.has(skill.path)) {
+          found.set(skill.path, {
+            ...skill,
+            providerId: summary.metadata.id,
+            providerName: summary.metadata.displayName,
+            imported: known.has(join(skill.path, "SKILL.md")),
+          });
+        }
+      }
+    }
+    return [...found.values()];
   };
 
   const handlers: Handlers = {
@@ -379,6 +416,49 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       }
       return { cancelled: false, imported, failed };
     },
+    "skill.discover": (input) => discoverToolSkills(input.workspaceId),
+    "skill.importDiscovered": async (input) => {
+      // Only folders the tools themselves name can be imported this way.
+      const offered = new Set((await discoverToolSkills(input.workspaceId)).map((entry) => entry.path));
+      const imported = [];
+      const failed: Array<{ path: string; reason: string }> = [];
+      for (const path of input.paths) {
+        if (!offered.has(path)) {
+          failed.push({ path, reason: "It is not one of the skills your tools keep." });
+          continue;
+        }
+        try {
+          imported.push(await services.skills.save(await importSkillFolder(path)));
+        } catch (error) {
+          failed.push({ path, reason: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      return { imported, failed };
+    },
+    "skill.importFiles": async () => {
+      const window = findMainWindow();
+      const options = {
+        title: "Import skills",
+        filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+        properties: ["openFile", "multiSelections"] as ("openFile" | "multiSelections")[],
+      };
+      const result = await (window ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options));
+      if (result.canceled || result.filePaths.length === 0) {
+        return { cancelled: true, imported: [], failed: [] };
+      }
+      const imported = [];
+      const failed: Array<{ path: string; reason: string }> = [];
+      for (const file of result.filePaths) {
+        try {
+          imported.push(await services.skills.save(await importSkillFile(file)));
+        } catch (error) {
+          failed.push({ path: file, reason: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      return { cancelled: false, imported, failed };
+    },
+    "skill.draft": (input) =>
+      draftSkill(services.providers, input, join(options.userDataPath, "skill-drafts")),
     "skill.assign": async (input) => {
       await services.skills.assign(input);
       return { assigned: true };

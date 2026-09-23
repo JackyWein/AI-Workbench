@@ -22,6 +22,7 @@
     "pino": "^9.6.0"
   },
   "devDependencies": {
-    "@ai-workbench/test-support": "workspace:*"
+    "@ai-workbench/test-support": "workspace:*",
+    "@ai-workbench/provider-mock": "workspace:*"
   }
 }

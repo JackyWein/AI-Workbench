@@ -53,6 +53,9 @@ run_phase() {
   local outcomes
   outcomes="$(grep -oE '"msg":"(PASS|FAIL)[^"]*"' "$LOG_FILE" | sed 's/"msg":"//; s/"$//' || true)"
   echo "$outcomes"
+  # What a failed check saw, so the reason is in the output and not only in
+  # a log that is deleted with the run.
+  grep -E '"msg":"FAIL' "$LOG_FILE" | cut -c1-800 | sed 's/^/  detail: /' || true
 
   if [ $status -ne 0 ]; then
     echo "Startup check ($mode) failed with exit $status"

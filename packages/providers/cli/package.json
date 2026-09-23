@@ -13,5 +13,8 @@
     "@ai-workbench/shared": "workspace:*",
     "@ai-workbench/transport-cli": "workspace:*",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@ai-workbench/test-support": "workspace:*"
   }
 }

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   cliProviderFactory,
   field,
+  findSkills,
   geminiProfile,
   listDirectory,
   parseProfile,
@@ -152,6 +153,24 @@ function safeJson(text: string): unknown {
 /** What the Gemini CLI needs beyond its profile data. */
 export const geminiExtensions: CliProviderExtensions = {
   interactiveTelemetry,
+  // Gemini CLI 0.60 reads skills from ~/.gemini/skills and ~/.agents/skills,
+  // and the same two folders in the project.
+  discoverImportables: async (context, request) => {
+    const home = geminiHome(context);
+    return {
+      skills: await findSkills([
+        { path: join(home, ".gemini", "skills"), source: "your Gemini CLI skills" },
+        { path: join(home, ".agents", "skills"), source: "your agent skills" },
+        ...(request.workspacePath
+          ? [
+              { path: join(request.workspacePath, ".gemini", "skills"), source: "this project's Gemini CLI skills" },
+              { path: join(request.workspacePath, ".agents", "skills"), source: "this project's agent skills" },
+            ]
+          : []),
+      ]),
+      mcpServers: [],
+    };
+  },
   mcpLaunch: geminiMcpLaunch,
   parseLine: parseGeminiLine,
   integration: { status: islandIntegration, setupArgs: islandSetupArgs },

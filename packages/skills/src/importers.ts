@@ -174,3 +174,51 @@ function firstParagraph(body: string): string {
   const paragraph = withoutHeading.split(/\n\s*\n/)[0] ?? "";
   return paragraph.replace(/\s+/g, " ").trim().slice(0, 300);
 }
+
+/**
+ * One skill folder, as a tool keeps it: a SKILL.md whose front matter names
+ * it. Used for skills found in a tool's own folders.
+ */
+export async function importSkillFolder(folder: string): Promise<SkillManifestInput> {
+  const file = join(folder, "SKILL.md");
+  const text = await readFile(file, "utf8");
+  const { attributes, body } = parseFrontMatter(text);
+  const name = attributes["name"] ?? basename(folder);
+  if (body.trim() === "") {
+    throw new Error("The skill has no instructions.");
+  }
+  return {
+    schemaVersion: 1,
+    id: toSkillId(attributes["id"] ?? name),
+    name,
+    description: attributes["description"] ?? "",
+    version: attributes["version"] ?? "1.0.0",
+    instructions: body.trim(),
+    source: { kind: "import", path: file, importer: "tool-skill" },
+  };
+}
+
+/**
+ * One Markdown file: a SKILL.md with front matter, or any Markdown, named by
+ * its first heading or its file name.
+ */
+export async function importSkillFile(file: string): Promise<SkillManifestInput> {
+  const text = await readFile(file, "utf8");
+  const { attributes, body } = parseFrontMatter(text);
+  const heading = /^#\s+(.+)$/m.exec(body)?.[1]?.trim();
+  const stem = basename(file).replace(/\.(md|markdown)$/i, "");
+  const name =
+    attributes["name"] ?? heading ?? (stem.toUpperCase() === "SKILL" ? basename(join(file, "..")) : stem);
+  if (body.trim() === "") {
+    throw new Error("The file is empty.");
+  }
+  return {
+    schemaVersion: 1,
+    id: toSkillId(attributes["id"] ?? name),
+    name,
+    description: attributes["description"] ?? firstParagraph(body),
+    version: attributes["version"] ?? "1.0.0",
+    instructions: body.trim(),
+    source: { kind: "import", path: file, importer: "markdown-file" },
+  };
+}

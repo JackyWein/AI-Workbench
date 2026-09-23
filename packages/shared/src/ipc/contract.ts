@@ -45,6 +45,8 @@ import {
 import {
   effectiveSkillSchema,
   skillAssignmentInputSchema,
+  discoveredSkillSchema,
+  skillDraftSchema,
   skillManifestSchema,
   skillScopesSchema,
 } from "../domain/skill.js";
@@ -361,6 +363,40 @@ export const ipcContract = {
       imported: z.array(skillManifestSchema),
       failed: z.array(z.object({ path: z.string(), reason: z.string() })),
     }),
+  },
+  /** Skills the person's tools keep in their own folders, to import. */
+  "skill.discover": {
+    input: z.object({ workspaceId: z.string().min(1).optional() }),
+    output: z.array(discoveredSkillSchema),
+  },
+  /** Imports skills found by `skill.discover`; nothing else can be named. */
+  "skill.importDiscovered": {
+    input: z.object({
+      paths: z.array(z.string().min(1)).min(1).max(200),
+      workspaceId: z.string().min(1).optional(),
+    }),
+    output: z.object({
+      imported: z.array(skillManifestSchema),
+      failed: z.array(z.object({ path: z.string(), reason: z.string() })),
+    }),
+  },
+  /** Imports skill files (SKILL.md or any Markdown) picked in the system's dialog. */
+  "skill.importFiles": {
+    input: z.void(),
+    output: z.object({
+      cancelled: z.boolean(),
+      imported: z.array(skillManifestSchema),
+      failed: z.array(z.object({ path: z.string(), reason: z.string() })),
+    }),
+  },
+  /** Has one of the person's tools draft a skill; nothing is saved. */
+  "skill.draft": {
+    input: z.object({
+      providerId: z.string().min(1),
+      modelId: z.string().min(1).optional(),
+      request: z.string().trim().min(3).max(4000),
+    }),
+    output: skillDraftSchema,
   },
   "skill.assign": {
     input: skillAssignmentInputSchema,

@@ -4538,3 +4538,122 @@ button.sidebar__user[aria-current="true"] {
   font-size: 11.5px;
   color: var(--text-secondary);
 }
+
+/* --------------------------------------------------------------- skills -- */
+
+.connectors__spacer {
+  flex: 1;
+}
+
+.connectors__header .ghost-button,
+.connectors__header .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.menu-anchor {
+  position: relative;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 10;
+  min-width: 240px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-overlay);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.menu > button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--text-primary);
+}
+
+.menu > button span {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.menu > button:hover,
+.menu > button:focus-visible {
+  background: var(--surface-hover);
+}
+
+.start-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.start-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px;
+  text-align: left;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  transition: border-color var(--duration-fast) var(--easing-standard);
+}
+
+.start-tile:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.start-tile__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.start-tile__text {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.skill-editor__instructions {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 220px;
+}
+
+.provider-choice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.provider-choice__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.provider-choice__item[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

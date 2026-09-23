@@ -1,11 +1,13 @@
+import { join } from "node:path";
 import {
   cliProviderFactory,
+  findSkills,
   parseProfile,
   type CliProviderExtensions,
 } from "@ai-workbench/provider-cli";
 import type { ProviderFactory } from "@ai-workbench/provider-base";
 import { claudeCodeProfile } from "./profile.js";
-import { statusLineTelemetry } from "./telemetry.js";
+import { configHomeOf, statusLineTelemetry } from "./telemetry.js";
 
 export { claudeCodeProfile } from "./profile.js";
 
@@ -18,7 +20,18 @@ export { parseResetTime } from "./reset-time.js";
 /** What Claude Code needs beyond its profile data. */
 export const claudeCodeExtensions: CliProviderExtensions = {
   interactiveTelemetry: statusLineTelemetry,
+  // Claude Code's own skill folders: the user's, and the project's.
+  discoverImportables: async (context, request) => ({
+    skills: await findSkills([
+      { path: join(configHomeOf(context), "skills"), source: "your Claude Code skills" },
+      ...(request.workspacePath
+        ? [{ path: join(request.workspacePath, ".claude", "skills"), source: "this project's Claude Code skills" }]
+        : []),
+    ]),
+    mcpServers: [],
+  }),
 };
+
 
 /** Claude Code's entries: the default account and any further ones. */
 export function claudeCodeFactory(): ProviderFactory {

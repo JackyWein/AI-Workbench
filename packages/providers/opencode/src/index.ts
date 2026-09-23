@@ -1,6 +1,9 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   cliProviderFactory,
   field,
+  findSkills,
   numberField,
   opencodeProfile,
   parseProfile,
@@ -346,6 +349,23 @@ async function discoverModels(context: CliExtensionContext): Promise<ModelInfo[]
 /** What OpenCode needs beyond its profile data. */
 export const opencodeExtensions: CliProviderExtensions = {
   adaptArgs: adaptOpencodeArgs,
+  // OpenCode's own skill folders (it also reads Claude Code's, found there).
+  discoverImportables: async (context, request) => {
+    const config = join(context.env["XDG_CONFIG_HOME"] ?? process.env["XDG_CONFIG_HOME"] ?? join(homedir(), ".config"), "opencode");
+    return {
+      skills: await findSkills([
+        { path: join(config, "skill"), source: "your OpenCode skills" },
+        { path: join(config, "skills"), source: "your OpenCode skills" },
+        ...(request.workspacePath
+          ? [
+              { path: join(request.workspacePath, ".opencode", "skill"), source: "this project's OpenCode skills" },
+              { path: join(request.workspacePath, ".opencode", "skills"), source: "this project's OpenCode skills" },
+            ]
+          : []),
+      ]),
+      mcpServers: [],
+    };
+  },
   mcpLaunch: (servers) => opencodeMcpLaunch(servers),
   discoverModels,
   readUsage,

@@ -823,24 +823,21 @@ export async function runStartupCheck(
        [...document.querySelectorAll('.sidebar__foot .row')]
          .find(row => row.textContent?.includes('Skills'))?.click();
        await new Promise(resolve => setTimeout(resolve, 400));
-       const entry = [...document.querySelectorAll('.provider-entry')]
+       const card = [...document.querySelectorAll('.connector-card')]
          .find(node => node.textContent?.includes('Check skill'));
-       if (!entry) return false;
-       // Entries are collapsed to one line; open this one the way a user does.
-       const header = entry.querySelector('.provider-entry__toggle');
-       if (header && header.getAttribute('aria-expanded') === 'false') {
-         header.click();
-         await new Promise(resolve => setTimeout(resolve, 200));
-       }
-       const toggle = [...entry.querySelectorAll('.scope-toggle')]
+       if (!card) return 'no card for the skill';
+       card.click();
+       await new Promise(resolve => setTimeout(resolve, 200));
+       const toggle = [...document.querySelectorAll('.connector-panel .radio-row')]
          .find(node => node.textContent?.includes('This session'))
          ?.querySelector('input');
-       if (!toggle || toggle.disabled) return false;
+       if (!toggle || toggle.disabled) return 'no session switch';
        // The resume run finds it already on, and must not switch it off.
        if (!toggle.checked) {
          toggle.click();
          await new Promise(resolve => setTimeout(resolve, 400));
        }
+       document.querySelector('.connector-panel__close')?.click();
 
        const effective = await window.workbench.invoke(
          'skill.effectiveForSession', { sessionId });
@@ -865,6 +862,102 @@ export async function runStartupCheck(
        return false;
      })()`,
   );
+
+  const typeInto = `const type = (input, value) => {
+       const proto = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+       Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, value);
+       input.dispatchEvent(new Event('input', { bubbles: true }));
+     };`;
+  await check(
+    "a skill is written by hand, saved and switched on",
+    `(async () => {
+       ${typeInto}
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Skills'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       [...document.querySelectorAll('.connectors__header .primary-button')]
+         .find(node => node.textContent?.includes('New skill'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 200));
+       const panel = document.querySelector('.connector-panel');
+       if (!panel) return 'no editor';
+       const [name, description] = panel.querySelectorAll('input.text-input');
+       type(name, 'Check commits');
+       type(description, 'Use when committing');
+       type(panel.querySelector('textarea'), 'Write the why, not only the what.');
+       [...panel.querySelectorAll('.primary-button')].find(node => node.textContent === 'Save skill')?.click();
+       const saved = await ${waitFor("[...document.querySelectorAll('.connector-card')].some(node => node.textContent?.includes('Check commits') && node.textContent?.includes('On everywhere'))", 4000)};
+       if (!saved) return 'no card for the skill';
+       const skill = (await window.workbench.invoke('skill.list', undefined)).find(entry => entry.name === 'Check commits');
+       return skill?.source?.kind === 'authored' && skill.instructions === 'Write the why, not only the what.'
+         ? true : JSON.stringify(skill);
+     })()`,
+  );
+
+  await check(
+    "a skill is drafted by a provider and shown for review, not saved",
+    `(async () => {
+       ${typeInto}
+       const before = (await window.workbench.invoke('skill.list', undefined)).length;
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Skills'))?.click();
+       await ${waitFor("[...document.querySelectorAll('.view__title')].some(node => node.textContent === 'Skills')", 2000)};
+       document.querySelector('.connector-panel__close')?.click();
+       await new Promise(resolve => setTimeout(resolve, 100));
+       [...document.querySelectorAll('.connectors__header .ghost-button')]
+         .find(node => node.textContent?.includes('Draft with AI'))?.click();
+       const opened = await ${waitFor("document.querySelector('.connector-panel textarea')", 2000)};
+       if (!opened) return 'the draft panel did not open';
+       const panel = document.querySelector('.connector-panel');
+       [...panel.querySelectorAll('.provider-choice__item')].find(node => node.textContent?.includes('Mock'))?.click();
+       type(panel.querySelector('textarea'), 'Explain every shell command before running it');
+       await new Promise(resolve => setTimeout(resolve, 50));
+       [...panel.querySelectorAll('.primary-button')].find(node => node.textContent === 'Draft')?.click();
+       const drafted = await ${waitFor("document.querySelector('.connector-panel__publisher')?.textContent?.startsWith('Drafted by')", 15000)};
+       if (!drafted) return 'no draft: ' + document.querySelector('.connector-panel')?.textContent;
+       const text = document.querySelector('.connector-panel textarea')?.value ?? '';
+       const after = (await window.workbench.invoke('skill.list', undefined)).length;
+       document.querySelector('.connector-panel__close')?.click();
+       return text.includes('Mock response') && after === before ? true : 'draft: ' + text.slice(0, 80);
+     })()`,
+    30_000,
+  );
+
+  // A skill Claude Code keeps for a project: in the check workspace's own
+  // .claude/skills, removed again once it has been imported.
+  const projectSkills = join(workspaceDirectory, ".claude", "skills");
+  await mkdir(join(projectSkills, "careful-reviews"), { recursive: true });
+  await writeFile(
+    join(projectSkills, "careful-reviews", "SKILL.md"),
+    "---\nname: Careful reviews\ndescription: Use when reviewing a change\n---\nRead the whole change first.\n",
+  );
+  await check(
+    "skills a tool keeps are offered and imported for every tool",
+    `(async () => {
+       // The project's own skills are looked for in the open workspace.
+       [...document.querySelectorAll('.sidebar__scroll .row')]
+         .find(node => node.textContent?.includes('Check workspace'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Skills'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       [...document.querySelectorAll('.connectors__header .ghost-button')]
+         .find(node => node.textContent?.includes('Import'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 100));
+       [...document.querySelectorAll('.menu button')].find(node => node.textContent?.startsWith('From your tools'))?.click();
+       const listed = await ${waitFor("[...document.querySelectorAll('.connector-panel .radio-row')].some(node => node.textContent?.includes('Careful reviews'))", 15000)};
+       if (!listed) return 'not offered: ' + document.querySelector('.connector-panel')?.textContent;
+       const row = [...document.querySelectorAll('.connector-panel .radio-row')].find(node => node.textContent?.includes('Careful reviews'));
+       row.querySelector('input').click();
+       await new Promise(resolve => setTimeout(resolve, 50));
+       [...document.querySelectorAll('.connector-panel .primary-button')].find(node => node.textContent?.startsWith('Import'))?.click();
+       const imported = await ${waitFor("[...document.querySelectorAll('.connector-card')].some(node => node.textContent?.includes('Careful reviews'))", 5000)};
+       if (!imported) return 'not imported';
+       const skill = (await window.workbench.invoke('skill.list', undefined)).find(entry => entry.name === 'Careful reviews');
+       return skill?.instructions === 'Read the whole change first.' ? true : JSON.stringify(skill);
+     })()`,
+    30_000,
+  );
+  await rm(join(workspaceDirectory, ".claude"), { recursive: true, force: true });
 
   await check(
     "an MCP server that cannot start is reported, not thrown",

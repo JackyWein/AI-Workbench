@@ -11,8 +11,10 @@ import type {
   ProviderAccount,
   AppSettings,
   ChatMessage,
+  DiscoveredSkill,
   MessageAttachment,
   McpServerSaveInput,
+  SkillDraftResult,
   UpdateState,
   McpServerConfig,
   McpServerStatus,
@@ -251,7 +253,20 @@ interface WorkbenchState {
 
   refreshSkills(): Promise<void>;
   importSkills(): Promise<void>;
-  saveSkill(skill: SkillManifest): Promise<void>;
+  /** Saves a skill; the reason when it is refused. */
+  saveSkill(skill: SkillManifest): Promise<string | null>;
+  /** Skills the person's tools keep, to import. */
+  discoverSkills(): Promise<DiscoveredSkill[]>;
+  /** Imports skills found by discoverSkills; returns how it went. */
+  importDiscoveredSkills(paths: string[]): Promise<{ imported: number; failed: string | null }>;
+  /** Imports Markdown files picked in the system's dialog. */
+  importSkillFiles(): Promise<void>;
+  /** Has a tool draft a skill; the draft, or why there is none. */
+  draftSkill(input: {
+    providerId: string;
+    modelId?: string;
+    request: string;
+  }): Promise<{ draft: SkillDraftResult } | { error: string }>;
   deleteSkill(id: string): Promise<void>;
   setSkillEnabled(
     skillId: string,
@@ -972,8 +987,61 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       await invoke("skill.save", skill);
       await get().refreshSkills();
+      return null;
+    } catch (error) {
+      return describeError(error);
+    }
+  },
+
+  async discoverSkills() {
+    try {
+      const workspaceId = get().activeWorkspaceId;
+      return await invoke("skill.discover", workspaceId ? { workspaceId } : {});
     } catch (error) {
       set({ error: describeError(error) });
+      return [];
+    }
+  },
+
+  async importDiscoveredSkills(paths) {
+    try {
+      const workspaceId = get().activeWorkspaceId;
+      const result = await invoke("skill.importDiscovered", {
+        paths,
+        ...(workspaceId ? { workspaceId } : {}),
+      });
+      await get().refreshSkills();
+      const first = result.failed[0];
+      return {
+        imported: result.imported.length,
+        failed: first ? `${result.failed.length} could not be imported — ${first.reason}` : null,
+      };
+    } catch (error) {
+      return { imported: 0, failed: describeError(error) };
+    }
+  },
+
+  async importSkillFiles() {
+    try {
+      const result = await invoke("skill.importFiles", undefined);
+      if (result.cancelled) {
+        return;
+      }
+      await get().refreshSkills();
+      const first = result.failed[0];
+      if (first) {
+        set({ error: `Imported ${result.imported.length}, ${result.failed.length} failed — ${first.reason}` });
+      }
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async draftSkill(input) {
+    try {
+      return { draft: await invoke("skill.draft", input) };
+    } catch (error) {
+      return { error: describeError(error) };
     }
   },
 

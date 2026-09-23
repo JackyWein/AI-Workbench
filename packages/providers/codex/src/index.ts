@@ -1,5 +1,8 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   cliProviderFactory,
+  findSkills,
   parseProfile,
   type CliExtensionContext,
   type CliProviderExtensions,
@@ -41,6 +44,16 @@ function probe(context: CliExtensionContext): Promise<CodexProbe> {
  * and from there to "unavailable"; nothing is guessed.
  */
 export const codexExtensions: CliProviderExtensions = {
+  // Codex keeps skills in $CODEX_HOME/skills (its own built-ins in .system).
+  discoverImportables: async (context) => ({
+    skills: await findSkills([
+      {
+        path: join(context.accountHome ?? context.env["CODEX_HOME"] ?? process.env["CODEX_HOME"] ?? join(homedir(), ".codex"), "skills"),
+        source: "your Codex skills",
+      },
+    ]),
+    mcpServers: [],
+  }),
   discoverModels: async (context) => {
     const { models } = await probe(context);
     return models ? toModelInfos(models) : null;

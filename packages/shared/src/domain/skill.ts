@@ -26,7 +26,8 @@ export const skillManifestSchema = z.object({
   metadata: z.record(z.unknown()).default({}),
   source: z
     .object({
-      kind: z.enum(["builtin", "directory", "import"]),
+      /** "authored": written (or drafted and kept) in the application. */
+      kind: z.enum(["builtin", "directory", "import", "authored"]),
       path: z.string().optional(),
       importer: z.string().optional(),
     })
@@ -73,3 +74,26 @@ export const skillAssignmentInputSchema = z.object({
   enabled: z.boolean(),
 });
 export type SkillAssignmentInput = z.infer<typeof skillAssignmentInputSchema>;
+
+/** A skill one of the person's tools keeps, offered for import (spec §31). */
+export const discoveredSkillSchema = z.object({
+  /** The skill's folder, holding its SKILL.md. */
+  path: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  /** Where the tool keeps it, in words. */
+  source: z.string(),
+  providerId: z.string().min(1),
+  providerName: z.string().min(1),
+  /** Already imported from exactly this folder. */
+  imported: z.boolean(),
+});
+export type DiscoveredSkill = z.infer<typeof discoveredSkillSchema>;
+
+/** A skill a provider drafted, for the person to edit before saving. */
+export const skillDraftSchema = z.object({
+  name: z.string().min(1).max(200),
+  description: z.string().max(2000),
+  instructions: z.string().min(1),
+});
+export type SkillDraftResult = z.infer<typeof skillDraftSchema>;
