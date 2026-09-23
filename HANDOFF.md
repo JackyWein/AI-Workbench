@@ -59,7 +59,12 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
    `AI_WORKBENCH.md` has no section for remote workspaces.
 3. **The island's real drag** through the OS cursor has only been unit-tested
    and rendered headlessly.
-4. **Packaging.** A Linux unpacked build under bun was started and passed the
+4. **The parked screens.** Teams, Skills, MCP servers and Plugins were left out
+   of the design rollout and still use the earlier card layout: a wider
+   column, add-forms that are always open, cards inside cards on Teams. They
+   work, but they are not in the design's grammar yet (Settings groups and
+   Providers rows). There is no approved mock for them.
+5. **Packaging.** A Linux unpacked build under bun was started and passed the
    startup check; the installers and a clean install elsewhere were not run.
    The release workflow now uses bun and has not run since.
 

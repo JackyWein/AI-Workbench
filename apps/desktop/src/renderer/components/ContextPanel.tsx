@@ -340,6 +340,7 @@ function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Elemen
             <span className="mcp-switch__name">{server.name}</span>
             <input
               type="checkbox"
+              role="switch"
               className="mini-switch"
               checked={enabled}
               onChange={(event) => {

@@ -1382,6 +1382,48 @@ export async function runStartupCheck(
       await capture("settings", sidebar("Settings"));
       await capture("skills", sidebar("Skills"));
       await capture("usage", sidebar("Usage"));
+      await capture("mcp", sidebar("MCP servers"));
+      await capture("plugins", sidebar("Plugins"));
+      await capture(
+        "skills-open",
+        `${sidebar("Skills")}
+         await new Promise(resolve => setTimeout(resolve, 200));
+         document.querySelector('.view button[aria-expanded]')?.click();`,
+      );
+      await capture(
+        "providers-open",
+        `${sidebar("Providers")}
+         await new Promise(resolve => setTimeout(resolve, 200));
+         document.querySelector('.view button[aria-expanded]')?.click();`,
+      );
+      await capture(
+        "settings-bottom",
+        `${sidebar("Settings")}
+         await new Promise(resolve => setTimeout(resolve, 200));
+         [...document.querySelectorAll('.setting-disclosure')].forEach(b => b.click());
+         await new Promise(resolve => setTimeout(resolve, 200));
+         const v = document.querySelector('.view'); if (v) v.scrollTop = v.scrollHeight;`,
+      );
+      await capture(
+        "settings-middle",
+        `const v = document.querySelector('.view'); if (v) v.scrollTop = Math.round(v.scrollHeight / 2) - 300;`,
+      );
+      await capture(
+        "palette",
+        `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+         await new Promise(resolve => setTimeout(resolve, 300));`,
+      );
+      await capture(
+        "chat-panel",
+        `document.querySelector('.palette__input')?.dispatchEvent(
+           new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+         [...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Check session'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 300));
+         [...document.querySelectorAll('.panel__tab')]
+           .find(node => node.textContent?.startsWith('Terminal'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 900));`,
+      );
 
       // The island is its own window, so it is captured from its own page. It
       // hides while the main window has focus, so focus goes elsewhere first;

@@ -631,6 +631,12 @@ interface Derived {
   /** What the unit is about: an entry's own title, else the face. */
   readonly unitTitle: string;
   readonly markIcon: string | null;
+  /**
+   * Whose initial stands in the circle when there is no mark to draw: the
+   * agent or tool the face is about. Never the label, which may lead with a
+   * count ("1 approval pending") that the badge already shows.
+   */
+  readonly markName: string;
   readonly badge: number | null;
   readonly approvals: IslandEntry[];
   readonly questions: IslandEntry[];
@@ -689,6 +695,7 @@ function deriveFace(state: IslandState): Derived {
           ? (first?.title ?? "Approval pending")
           : `${approvals.length} approvals pending`,
       markIcon: first?.icon ?? rows[0]?.icon ?? null,
+      markName: first?.title ?? rows[0]?.title ?? "",
       badge: approvals.length,
     };
   }
@@ -703,6 +710,7 @@ function deriveFace(state: IslandState): Derived {
           ? (first?.title ?? "Question waiting")
           : `${questions.length} questions waiting`,
       markIcon: first?.icon ?? null,
+      markName: first?.title ?? "",
       badge: questions.length,
     };
   }
@@ -714,6 +722,7 @@ function deriveFace(state: IslandState): Derived {
       label: rows.length === 1 ? (first?.title ?? "Working") : `${rows.length} agents active`,
       unitTitle: active[0]?.title ?? teams[0]?.title ?? "Working",
       markIcon: first?.icon ?? null,
+      markName: first?.title ?? "",
       badge: null,
     };
   }
@@ -724,6 +733,7 @@ function deriveFace(state: IslandState): Derived {
       label: "No agents",
       unitTitle: "No agents",
       markIcon: null,
+      markName: "",
       badge: null,
     };
   }
@@ -733,6 +743,7 @@ function deriveFace(state: IslandState): Derived {
     label: `Idle · ${plural(state.sessions.recent, "session")}`,
     unitTitle: state.current.title,
     markIcon: state.sessions.last?.icon ?? null,
+    markName: state.sessions.last?.name ?? "",
     badge: null,
   };
 }
@@ -758,14 +769,17 @@ function circleHint(face: Face, hoverMode: HoverMode): string {
 
 /** The unit's own mark: the app's "W" when nothing runs, else the tool's. */
 function FaceMark({ derived, size }: { readonly derived: Derived; readonly size: number }): JSX.Element {
-  if (derived.face === "none" || (derived.face === "idle" && !derived.markIcon)) {
+  // With neither a mark nor a name there is nothing honest to put in the
+  // circle but the application's own mark.
+  const nameless = !derived.markIcon && derived.markName.trim() === "";
+  if (derived.face === "none" || (derived.face === "idle" && !derived.markIcon) || nameless) {
     return (
       <span className="isl__app" style={{ fontSize: Math.round(size * 0.75) }} aria-hidden="true">
         W
       </span>
     );
   }
-  return <Mark icon={derived.markIcon} label={derived.label} size={size} />;
+  return <Mark icon={derived.markIcon} label={derived.markName} size={size} />;
 }
 
 function Mark({
