@@ -1615,6 +1615,13 @@ input[type="checkbox"].mini-switch:disabled {
   font-size: var(--text-xs);
   color: var(--text-muted);
   margin-left: auto;
+  /* A model's tool and provider can be long; the name keeps its room. */
+  max-width: 45%;
+  padding-left: var(--space-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
 }
 
 .palette__empty {

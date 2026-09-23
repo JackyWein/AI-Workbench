@@ -9,7 +9,7 @@ import {
   Tag,
   Terminal,
 } from "lucide-react";
-import type { IslandWidgetId } from "@ai-workbench/shared";
+import type { IslandWidgetId, ModelInfo, ProviderSummary } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 
 const ISLAND_WIDGET_LABELS: Record<IslandWidgetId, string> = {
@@ -32,7 +32,27 @@ interface Command {
   readonly id: string;
   readonly label: string;
   readonly group: string;
+  /** Shown in place of the group and searched with the label, e.g. a model's tool. */
+  readonly detail?: string;
   readonly run: () => void | Promise<void>;
+}
+
+/**
+ * Where a model entry comes from, in a few words: its tool, the upstream
+ * provider the tool groups it under, and whether the name is one the tool
+ * reported, one shipped with the application, or one the person added.
+ */
+function modelDetail(provider: ProviderSummary, model: ModelInfo): string {
+  const parts = [provider.metadata.displayName];
+  if (model.group && model.group.toLowerCase() !== provider.metadata.displayName.toLowerCase()) {
+    parts.push(model.group);
+  }
+  if (model.source === "user") {
+    parts.push("added by you");
+  } else if (model.source === "profile") {
+    parts.push("built-in name");
+  }
+  return parts.join(" · ");
 }
 
 /**
@@ -296,6 +316,7 @@ export function CommandPalette(): JSX.Element | null {
             id: `model.${provider.metadata.id}.${model.id}`,
             label: `Use model: ${model.displayName}`,
             group: "Models",
+            detail: modelDetail(provider, model),
             run: () => {
               const state = store.getState();
               const id = state.activeSessionId;
@@ -364,7 +385,9 @@ export function CommandPalette(): JSX.Element | null {
     // Session > action ordering is the registry order; the filter only
     // narrows, never re-ranks, so the grammar stays stable while typing.
     return commands
-      .filter((command) => command.label.toLowerCase().includes(needle))
+      .filter((command) =>
+        `${command.label} ${command.detail ?? ""}`.toLowerCase().includes(needle),
+      )
       .slice(0, 20);
   }, [commands, query]);
 
@@ -469,7 +492,7 @@ export function CommandPalette(): JSX.Element | null {
                           <span className="row__text">
                             <Highlight label={command.label} needle={query.trim()} />
                           </span>
-                          <span className="palette__group">{command.group}</span>
+                          <span className="palette__group">{command.detail ?? command.group}</span>
                         </button>
                       </li>
                     );

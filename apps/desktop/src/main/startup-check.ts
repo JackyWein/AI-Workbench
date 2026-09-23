@@ -1218,6 +1218,27 @@ export async function runStartupCheck(
   );
 
   await check(
+    "the palette finds a tool's models by the tool's name, and says whose they are",
+    `(async () => {
+       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }));
+       await new Promise(resolve => setTimeout(resolve, 120));
+       const input = document.querySelector('.palette__input');
+       if (!input) return 'no palette';
+       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+       setValue.call(input, 'Mock Provider');
+       input.dispatchEvent(new Event('input', { bubbles: true }));
+       await new Promise(resolve => setTimeout(resolve, 150));
+       const item = [...document.querySelectorAll('.palette__item')]
+         .find(node => node.textContent?.includes('Use model: Mock Fast'));
+       const detail = item?.querySelector('.palette__group')?.textContent ?? null;
+       input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+       await new Promise(resolve => setTimeout(resolve, 150));
+       return detail === 'Mock Provider' || 'detail: ' + detail;
+     })()`,
+  );
+
+  await check(
     "the island rests on attention in automatic mode",
     `(async () => {
        await window.workbench.invoke('statusIsland.pinWidget', { widget: null });
