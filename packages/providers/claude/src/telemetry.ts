@@ -78,6 +78,33 @@ if ($null -ne $d.rate_limits.seven_day.used_percentage) { $parts += ('week {0}%'
 [Console]::Out.Write(($parts -join $dot))
 `;
 
+/**
+ * The bridge on macOS and Linux, where there is no PowerShell to lean on.
+ * Claude Code runs status line commands through /bin/sh there, so the bridge
+ * is a plain POSIX script. Arguments: output file, and a script holding the
+ * person's own command ("none" when they have none).
+ *
+ * It saves the report atomically and hands the same input on to the person's
+ * own status line. With none configured it prints nothing — exactly what
+ * Claude Code shows without a status line — rather than parsing JSON in sh,
+ * which would be guesswork without a JSON tool that cannot be assumed.
+ */
+export const POSIX_BRIDGE_SCRIPT = `out=$1
+chain=$2
+tmp="$out.$$.tmp"
+if cat > "$tmp"; then
+  mv -f "$tmp" "$out"
+else
+  rm -f "$tmp"
+fi
+if [ "$chain" != "none" ]; then
+  exec /bin/sh "$chain"
+fi
+`;
+
+/** The shell Claude Code itself runs status line commands with on macOS and Linux. */
+const POSIX_SHELL = "/bin/sh";
+
 /** The person's own status line, as their settings define it. */
 export interface UserStatusLine {
   readonly command: string;
@@ -156,6 +183,21 @@ export function bridgeCommand(options: {
     quoted(options.output),
     options.chain ? quoted(options.chain) : '"none"',
     options.chain && options.shell ? quoted(options.shell) : '"none"',
+  ].join(" ");
+}
+
+/** The POSIX bridge as a status line command for one run. */
+export function posixBridgeCommand(options: {
+  readonly script: string;
+  readonly output: string;
+  /** Script file holding the person's own command, when they have one. */
+  readonly chain: string | null;
+}): string {
+  return [
+    POSIX_SHELL,
+    shellQuote(options.script),
+    shellQuote(options.output),
+    options.chain ? shellQuote(options.chain) : "none",
   ].join(" ");
 }
 
@@ -341,15 +383,26 @@ export async function statusLineTelemetry(
   await mkdir(directory, { recursive: true });
   void sweep(directory, Date.now());
 
-  const script = join(context.stateDirectory, "statusline-bridge.ps1");
+  // PowerShell on Windows, the POSIX shell everywhere else. Without the shell
+  // the bridge needs, no bridge is installed at all: a status line command
+  // that cannot run would take the person's own status line with it.
+  const windows = process.platform === "win32";
+  if (!windows && !existsSync(POSIX_SHELL)) {
+    return null;
+  }
+
+  const script = join(
+    context.stateDirectory,
+    windows ? "statusline-bridge.ps1" : "statusline-bridge.sh",
+  );
   // Written with a byte order mark: Windows PowerShell reads a file without
   // one in the legacy code page.
-  await writeFile(script, `\uFEFF${BRIDGE_SCRIPT}`, "utf8");
+  await writeFile(script, windows ? `\uFEFF${BRIDGE_SCRIPT}` : POSIX_BRIDGE_SCRIPT, "utf8");
 
   const output = join(directory, `${run.runId}.status.json`);
   const settingsFile = join(directory, `${run.runId}.settings.json`);
   const userStatusLine = await findUserStatusLine(run.workingDirectory, configHomeOf(context));
-  const shell = findGitBash({ ...process.env, ...context.env });
+  const shell = windows ? findGitBash({ ...process.env, ...context.env }) : POSIX_SHELL;
   const chain = userStatusLine
     ? await writeChainScript(directory, run.runId, userStatusLine, shell, output)
     : null;
@@ -359,7 +412,9 @@ export async function statusLineTelemetry(
       {
         statusLine: {
           type: "command",
-          command: bridgeCommand({ script, output, chain, shell }),
+          command: windows
+            ? bridgeCommand({ script, output, chain, shell })
+            : posixBridgeCommand({ script, output, chain }),
           ...(userStatusLine?.padding === undefined ? {} : { padding: userStatusLine.padding }),
         },
       },
