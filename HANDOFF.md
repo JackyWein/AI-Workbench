@@ -78,7 +78,12 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
    startup check; a clean install elsewhere was not run. The 0.0.3 release
    run failed on every platform because electron-builder published by itself
    when it saw the tag, without a token; the package step now passes
-   `--publish never` and the release job alone publishes.
+   `--publish never` and the release job alone publishes. CI now also
+   installs, typechecks, tests and packages (unpacked, never published) on
+   Windows and macOS on every push, so a platform difference shows up there
+   first; its first run found a macOS-only SSH path bug, since fixed.
+   A release can be started without pushing a tag: Actions → Release →
+   Run workflow tags the built commit with the application version.
 
 ## Things that will bite you
 

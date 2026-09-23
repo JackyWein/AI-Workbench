@@ -141,6 +141,9 @@ jobs:
           # A manual run tags the current commit with the application version,
           # so a release can be produced without pushing a tag by hand.
           tag_name: v${{ needs.package.outputs.version }}
+          # The commit that was built, not whatever the branch points to by
+          # the time the packages are done.
+          target_commitish: ${{ github.sha }}
           name: AI Workbench v${{ needs.package.outputs.version }}
           files: release-files/*
           body_path: release-body.md
