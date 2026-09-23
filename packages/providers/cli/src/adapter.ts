@@ -34,7 +34,7 @@ import type {
   CliParseState,
   CliProviderExtensions,
 } from "./extensions.js";
-import { buildInteractiveArgs, buildTurnArgs } from "./invocation.js";
+import { buildInteractiveArgs, buildTurnArgs, promptWithAttachments } from "./invocation.js";
 import { buildMcpLaunch, mcpServersFor, NO_MCP, type CliMcpLaunch } from "./mcp.js";
 import { ModelStore, parseModelLines, validModels } from "./models.js";
 import { classifyError, parseWithRules } from "./parse.js";
@@ -412,8 +412,11 @@ export class CliProviderAdapter implements AIProviderAdapter {
       yield { type: "warning", message: mcp.warning };
     }
 
+    const attachments = message.attachments ?? [];
+    const prompt = promptWithAttachments(profile, message.text, attachments);
     const built = buildTurnArgs(profile, {
-      prompt: message.text,
+      prompt,
+      attachments,
       sessionId: session.sessionId,
       // Resume arguments resolve to nothing while the provider session id is
       // still pending, which is how a first turn avoids passing a resume flag.
@@ -434,7 +437,7 @@ export class CliProviderAdapter implements AIProviderAdapter {
       run = await transport.start({
         args,
         cwd: setup?.workingDirectory,
-        ...(profile.promptVia === "stdin" ? { stdin: message.text } : {}),
+        ...(profile.promptVia === "stdin" ? { stdin: prompt } : {}),
         timeoutMs: profile.timeoutMs,
         ...(Object.keys(mcp.launch.env).length > 0 ? { env: mcp.launch.env } : {}),
       });
@@ -1023,6 +1026,9 @@ function deriveCapabilities(
   }
   if (profile.accounts) {
     supported.add("accounts");
+  }
+  if (profile.attachments) {
+    supported.add("attachments");
   }
   if (extensions.readUsage) {
     supported.add("usage");

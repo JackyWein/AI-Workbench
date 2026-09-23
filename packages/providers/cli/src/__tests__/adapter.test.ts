@@ -1,9 +1,14 @@
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProviderEvent } from "@ai-workbench/shared";
-import type { ProviderContext, ProviderSessionHandle } from "@ai-workbench/provider-base";
+import type {
+  AgentMessage,
+  ProviderContext,
+  ProviderSessionHandle,
+} from "@ai-workbench/provider-base";
 import { CliProviderAdapter, isPendingSessionId } from "../adapter.js";
+import { mentionPath } from "../invocation.js";
 import { parseModelLines } from "../models.js";
 import { parseOpencodeStatsUsage } from "../usage.js";
 import { parseProfile, readPath, substitute, type CliProviderProfileInput } from "../profile.js";
@@ -576,12 +581,13 @@ describe("argument assembly", () => {
   async function argvFor(
     profile: CliProviderProfileInput,
     handle: { sessionId: string; providerSessionId: string; modelId?: string },
+    message: AgentMessage = { text: "the prompt" },
   ): Promise<string[]> {
     const adapter = await adapterFor(profile, argvCli);
     // Open the session first (that is where the working folder comes from),
     // then keep the handle the test asked about for the argument assertions.
     await adapter.createSession({ sessionId: handle.sessionId, workingDirectory: process.cwd() });
-    const events = await collect(adapter.sendMessage(handle, { text: "the prompt" }));
+    const events = await collect(adapter.sendMessage(handle, message));
     // The fixture prints only the arguments after its own script path.
     const printed = textOf(events).trim();
     return JSON.parse(printed) as string[];
@@ -620,5 +626,95 @@ describe("argument assembly", () => {
       providerSessionId: "pending:s1",
     });
     expect(args).toEqual(["run", "--json", "the prompt"]);
+  });
+
+  const withFiles: AgentMessage = {
+    text: "the prompt",
+    attachments: [
+      { kind: "image", path: "/kept/files/red dot.png" },
+      { kind: "file", path: "/kept/files/notes.txt" },
+    ],
+  };
+  const handle = { sessionId: "s1", providerSessionId: "pending:s1" };
+
+  it("passes each file by the tool's file flag, before the prompt", async () => {
+    const args = await argvFor(
+      argvProfile({
+        promptArgs: ["--", "{prompt}"],
+        attachments: { fileArgs: ["--file", "{path}"] },
+      }),
+      handle,
+      withFiles,
+    );
+    expect(args).toEqual([
+      "run",
+      "--json",
+      "--file",
+      "/kept/files/red dot.png",
+      "--file",
+      "/kept/files/notes.txt",
+      "--",
+      "the prompt",
+    ]);
+  });
+
+  it("passes pictures by the image flag and lists the other files in the prompt", async () => {
+    const args = await argvFor(
+      argvProfile({ attachments: { imageArgs: ["--image={path}"] } }),
+      handle,
+      withFiles,
+    );
+    expect(args.slice(0, 3)).toEqual(["run", "--json", "--image=/kept/files/red dot.png"]);
+    expect(args).toHaveLength(4);
+    expect(args[3]).toBe(
+      "the prompt\n\nAttached files (read them from these paths):\n- /kept/files/notes.txt",
+    );
+  });
+
+  it("mentions files in the prompt and opens their folder to the tool", async () => {
+    const args = await argvFor(
+      argvProfile({
+        promptArgs: ["--prompt", "{prompt}"],
+        attachments: { mentionPrefix: "@", directoryArgs: ["--include-directories", "{directory}"] },
+      }),
+      handle,
+      withFiles,
+    );
+    const mention = (path: string): string =>
+      `@${process.platform === "win32" ? (path.includes(" ") ? `"${path}"` : path) : path.replace(/ /g, "\\ ")}`;
+    expect(args).toEqual([
+      "run",
+      "--json",
+      "--include-directories",
+      dirname("/kept/files/notes.txt"),
+      "--prompt",
+      `the prompt\n\n${mention("/kept/files/red dot.png")}\n${mention("/kept/files/notes.txt")}`,
+    ]);
+  });
+
+  it("says it takes files only when its profile says how", async () => {
+    const without = await adapterFor(argvProfile({}), argvCli);
+    const withThem = await adapterFor(
+      argvProfile({ attachments: { fileArgs: ["--file", "{path}"] } }),
+      argvCli,
+    );
+    expect((await without.getCapabilities()).supported).not.toContain("attachments");
+    expect((await withThem.getCapabilities()).supported).toContain("attachments");
+  });
+});
+
+describe("file mentions", () => {
+  it("escapes what a mention parser would split on", () => {
+    expect(mentionPath("/a/red dot, v2 (final).png", "linux")).toBe(
+      "/a/red\\ dot\\,\\ v2\\ \\(final\\).png",
+    );
+    expect(mentionPath("/a/plain.png", "darwin")).toBe("/a/plain.png");
+  });
+
+  it("quotes a Windows path instead, whose backslashes separate folders", () => {
+    expect(mentionPath("C:\\Users\\me\\red dot.png", "win32")).toBe(
+      '"C:\\Users\\me\\red dot.png"',
+    );
+    expect(mentionPath("C:\\Users\\me\\plain.png", "win32")).toBe("C:\\Users\\me\\plain.png");
   });
 });

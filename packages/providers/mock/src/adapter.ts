@@ -139,6 +139,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
         "toolCalls",
         "usage",
         "contextInformation",
+        "attachments",
       ],
     };
   }
@@ -268,7 +269,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
           // end to end without spending an account (spec §20).
           looksLikeTeamPrompt(prompt)
           ? buildTeamReply(prompt)
-          : buildMockReply(prompt, modelId);
+          : buildMockReply(prompt, modelId, message.attachments);
       const chunkSize = modelId === "mock-fast" ? 6 : 3;
       const chunkDelay =
         modelId === "mock-fast"

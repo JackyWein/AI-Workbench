@@ -23,6 +23,32 @@ export const toolCallRecordSchema = z.object({
 });
 export type ToolCallRecord = z.infer<typeof toolCallRecordSchema>;
 
+/**
+ * A file sent along with a message. The path is on this computer; how the
+ * provider receives it (a flag of its own, a reference in the prompt) is the
+ * provider's business, and one that cannot take files is never sent any.
+ */
+export const messageAttachmentSchema = z.object({
+  path: z.string().min(1).max(4096),
+  name: z.string().min(1).max(260),
+  kind: z.enum(["image", "file"]),
+  size: z.number().int().nonnegative().optional(),
+});
+export type MessageAttachment = z.infer<typeof messageAttachmentSchema>;
+
+/** The largest single file a message carries. */
+export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024;
+
+/** Picture formats the tools that take images all read. */
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp"]);
+
+/** "image" for a picture the tools read as one, otherwise "file". */
+export function attachmentKind(name: string): MessageAttachment["kind"] {
+  const dot = name.lastIndexOf(".");
+  const extension = dot === -1 ? "" : name.slice(dot + 1).toLowerCase();
+  return IMAGE_EXTENSIONS.has(extension) ? "image" : "file";
+}
+
 export const messageUsageSchema = z.object({
   limits: z.array(usageLimitSchema),
   inputTokens: z.number().nonnegative().optional(),
@@ -51,6 +77,8 @@ export const chatMessageSchema = z.object({
   providerId: z.string().min(1).nullable(),
   modelId: z.string().min(1).nullable(),
   toolCalls: z.array(toolCallRecordSchema),
+  /** Files the person sent with this message. */
+  attachments: z.array(messageAttachmentSchema).default([]),
   usage: messageUsageSchema.nullable(),
   error: z.string().nullable(),
   createdAt: z.date(),

@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
@@ -5,6 +7,7 @@ import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbenc
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import type { AppEvent, ChatMessage, ProviderEvent } from "@ai-workbench/shared";
 import { EventBus } from "../event-bus.js";
+import { AttachmentError } from "../attachments.js";
 import { createNullLogger } from "../logger.js";
 import { ProviderManager } from "../provider-manager.js";
 import { SessionManager } from "../session-manager.js";
@@ -30,6 +33,7 @@ interface TestApp {
 async function bootApp(
   directory: string,
   mockOptions: { chunkDelayMs?: number; startupDelayMs?: number } = {},
+  attachmentsDirectory?: string,
 ): Promise<TestApp> {
   const logger = createNullLogger();
   const database = createDatabase({ file: join(directory, "test.db") });
@@ -54,6 +58,7 @@ async function bootApp(
     logger,
     providers,
     workspaces,
+    ...(attachmentsDirectory ? { attachmentsDirectory } : {}),
   });
 
   return {
@@ -404,5 +409,63 @@ describe("session vertical slice", () => {
     expect(settings.theme).toBe("light");
     expect(settings.developerMode).toBe(true);
     expect(settings.density).toBe("comfortable");
+  });
+});
+
+describe("files sent with a message", () => {
+  let directory: string;
+  let kept: string;
+  let app: TestApp;
+
+  beforeEach(async () => {
+    directory = await makeTempDirectory("ai-workbench-files-");
+    kept = join(directory, "kept");
+    app = await bootApp(directory, {}, kept);
+  });
+
+  afterEach(async () => {
+    await app.dispose();
+    await removeTempDirectory(directory);
+  });
+
+  it("keeps a copy with the message and hands the copy to the provider", async () => {
+    const workspace = await app.workspaces.create({ name: "Demo", path: directory });
+    const session = await app.sessions.create({ workspaceId: workspace.id, name: "Chat", type: "solo" });
+    const picked = join(directory, "picked");
+    await mkdir(picked);
+    await writeFile(join(picked, "red dot.png"), "not really a picture");
+    await writeFile(join(picked, "notes.txt"), "hello notes");
+
+    const { messageId } = await app.sessions.sendMessage(session.id, "look at these", [
+      { path: join(picked, "red dot.png") },
+      { path: join(picked, "notes.txt") },
+    ]);
+    const finished = await waitForMessage(app.events, messageId);
+    expect(finished.content).toContain("You attached 2 files: red dot.png (image), notes.txt (file).");
+
+    const [user] = await app.sessions.listMessages(session.id);
+    expect(user?.attachments.map(({ name, kind, size }) => ({ name, kind, size }))).toEqual([
+      { name: "red dot.png", kind: "image", size: 20 },
+      { name: "notes.txt", kind: "file", size: 11 },
+    ]);
+    const copy = user?.attachments[1]?.path ?? "";
+    expect(copy.startsWith(join(kept, session.id))).toBe(true);
+    expect(await readFile(copy, "utf8")).toBe("hello notes");
+
+    await app.sessions.delete(session.id);
+    expect(existsSync(join(kept, session.id))).toBe(false);
+  });
+
+  it("refuses a file that is gone and leaves the session free", async () => {
+    const workspace = await app.workspaces.create({ name: "Demo", path: directory });
+    const session = await app.sessions.create({ workspaceId: workspace.id, name: "Chat", type: "solo" });
+
+    await expect(
+      app.sessions.sendMessage(session.id, "look", [{ path: join(directory, "missing.png") }]),
+    ).rejects.toBeInstanceOf(AttachmentError);
+    expect(await app.sessions.listMessages(session.id)).toHaveLength(0);
+
+    const { messageId } = await app.sessions.sendMessage(session.id, "still here");
+    expect((await waitForMessage(app.events, messageId)).status).toBe("complete");
   });
 });

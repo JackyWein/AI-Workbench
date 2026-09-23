@@ -455,4 +455,13 @@ describe("OpenCode 2's command line", () => {
       ),
     ).toEqual(["--auto"]);
   });
+
+  it("leaves the prompt after -- alone, even when it reads like a flag", () => {
+    expect(
+      argsForOpencode2(
+        ["run", "--model", "a/b", "--variant", "high", "--file", "/f.png", "--", "--model please"],
+        "turn",
+      ),
+    ).toEqual(["run", "--model", "a/b#high", "--file", "/f.png", "--", "--model please"]);
+  });
 });

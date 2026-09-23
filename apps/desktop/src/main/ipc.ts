@@ -8,6 +8,7 @@ import {
   type IpcHandlerInput,
   type IpcOutput,
 } from "@ai-workbench/shared";
+import { inspectAttachments } from "@ai-workbench/core";
 import { remoteRoot } from "@ai-workbench/workspace-ssh";
 import type { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
 import { toProviderConfigOverrides, type AppServices } from "./services.js";
@@ -145,7 +146,19 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       deleted: await services.sessions.delete(input.id),
     }),
     "session.sendMessage": (input) =>
-      services.sessions.sendMessage(input.sessionId, input.text),
+      services.sessions.sendMessage(input.sessionId, input.text, input.attachments ?? []),
+    "session.chooseAttachments": async () => {
+      const window = findMainWindow();
+      const options = { properties: ["openFile", "multiSelections"] as ("openFile" | "multiSelections")[] };
+      const result = await (window
+        ? dialog.showOpenDialog(window, options)
+        : dialog.showOpenDialog(options));
+      if (result.canceled) {
+        return [];
+      }
+      // Described from the disk; the session checks them again when sent.
+      return inspectAttachments(result.filePaths.map((path) => ({ path })));
+    },
     "session.cancel": async (input) => ({
       cancelled: await services.sessions.cancel(input.sessionId),
     }),

@@ -57,7 +57,7 @@ export function ChatView({ messages }: ChatViewProps): JSX.Element {
 
   const retry = (message: ChatMessage): void => {
     if (message.role === "user" && message.content.trim().length > 0) {
-      void sendMessage(message.content);
+      void sendMessage(message.content, message.attachments);
       return;
     }
     // A failed assistant turn retries the user turn before it, when there is one.
@@ -65,7 +65,7 @@ export function ChatView({ messages }: ChatViewProps): JSX.Element {
     for (let position = index - 1; position >= 0; position -= 1) {
       const candidate = messages[position];
       if (candidate?.role === "user" && candidate.content.trim().length > 0) {
-        void sendMessage(candidate.content);
+        void sendMessage(candidate.content, candidate.attachments);
         return;
       }
     }

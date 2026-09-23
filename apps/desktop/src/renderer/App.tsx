@@ -1,5 +1,5 @@
 import { type JSX, useEffect, useState } from "react";
-import type { ChatMessage } from "@ai-workbench/shared";
+import type { ChatMessage, ProviderSummary } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
@@ -231,8 +231,9 @@ export function App(): JSX.Element {
               <Composer
                 busy={busy}
                 disabled={false}
-                onSend={(text) => void state.sendMessage(text)}
+                onSend={(text, attachments) => void state.sendMessage(text, attachments)}
                 onCancel={() => void state.cancel()}
+                attach={attachSupport(state.providers.find((entry) => entry.metadata.id === session.providerId))}
               />
               {state.workspacePanelOpen ? <WorkspacePanel sessionId={session.id} /> : null}
             </div>
@@ -356,4 +357,16 @@ export function App(): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+/** Whether the session's provider takes files, and why not when it does not. */
+function attachSupport(
+  provider: ProviderSummary | undefined,
+): { supported: boolean; reason?: string } {
+  if (!provider) {
+    return { supported: false, reason: "Choose a provider to attach files" };
+  }
+  return provider.capabilities.supported.includes("attachments")
+    ? { supported: true }
+    : { supported: false, reason: `${provider.metadata.displayName} can't take files` };
 }

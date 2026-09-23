@@ -1314,6 +1314,72 @@ input[type="checkbox"].mini-switch:disabled {
   padding: 0 0 7px;
 }
 
+.composer__inner[data-dragging="true"] {
+  border-color: var(--accent);
+  border-style: dashed;
+}
+
+.composer__files,
+.message__files {
+  list-style: none;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.composer__files {
+  padding: 8px 10px 0;
+}
+
+.message__files {
+  padding: 0 0 6px;
+}
+
+.file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 3px 6px 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.file-chip__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.file-chip__size {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.file-chip__remove {
+  flex: none;
+  display: inline-flex;
+  padding: 1px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.file-chip__remove:hover {
+  color: var(--text-primary);
+  background: var(--surface-raised);
+}
+
+.composer__note {
+  margin: 6px 12px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 /* -------------------------------------------------------- context panel -- */
 
 .context {

@@ -94,6 +94,11 @@ export const claudeCodeProfile: CliProviderProfileInput = {
   mcp: { via: "json-arg", args: ["--mcp-config", "{mcpConfig}"] },
   resumeArgs: ["--resume", "{providerSessionId}"],
   promptVia: "stdin",
+  // Files are listed in the prompt and read with Claude Code's own Read tool,
+  // pictures included. It asks before reading outside its folders, which a
+  // headless turn cannot answer, so the files' folder is added (checked with
+  // Claude Code and a stand-in API: refused without it, read with it).
+  attachments: { directoryArgs: ["--add-dir", "{directory}"] },
   interactive: { args: [] },
   // Set by Claude Code for everything it starts. Inherited, they would make
   // each run a child session that keeps no transcript of its own.

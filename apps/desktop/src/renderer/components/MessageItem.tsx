@@ -1,5 +1,5 @@
 import { type JSX, useState } from "react";
-import { Check, ChevronRight, Copy, RotateCcw, Square } from "lucide-react";
+import { Check, ChevronRight, Copy, FileText, Image, RotateCcw, Square } from "lucide-react";
 import type { ChatMessage, ToolCallRecord } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 
@@ -44,6 +44,21 @@ export function MessageItem({ message, streaming, onRetry }: MessageItemProps): 
       {message.toolCalls.map((toolCall) => (
         <ToolCallBlock key={toolCall.id} toolCall={toolCall} />
       ))}
+
+      {message.attachments.length > 0 ? (
+        <ul className="message__files" aria-label="Attached files">
+          {message.attachments.map((file) => (
+            <li key={file.path} className="file-chip" title={file.name}>
+              {file.kind === "image" ? (
+                <Image size={13} strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <FileText size={13} strokeWidth={1.75} aria-hidden="true" />
+              )}
+              <span className="file-chip__name">{file.name}</span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       {message.content ? (
         <MessageBody content={message.content} role={message.role} />

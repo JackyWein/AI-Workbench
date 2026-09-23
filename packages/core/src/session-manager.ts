@@ -3,6 +3,7 @@ import type { Database } from "@ai-workbench/database";
 import { chatMessages, sessions, type ChatMessageRow, type SessionRow } from "@ai-workbench/database";
 import {
   normalizeError,
+  type AgentMessage,
   type AIProviderAdapter,
   type ProviderSessionHandle,
   type ProviderToolAccess,
@@ -11,6 +12,7 @@ import { readSessionRuntimeSettings } from "@ai-workbench/shared";
 import type {
   ChatMessage,
   CreateSessionInput,
+  MessageAttachment,
   Logger,
   ProviderCapabilities,
   MessageStatus,
@@ -21,6 +23,8 @@ import type {
   ToolCallRecord,
   UpdateSessionInput,
 } from "@ai-workbench/shared";
+import { join } from "node:path";
+import { AttachmentError, forgetAttachments, inspectAttachments, keepAttachments } from "./attachments.js";
 import type { EventBus } from "./event-bus.js";
 import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
 import { createId } from "./ids.js";
@@ -69,6 +73,11 @@ export interface SessionManagerOptions {
   /** Optional: without them a session simply gets no skills and no tools. */
   readonly skills?: SkillService;
   readonly mcp?: McpService;
+  /**
+   * Where each session keeps copies of the files sent in it. Without one,
+   * files go to the tool from where the person picked them.
+   */
+  readonly attachmentsDirectory?: string;
 }
 
 /**
@@ -84,6 +93,7 @@ export class SessionManager {
   readonly #workspaces: WorkspaceManager;
   readonly #skills: SkillService | undefined;
   readonly #mcp: McpService | undefined;
+  readonly #attachmentsDirectory: string | undefined;
   readonly #toolBridge = new ToolBridge();
   readonly #runs = new Map<string, ActiveRun>();
 
@@ -95,6 +105,7 @@ export class SessionManager {
     this.#workspaces = options.workspaces;
     this.#skills = options.skills;
     this.#mcp = options.mcp;
+    this.#attachmentsDirectory = options.attachmentsDirectory;
   }
 
   async list(workspaceId?: string): Promise<Session[]> {
@@ -215,6 +226,14 @@ export class SessionManager {
     await this.cancel(id);
     await this.#destroyProviderSession(existing);
     await this.#db.delete(sessions).where(eq(sessions.id, id));
+    if (this.#attachmentsDirectory) {
+      await forgetAttachments(join(this.#attachmentsDirectory, id)).catch((error: unknown) => {
+        this.#logger.warn("Could not remove a session's attached files", {
+          sessionId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
     this.#events.publish({ type: "session.deleted", sessionId: id });
     return true;
   }
@@ -246,7 +265,11 @@ export class SessionManager {
    * Persists the user turn and starts the provider run. Returns as soon as the
    * assistant message exists; the answer itself arrives as domain events.
    */
-  async sendMessage(sessionId: string, text: string): Promise<{ messageId: string }> {
+  async sendMessage(
+    sessionId: string,
+    text: string,
+    attachments: readonly Pick<MessageAttachment, "path">[] = [],
+  ): Promise<{ messageId: string }> {
     const session = await this.require(sessionId);
     if (this.#runs.has(sessionId)) {
       throw new SessionBusyError(sessionId);
@@ -269,6 +292,14 @@ export class SessionManager {
     };
     this.#runs.set(sessionId, placeholder);
 
+    let sent: MessageAttachment[];
+    try {
+      sent = await this.#prepareAttachments(sessionId, adapter, attachments);
+    } catch (error) {
+      this.#runs.delete(sessionId);
+      throw error;
+    }
+
     const userMessage = await this.#insertMessage({
       sessionId,
       role: "user",
@@ -276,6 +307,7 @@ export class SessionManager {
       status: "complete",
       providerId: null,
       modelId: null,
+      attachments: sent,
     });
     this.#events.publish({ type: "message.created", message: userMessage });
 
@@ -332,7 +364,13 @@ export class SessionManager {
     // The object the stream reads is the one registered: a cancel marks it,
     // and the stream must see that mark (it used to land on a copy, so a turn
     // stopped by the person was saved as complete when the tool finished).
-    run.finished = this.#stream(run, session.providerId, assistantMessage, text).finally(
+    const message = {
+      text,
+      ...(sent.length > 0
+        ? { attachments: sent.map(({ kind, path }) => ({ kind, path })) }
+        : {}),
+    };
+    run.finished = this.#stream(run, session.providerId, assistantMessage, message).finally(
       () => {
         this.#runs.delete(sessionId);
       },
@@ -340,6 +378,30 @@ export class SessionManager {
     this.#runs.set(sessionId, run);
 
     return { messageId: assistantMessage.id };
+  }
+
+  /**
+   * The files going with a message, checked on disk and, when the session has
+   * a folder for them, copied there. A provider that cannot take files is
+   * never handed any.
+   */
+  async #prepareAttachments(
+    sessionId: string,
+    adapter: AIProviderAdapter,
+    attachments: readonly Pick<MessageAttachment, "path">[],
+  ): Promise<MessageAttachment[]> {
+    if (attachments.length === 0) {
+      return [];
+    }
+    const capabilities = await this.#safeCapabilities(adapter);
+    if (!capabilities?.supported.includes("attachments")) {
+      throw new AttachmentError(`${adapter.metadata.displayName} does not take files with a message.`);
+    }
+    const inspected = await inspectAttachments(attachments);
+    if (!this.#attachmentsDirectory) {
+      return inspected;
+    }
+    return keepAttachments(inspected, join(this.#attachmentsDirectory, sessionId, createId("files")));
   }
 
   async cancel(sessionId: string): Promise<boolean> {
@@ -426,7 +488,7 @@ export class SessionManager {
     run: ActiveRun,
     providerId: string,
     message: ChatMessage,
-    text: string,
+    request: AgentMessage,
   ): Promise<void> {
     const sessionId = message.sessionId;
     let content = "";
@@ -438,7 +500,7 @@ export class SessionManager {
     this.#publishStatus(sessionId, "working");
 
     try {
-      for await (const event of run.adapter.sendMessage(run.handle, { text })) {
+      for await (const event of run.adapter.sendMessage(run.handle, request)) {
         this.#events.publish({
           type: "provider.event",
           sessionId,
@@ -549,7 +611,7 @@ export class SessionManager {
     // first exchange, so past conversations stay findable. Renamed sessions
     // are never touched.
     if (status === "complete") {
-      await this.#nameFromFirstExchange(sessionId, text).catch((error: unknown) => {
+      await this.#nameFromFirstExchange(sessionId, request.text).catch((error: unknown) => {
         this.#logger.debug("Session could not be named from its first turn", {
           sessionId,
           error: error instanceof Error ? error.message : String(error),
@@ -774,6 +836,7 @@ export class SessionManager {
     status: MessageStatus;
     providerId: string | null;
     modelId: string | null;
+    attachments?: MessageAttachment[];
   }): Promise<ChatMessage> {
     const now = new Date();
     const row: ChatMessageRow = {
@@ -785,6 +848,7 @@ export class SessionManager {
       providerId: input.providerId,
       modelId: input.modelId,
       toolCalls: [],
+      attachments: input.attachments ?? [],
       usage: null,
       error: null,
       createdAt: now,
@@ -862,6 +926,7 @@ function toChatMessage(row: ChatMessageRow): ChatMessage {
     modelId: row.modelId,
     // Written by this module through typed inserts.
     toolCalls: row.toolCalls as ToolCallRecord[],
+    attachments: row.attachments as MessageAttachment[],
     usage: (row.usage ?? null) as MessageUsage | null,
     error: row.error,
     createdAt: row.createdAt,

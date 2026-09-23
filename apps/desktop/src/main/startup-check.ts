@@ -501,6 +501,43 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // A file outside the workspace, the way a person attaches one from
+  // anywhere; the session keeps its own copy and the mock names it back.
+  const attached = join(dirname(workspaceDirectory), "check-attachments", "check dot.png");
+  await mkdir(dirname(attached), { recursive: true });
+  await writeFile(attached, "not really a picture");
+  await check(
+    "a file sent with a message is kept, answered and shown with it",
+    `(async () => {
+       const plus = document.querySelector('.composer__iconbtn[aria-label="Attach files"]');
+       if (!plus || plus.disabled) return 'the attach button is ' + (plus ? 'disabled' : 'missing');
+       const sessions = await window.workbench.invoke('session.list', {});
+       const session = sessions.find(entry => entry.name === 'Check session') ?? sessions[0];
+       if (!session) return 'no session';
+       await window.workbench.invoke('session.sendMessage', {
+         sessionId: session.id,
+         text: 'What is in this file?',
+         attachments: [{ path: ${JSON.stringify(attached)}, name: 'check dot.png', kind: 'image' }],
+       });
+       const shown = await ${waitFor(
+         "[...document.querySelectorAll('.message__files .file-chip')].some(node => node.textContent?.includes('check dot.png'))",
+         5000,
+       )};
+       if (!shown) return 'no file chip on the message';
+       const answered = await ${waitFor(
+         "[...document.querySelectorAll('.message')].some(node => node.textContent?.includes('You attached 1 file: check dot.png (image).'))",
+         10000,
+       )};
+       if (!answered) return 'the answer does not name the file';
+       const [user] = (await window.workbench.invoke('message.list', { sessionId: session.id }))
+         .filter(entry => entry.attachments.length > 0);
+       const kept = user?.attachments[0]?.path ?? '';
+       return kept.includes(session.id) && !kept.startsWith(${JSON.stringify(dirname(attached))})
+         ? true
+         : 'the message points at ' + kept + ', not a copy of its own';
+     })()`,
+  );
+
   await check(
     "command palette opens with Ctrl+K",
     `(() => {

@@ -13,6 +13,8 @@ export interface WorkbenchApi {
   invoke<C extends IpcChannel>(channel: C, input: IpcInput<C>): Promise<IpcOutput<C>>;
   onEvent(listener: (event: AppEvent) => void): () => void;
   onTerminalEvent(listener: (event: TerminalEvent) => void): () => void;
+  /** Where a file dropped into the window lives; empty when it has no path. */
+  pathForFile(file: File): string;
   /** Where the Status Island asked the main window to go (spec §98). */
   onNavigate(listener: (target: IslandTarget) => void): () => void;
 }

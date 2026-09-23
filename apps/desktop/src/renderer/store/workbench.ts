@@ -11,6 +11,7 @@ import type {
   ProviderAccount,
   AppSettings,
   ChatMessage,
+  MessageAttachment,
   McpServerConfig,
   McpServerStatus,
   PluginAccount,
@@ -227,7 +228,9 @@ interface WorkbenchState {
   clearSessionTeam(sessionId: string): Promise<void>;
   deleteSession(id: string): Promise<void>;
 
-  sendMessage(text: string): Promise<void>;
+  sendMessage(text: string, attachments?: MessageAttachment[]): Promise<void>;
+  /** Files picked in the system's dialog; empty when the person cancels. */
+  chooseAttachments(): Promise<MessageAttachment[]>;
   cancel(): Promise<void>;
 
   refreshUsage(): Promise<void>;
@@ -756,7 +759,16 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  async sendMessage(text) {
+  async chooseAttachments() {
+    try {
+      return await invoke("session.chooseAttachments", undefined);
+    } catch (error) {
+      set({ error: describeError(error) });
+      return [];
+    }
+  },
+
+  async sendMessage(text, attachments = []) {
     const value = text.trim();
     if (!value) {
       return;
@@ -767,7 +779,13 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
     set((state) => ({ busy: { ...state.busy, [sessionId]: true } }));
     try {
-      await invoke("session.sendMessage", { sessionId, text: value });
+      await invoke("session.sendMessage", {
+        sessionId,
+        text: value,
+        ...(attachments.length > 0
+          ? { attachments: attachments.map(({ path, name, kind }) => ({ path, name, kind })) }
+          : {}),
+      });
     } catch (error) {
       set((state) => ({
         error: describeError(error),

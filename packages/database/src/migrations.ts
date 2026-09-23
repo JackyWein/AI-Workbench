@@ -5,6 +5,7 @@ import teams from "../migrations/0003_teams.sql?raw";
 import providerAccounts from "../migrations/0004_provider-accounts.sql?raw";
 import agentTerminals from "../migrations/0005_agent-terminals.sql?raw";
 import sshConnections from "../migrations/0006_ssh-connections.sql?raw";
+import messageAttachments from "../migrations/0007_message-attachments.sql?raw";
 
 export interface EmbeddedMigration {
   readonly id: string;
@@ -23,4 +24,5 @@ export const migrations: EmbeddedMigration[] = [
   { id: "0004_provider_accounts", sql: providerAccounts },
   { id: "0005_agent_terminals", sql: agentTerminals },
   { id: "0006_ssh_connections", sql: sshConnections },
+  { id: "0007_message_attachments", sql: messageAttachments },
 ];

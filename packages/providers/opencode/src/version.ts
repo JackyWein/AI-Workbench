@@ -48,13 +48,17 @@ export function argsForOpencode2(
   input: readonly string[],
   kind: "turn" | "interactive",
 ): string[] {
-  const args = [...input];
+  // Only options are rewritten: whatever follows "--" is the prompt, and a
+  // prompt that happens to read "--model" stays the person's words.
+  const end = input.indexOf("--");
+  const args = end === -1 ? [...input] : input.slice(0, end);
+  const rest = end === -1 ? [] : input.slice(end);
   const variant = take(args, "--variant").at(-1);
   if (kind === "interactive") {
     take(args, "--model");
     take(args, "--port");
     take(args, "--hostname");
-    return args;
+    return [...args, ...rest];
   }
   if (variant) {
     const at = args.indexOf("--model");
@@ -63,7 +67,7 @@ export function argsForOpencode2(
       args[at + 1] = `${model}#${variant}`;
     }
   }
-  return args;
+  return [...args, ...rest];
 }
 
 /** The extension hook: 1.x keeps its arguments, 2.x gets its own. */

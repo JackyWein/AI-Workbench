@@ -17,3 +17,4 @@ export * from "./settings-service.js";
 export * from "./usage-service.js";
 export * from "./workspace-manager.js";
 export * from "./connection-service.js";
+export * from "./attachments.js";

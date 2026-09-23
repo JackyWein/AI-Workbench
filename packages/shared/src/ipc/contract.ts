@@ -15,7 +15,7 @@ import {
   sessionSchema,
   updateSessionInputSchema,
 } from "../domain/session.js";
-import { chatMessageSchema } from "../domain/message.js";
+import { chatMessageSchema, messageAttachmentSchema } from "../domain/message.js";
 import {
   providerSummarySchema,
   saveProviderConfigInputSchema,
@@ -125,8 +125,14 @@ export const ipcContract = {
     input: z.object({
       sessionId: z.string().min(1),
       text: z.string().min(1).max(100_000),
+      attachments: z.array(messageAttachmentSchema).max(20).optional(),
     }),
     output: z.object({ messageId: z.string() }),
+  },
+  /** Files to send with a message, chosen in the system's own dialog. */
+  "session.chooseAttachments": {
+    input: z.void(),
+    output: z.array(messageAttachmentSchema),
   },
   "session.cancel": {
     input: z.object({ sessionId: z.string().min(1) }),

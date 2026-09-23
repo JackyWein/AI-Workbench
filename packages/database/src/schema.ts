@@ -107,6 +107,10 @@ export const chatMessages = sqliteTable(
       .$type<unknown[]>()
       .notNull()
       .default(sql`'[]'`),
+    attachments: text("attachments", { mode: "json" })
+      .$type<unknown[]>()
+      .notNull()
+      .default(sql`'[]'`),
     usage: text("usage", { mode: "json" }).$type<unknown>(),
     error: text("error"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

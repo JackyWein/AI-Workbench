@@ -31,6 +31,8 @@ export const providerCapabilitySchema = z.enum([
   "interactiveTerminal",
   /** Several accounts of the tool can be used side by side. */
   "accounts",
+  /** Files and images attached to a message reach the tool. */
+  "attachments",
 ]);
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 

@@ -85,6 +85,11 @@ export const codexProfile: CliProviderProfileInput = {
   resumeMode: "replace",
   promptVia: "stdin",
   trailingArgs: ["-"],
+  // Checked against Codex 0.156 with a stand-in model, new and resumed
+  // turns: the picture arrives as an image. `--image` takes any number of
+  // values, so the "=" form keeps it from swallowing the "-" after it.
+  // Other files are listed in the prompt; Codex reads them itself.
+  attachments: { imageArgs: ["--image={path}"] },
   modelArgs: ["-m", "{model}"],
   // `-c` values are TOML; a JSON string literal is a valid TOML string.
   effortArgs: ["-c", "model_reasoning_effort={effort:json}"],

@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import {
   APP_EVENT_CHANNEL,
   ISLAND_NAVIGATE_CHANNEL,
@@ -50,6 +50,14 @@ const api = {
     return () => {
       ipcRenderer.removeListener(TERMINAL_EVENT_CHANNEL, handler);
     };
+  },
+
+  /**
+   * Where a file the person dropped into the window lives. Only files they
+   * dragged in have one; this reads nothing and reaches nothing else.
+   */
+  pathForFile(file: File): string {
+    return webUtils.getPathForFile(file);
   },
 
   /** Where the Status Island asked the main window to go (spec §98). */

@@ -168,6 +168,31 @@ export const cliAccountsSchema = z.object({
 });
 export type CliAccounts = z.infer<typeof cliAccountsSchema>;
 
+/**
+ * How files sent with a message reach the tool. Each file goes by the first
+ * way the tool offers: its image flag (pictures only), its file flag, or a
+ * mention in the prompt. A tool that names none is still told where the
+ * files are, in plain words, and reads them itself.
+ */
+export const cliAttachmentsSchema = z.object({
+  /** Added once per picture. Supports {path}. */
+  imageArgs: z.array(z.string()).default([]),
+  /** Added once per file, pictures too when there is no image flag. Supports {path}. */
+  fileArgs: z.array(z.string()).default([]),
+  /**
+   * Written into the prompt before each file's path, like "@": the tool
+   * reads the file itself. Paths are quoted the way such parsers expect —
+   * backslashes before special characters, or double quotes on Windows.
+   */
+  mentionPrefix: z.string().min(1).optional(),
+  /**
+   * Lets the tool read the folder the files were put in, when it only reads
+   * inside its own workspace otherwise. Supports {directory}.
+   */
+  directoryArgs: z.array(z.string()).default([]),
+});
+export type CliAttachments = z.infer<typeof cliAttachmentsSchema>;
+
 export const cliProviderProfileSchema = z.object({
   /** Bumped when the profile shape changes, so profiles can be migrated. */
   schemaVersion: z.literal(1),
@@ -273,6 +298,8 @@ export const cliProviderProfileSchema = z.object({
    * so the UI can say so instead of implying more confidence than we have.
    */
   unverified: z.boolean().default(false),
+  /** Present when the tool can take files with a message. */
+  attachments: cliAttachmentsSchema.optional(),
   /** Present when the tool can run as a terminal agent. */
   interactive: cliInteractiveSchema.optional(),
   accounts: cliAccountsSchema.optional(),

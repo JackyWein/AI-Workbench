@@ -252,6 +252,13 @@ export const geminiProfile: CliProviderProfileInput = {
   },
   promptVia: "arg",
   promptArgs: ["--prompt", "{prompt}"],
+  // Checked against Gemini CLI 0.60 with a stand-in API: an "@path" in a
+  // headless prompt is read and sent, pictures inline. It reads only inside
+  // its workspace, so the folder the files were copied to is added.
+  attachments: {
+    mentionPrefix: "@",
+    directoryArgs: ["--include-directories", "{directory}"],
+  },
   output: {
     format: "json-lines",
     rules: [
@@ -327,7 +334,12 @@ export const opencodeProfile: CliProviderProfileInput = {
   // tool call with OpenCode's own message.
   permissionArgs: { full: ["--auto"] },
   promptVia: "arg",
-  promptArgs: ["{prompt}"],
+  // "--" ends the options: `--file` takes any number of values and would
+  // otherwise swallow the prompt, and a prompt starting with "-" stays words.
+  promptArgs: ["--", "{prompt}"],
+  // Checked against OpenCode 1.18 with a stand-in model: each file is read
+  // and sent, pictures as images.
+  attachments: { fileArgs: ["--file", "{path}"] },
   output: {
     format: "json-lines",
     rules: [

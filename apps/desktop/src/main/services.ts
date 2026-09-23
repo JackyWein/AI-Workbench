@@ -307,6 +307,7 @@ async function createServicesInner(
     workspaces,
     skills,
     mcp,
+    attachmentsDirectory: join(options.userDataPath, "attachments"),
   });
   await sessions.recoverInterrupted();
   const usage = new UsageService({ providers, events, logger });
