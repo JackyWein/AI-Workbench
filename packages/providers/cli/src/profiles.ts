@@ -162,6 +162,7 @@ export const antigravityProfile: CliProviderProfileInput = {
   website: "https://antigravity.google",
   command: "agy",
   icon: "antigravity",
+  knownLocations: ["%LOCALAPPDATA%/agy/bin"],
   versionArgs: ["--version"],
   auth: {
     method: "cli",
@@ -173,6 +174,11 @@ export const antigravityProfile: CliProviderProfileInput = {
   models: [],
   modelsArgs: ["models"],
   args: [],
+  // The interactive interface is the bare command (verified against
+  // `agy --help` on 2026-09-23, installed at %LOCALAPPDATA%/agy/bin/agy.exe).
+  // --continue/--conversation exist, but the resume output format has not
+  // been measured, so sessionResume stays off until it has.
+  interactive: { args: [] },
   modelArgs: ["--model", "{model}"],
   // Reasoning effort the tool accepts itself (verified against `agy --help`).
   effortArgs: ["--effort", "{effort}"],

@@ -1,5 +1,5 @@
 import { type JSX, useEffect, useState } from "react";
-import type { ChatMessage } from "@ai-workbench/shared";
+import type { ChatMessage, TeamDefinition, TeamRunSnapshot } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
@@ -10,11 +10,17 @@ import { CommandPalette } from "./components/CommandPalette.js";
 import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
 import { EmptyState } from "./components/EmptyState.js";
+import { RendererErrorBoundary } from "./components/ErrorBoundary.js";
 import { McpView } from "./components/McpView.js";
 import { PluginsView } from "./components/PluginsView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
+import {
+  TeamPreviewPanel,
+  TeamSessionPreview,
+} from "./components/TeamSessionPreview.js";
+import { TeamSessionView } from "./components/TeamSessionView.js";
 import { UsageView } from "./components/UsageView.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillsView } from "./components/SkillsView.js";
@@ -39,6 +45,91 @@ function needsResume(messages: readonly ChatMessage[]): boolean {
     last.role === "assistant" &&
     (last.status === "failed" || last.status === "cancelled") &&
     messages.some((entry) => entry.role === "user" && entry.content.trim().length > 0)
+  );
+}
+
+/** The right panel of a team session: the roster and the run at a glance. */
+function TeamSidePanel({
+  team,
+  snapshot,
+}: {
+  readonly team: TeamDefinition;
+  readonly snapshot: TeamRunSnapshot | null;
+}): JSX.Element {
+  const progress = useWorkbench((state) => state.agentProgress);
+  const providers = useWorkbench((state) => state.providers);
+  const done = snapshot?.tasks.filter((task) => task.status === "completed").length ?? 0;
+  return (
+    <aside className="context" aria-label="Team">
+      <div className="context__card">
+        <div className="context__model">
+          <div className="context__model-text">
+            <span className="context__model-name">{team.name}</span>
+            <span className="context__model-provider">
+              {team.agents.length} agents
+            </span>
+          </div>
+        </div>
+        {snapshot ? (
+          <div className="context__status">
+            <span className="pill">{snapshot.run.status}</span>
+          </div>
+        ) : null}
+      </div>
+      <div className="context__section">
+        <p className="context__heading">Members</p>
+        <div className="detail-list">
+          {team.agents.map((agent) => {
+            const live = snapshot ? progress[`${snapshot.run.id}:${agent.id}`]?.detail : null;
+            const task = snapshot?.tasks.find(
+              (entry) => entry.assignedTo === agent.id && entry.status === "running",
+            );
+            const provider = providers.find((entry) => entry.metadata.id === agent.providerId);
+            return (
+              <div className="detail" key={agent.id}>
+                <dt className="detail__label">{agent.displayName}</dt>
+                <dd className="detail__value">
+                  <span
+                    className="status-dot"
+                    data-state={live ? "running" : task ? "waiting" : "idle"}
+                    aria-hidden="true"
+                  />{" "}
+                  {provider?.metadata.displayName ?? agent.providerId}{" "}
+                  <span className="row__meta">
+                    · {live ?? (task ? task.title : "waiting")}
+                  </span>
+                </dd>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {snapshot ? (
+        <div className="context__section">
+          <p className="context__heading">Run</p>
+          <div className="detail-list">
+            <div className="detail">
+              <dt className="detail__label">Agent calls</dt>
+              <dd className="detail__value">
+                {snapshot.run.agentCalls} of {snapshot.run.limits.maxAgentCalls}
+              </dd>
+            </div>
+            <div className="detail">
+              <dt className="detail__label">Tasks</dt>
+              <dd className="detail__value">
+                {done} of {snapshot.tasks.length} done
+              </dd>
+            </div>
+            {snapshot.run.stopReason ? (
+              <div className="detail">
+                <dt className="detail__label">Stopped because</dt>
+                <dd className="detail__value">{snapshot.run.stopReason}</dd>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </aside>
   );
 }
 
@@ -120,6 +211,14 @@ export function App(): JSX.Element {
   const messages = session ? (state.messages[session.id] ?? []) : [];
   const busy = session ? (state.busy[session.id] ?? false) : false;
 
+  // A session can be bound to a team (its own record says so, not a guess):
+  // then the session shows that team working instead of one conversation.
+  const teamId = typeof session?.uiState["teamId"] === "string" ? session.uiState["teamId"] : null;
+  const teamRunId =
+    typeof session?.uiState["teamRunId"] === "string" ? session.uiState["teamRunId"] : null;
+  const sessionTeam = teamId ? state.teams.find((entry) => entry.id === teamId) : undefined;
+  const teamSnapshot = teamRunId ? state.runSnapshots[teamRunId] : undefined;
+
   // Boot faces belong here, never on the island: a loading screen while the
   // store fills, and the exact error with a retry when startup itself fails.
   if (!state.ready) {
@@ -178,6 +277,23 @@ export function App(): JSX.Element {
         ) : null}
 
         {state.view === "chat" && state.workspaceMode === "chat" && session ? (
+          state.teamPreview && state.settings.developerMode ? (
+            <TeamSessionPreview
+              session={session}
+              workspace={workspace}
+              providers={state.providers}
+              usage={state.usage}
+              status={state.status[session.id]}
+            />
+          ) : sessionTeam ? (
+            <RendererErrorBoundary fallbackTitle="Team session">
+              <TeamSessionView
+                session={session}
+                team={sessionTeam}
+                snapshot={teamSnapshot ?? null}
+              />
+            </RendererErrorBoundary>
+          ) : (
           <>
             <SessionHeader
               session={session}
@@ -198,19 +314,13 @@ export function App(): JSX.Element {
               <Composer
                 busy={busy}
                 disabled={false}
-                modelName={
-                  // A model the list does not know is still the one chosen.
-                  provider?.models.find((entry) => entry.id === session.modelId)
-                    ?.displayName ??
-                  session.modelId ??
-                  null
-                }
                 onSend={(text) => void state.sendMessage(text)}
                 onCancel={() => void state.cancel()}
               />
               {state.workspacePanelOpen ? <WorkspacePanel sessionId={session.id} /> : null}
             </div>
           </>
+          )
         ) : null}
 
         {state.view === "chat" && state.workspaceMode === "chat" && !session ? (
@@ -245,20 +355,49 @@ export function App(): JSX.Element {
         ) : null}
 
         {state.view === "providers" ? (
-          <ProvidersView providers={state.providers} configs={state.providerConfigs} />
+          <RendererErrorBoundary fallbackTitle="Providers">
+            <ProvidersView providers={state.providers} configs={state.providerConfigs} />
+          </RendererErrorBoundary>
         ) : null}
-        {state.view === "skills" ? <SkillsView /> : null}
-        {state.view === "plugins" ? <PluginsView /> : null}
-        {state.view === "mcp" ? <McpView /> : null}
-        {state.view === "teams" ? <TeamsView /> : null}
-        {state.view === "usage" ? <UsageView /> : null}
+        {state.view === "skills" ? (
+          <RendererErrorBoundary fallbackTitle="Skills">
+            <SkillsView />
+          </RendererErrorBoundary>
+        ) : null}
+        {state.view === "plugins" ? (
+          <RendererErrorBoundary fallbackTitle="Plugins">
+            <PluginsView />
+          </RendererErrorBoundary>
+        ) : null}
+        {state.view === "mcp" ? (
+          <RendererErrorBoundary fallbackTitle="MCP">
+            <McpView />
+          </RendererErrorBoundary>
+        ) : null}
+        {state.view === "teams" ? (
+          <RendererErrorBoundary fallbackTitle="Teams">
+            <TeamsView />
+          </RendererErrorBoundary>
+        ) : null}
+        {state.view === "usage" ? (
+          <RendererErrorBoundary fallbackTitle="Usage">
+            <UsageView />
+          </RendererErrorBoundary>
+        ) : null}
 
         {state.view === "settings" ? (
-          <SettingsView settings={state.settings} appInfo={appInfo} />
+          <RendererErrorBoundary fallbackTitle="Settings">
+            <SettingsView settings={state.settings} appInfo={appInfo} />
+          </RendererErrorBoundary>
         ) : null}
       </main>
 
       {state.view === "chat" && state.workspaceMode === "chat" && session ? (
+        state.teamPreview && state.settings.developerMode ? (
+          <TeamPreviewPanel />
+        ) : sessionTeam ? (
+          <TeamSidePanel team={sessionTeam} snapshot={teamSnapshot ?? null} />
+        ) : (
         <ContextPanel
           session={session}
           workspace={workspace}
@@ -279,6 +418,7 @@ export function App(): JSX.Element {
               }
             : null}
         />
+        )
       ) : (
         <div />
       )}

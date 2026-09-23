@@ -454,6 +454,35 @@ button {
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
+/* Something finished: a green edge that breathes once when it arrives and
+   then stays lit until it is dealt with. Quiet, but unmistakable. */
+.isl[data-face="done"] .isl__circle {
+  border-color: rgba(126, 226, 168, 0.6);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 12px rgba(126, 226, 168, 0.35);
+}
+
+.isl[data-face="done"] .isl__pill {
+  border-color: rgba(126, 226, 168, 0.65);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 14px rgba(126, 226, 168, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  animation: isl-done-glow 1.6s var(--easing-standard) 1;
+}
+
+@keyframes isl-done-glow {
+  0% {
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 0 rgba(126, 226, 168, 0),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+  35% {
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 26px rgba(126, 226, 168, 0.75),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+  100% {
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 14px rgba(126, 226, 168, 0.32),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  }
+}
+
 .isl[data-face="idle"] .isl__pill .isl__mark,
 .isl[data-face="idle"] .isl__pill .isl__letter {
   opacity: 0.55;

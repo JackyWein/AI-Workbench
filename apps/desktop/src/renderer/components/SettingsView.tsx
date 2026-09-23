@@ -227,13 +227,24 @@ function IslandSettings({ settings }: { readonly settings: AppSettings }): JSX.E
       <SettingDisclosure label="More island options">
         <SettingRow
           label="Start with AI Workbench"
-          description="There from launch; hidden while the main window is focused."
+          description="There from launch and stays visible."
           muted={off}
         >
           <Switch
             label="Start with AI Workbench"
             checked={island.startWithApp}
             onChange={(startWithApp) => void setIslandPreferences({ startWithApp })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Hide when the main window is focused"
+          description="Off keeps the island always visible; on hides it over the app."
+          muted={off}
+        >
+          <Switch
+            label="Hide when the main window is focused"
+            checked={island.hideWhenMainFocused ?? false}
+            onChange={(hideWhenMainFocused) => void setIslandPreferences({ hideWhenMainFocused })}
           />
         </SettingRow>
         <SettingRow
@@ -247,7 +258,11 @@ function IslandSettings({ settings }: { readonly settings: AppSettings }): JSX.E
             onChange={(stayVisibleWhenHidden) => void setIslandPreferences({ stayVisibleWhenHidden })}
           />
         </SettingRow>
-        <SettingRow label="Always on top" description="Keep it above other windows." muted={off}>
+        <SettingRow
+          label="Always on top"
+          description="On Windows the island stays above other apps, including most full-screen apps."
+          muted={off}
+        >
           <Switch
             label="Always on top"
             checked={island.alwaysOnTop}

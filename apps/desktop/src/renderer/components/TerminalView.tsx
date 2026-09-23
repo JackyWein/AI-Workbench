@@ -1,4 +1,4 @@
-import { useEffect, useRef, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal, type IDisposable } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -27,6 +27,7 @@ const MAX_PENDING_CHARS = 200_000;
 export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
+  const [scrolledUp, setScrolledUp] = useState(false);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -39,11 +40,16 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     let detach: (() => void) | null = null;
     let input: IDisposable | null = null;
     // Live output is coalesced to one write per frame so a fast command
-    // cannot schedule a parse per IPC event.
+    // cannot schedule a parse per IPC event. Fallback keeps hidden windows moving.
     let live = "";
     let liveFrame: number | null = null;
+    let liveFallback: ReturnType<typeof setTimeout> | null = null;
     const flushLive = (): void => {
       liveFrame = null;
+      if (liveFallback !== null) {
+        clearTimeout(liveFallback);
+        liveFallback = null;
+      }
       if (live.length === 0 || disposed) {
         live = "";
         return;
@@ -51,6 +57,20 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
       const chunk = live;
       live = "";
       terminal.write(chunk);
+    };
+    const scheduleLive = (chunk: string): void => {
+      live += chunk;
+      if (live.length > MAX_PENDING_CHARS) {
+        live = live.slice(live.length - MAX_PENDING_CHARS);
+      }
+      liveFrame ??= requestAnimationFrame(flushLive);
+      liveFallback ??= setTimeout(() => {
+        liveFallback = null;
+        if (liveFrame !== null) {
+          cancelAnimationFrame(liveFrame);
+        }
+        flushLive();
+      }, 100);
     };
 
     const styles = getComputedStyle(document.documentElement);
@@ -109,11 +129,7 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
             return;
           }
           if (event.type === "data") {
-            live += event.chunk;
-            if (live.length > MAX_PENDING_CHARS) {
-              live = live.slice(live.length - MAX_PENDING_CHARS);
-            }
-            liveFrame ??= requestAnimationFrame(flushLive);
+            scheduleLive(event.chunk);
           } else {
             if (liveFrame !== null) {
               cancelAnimationFrame(liveFrame);
@@ -173,15 +189,41 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     const observer = new ResizeObserver(() => requestAnimationFrame(resize));
     observer.observe(container);
 
+    const resync = (): void => {
+      if (document.hidden) {
+        return;
+      }
+      requestAnimationFrame(() => {
+        resize();
+        // Repaint only: the viewport stays where the person left it, so an
+        // answer they scrolled up to read is still there.
+        try {
+          terminal.refresh(0, terminal.rows - 1);
+        } catch {
+          // ignore
+        }
+      });
+    };
+    const onVis = (): void => resync();
+    const onFocus = (): void => resync();
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+
     return () => {
       disposed = true;
       observer.disconnect();
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
       detach?.();
       input?.dispose();
       input = null;
       if (liveFrame !== null) {
         cancelAnimationFrame(liveFrame);
         liveFrame = null;
+      }
+      if (liveFallback !== null) {
+        clearTimeout(liveFallback);
+        liveFallback = null;
       }
       live = "";
       terminal.dispose();
@@ -190,5 +232,35 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     };
   }, [sessionId, onError]);
 
-  return <div className="terminal" ref={containerRef} />;
+  // Scrolling up to read stays put; a quiet way back to the newest line
+  // appears instead of the view jumping under the reader.
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+    const subscription = terminal.onScroll(() => {
+      const { baseY, viewportY } = terminal.buffer.active;
+      setScrolledUp(baseY - viewportY > 1);
+    });
+    return () => subscription.dispose();
+  }, []);
+
+  return (
+    <div className="terminal" ref={containerRef}>
+      {scrolledUp ? (
+        <button
+          type="button"
+          className="xterm-pane__latest"
+          title="Jump to the newest output"
+          onClick={() => {
+            terminalRef.current?.scrollToBottom();
+            setScrolledUp(false);
+          }}
+        >
+          Latest output
+        </button>
+      ) : null}
+    </div>
+  );
 }

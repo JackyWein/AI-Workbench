@@ -276,15 +276,26 @@ export async function runStartupCheck(
   });
 
   await checkMain("the island hides while the main window is focused", async () => {
+    // Opt-in behavior (hideWhenMainFocused): only asserted when enabled.
+    await island.setPreferences({
+      hideWhenMainFocused: true,
+    });
     focusWindow(window);
     const deadline = Date.now() + 5_000;
+    let hidden = false;
     while (Date.now() < deadline) {
       if (!island.visible) {
-        return true;
+        hidden = true;
+        break;
       }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
-    return false;
+    await island.setPreferences({
+      hideWhenMainFocused: false,
+    });
+    // Give the show path a moment before the next check blurs again.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return hidden;
   });
 
   await checkMain("the island returns when focus leaves the app", async () => {

@@ -444,6 +444,19 @@ export const ipcContract = {
     input: z.object({ teamId: z.string().min(1) }),
     output: z.object({ deleted: z.boolean() }),
   },
+  /**
+   * Where the team works. `workingDirectory: null` puts it back to the
+   * workspace's folder. A folder outside the workspace needs
+   * `allowOutsideWorkspace: true`, which is the person saying yes on purpose.
+   */
+  "team.setWorkingDirectory": {
+    input: z.object({
+      teamId: z.string().min(1),
+      workingDirectory: z.string().min(1).nullable(),
+      allowOutsideWorkspace: z.boolean().optional(),
+    }),
+    output: teamDefinitionSchema,
+  },
 
   "team.listRuns": {
     input: z.object({ teamId: z.string().min(1).optional() }),

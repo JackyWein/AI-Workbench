@@ -11,7 +11,7 @@ import { formatPath } from "../lib/format.js";
 import { invoke } from "../lib/client.js";
 import { ModeToggle } from "./AgentsView.js";
 import { UsageIndicator } from "./UsageIndicator.js";
-import { useWorkbench } from "../store/workbench.js";
+import { ModelPicker } from "./ModelPicker.js";
 
 interface SessionHeaderProps {
   readonly session: Session;
@@ -33,12 +33,6 @@ export function SessionHeader({
   usage,
   status,
 }: SessionHeaderProps): JSX.Element {
-  const setPaletteOpen = useWorkbench((state) => state.setPaletteOpen);
-
-  const provider = providers.find(
-    (entry) => entry.metadata.id === session.providerId,
-  );
-  const model = provider?.models.find((entry) => entry.id === session.modelId);
   const [git, setGit] = useState<GitStatus | null>(null);
 
   useEffect(() => {
@@ -99,14 +93,7 @@ export function SessionHeader({
       <div className="header__actions">
         {branchPill}
         {statusPill}
-        <button
-          type="button"
-          className="pill pill--acc"
-          onClick={() => setPaletteOpen(true)}
-          title="Change model (Ctrl+K, then a model)"
-        >
-          {model?.displayName ?? session.modelId ?? provider?.metadata.displayName ?? "No model"} ▾
-        </button>
+        <ModelPicker />
 
         <UsageIndicator
           usage={usage}

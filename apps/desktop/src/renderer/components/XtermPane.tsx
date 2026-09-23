@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useRef } from "react";
+import { type JSX, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
@@ -176,11 +176,17 @@ export function XtermPane({
     let replayed = false;
     const timeouts = new Set<ReturnType<typeof setTimeout>>();
     // Live output is coalesced to one write per frame so a fast command
-    // cannot schedule a parse per IPC event.
+    // cannot schedule a parse per IPC event. rAF stalls in hidden windows,
+    // so a timeout fallback keeps the stream moving (like event-stream).
     let live = "";
     let liveFrame: number | null = null;
+    let liveFallback: ReturnType<typeof setTimeout> | null = null;
     const flushLive = (): void => {
       liveFrame = null;
+      if (liveFallback !== null) {
+        clearTimeout(liveFallback);
+        liveFallback = null;
+      }
       if (live.length === 0 || disposed) {
         live = "";
         return;
@@ -195,6 +201,13 @@ export function XtermPane({
         live = live.slice(live.length - MAX_PENDING_CHARS);
       }
       liveFrame ??= requestAnimationFrame(flushLive);
+      liveFallback ??= setTimeout(() => {
+        liveFallback = null;
+        if (liveFrame !== null) {
+          cancelAnimationFrame(liveFrame);
+        }
+        flushLive();
+      }, 100);
     };
 
     const detach = window.workbench.onTerminalEvent((event) => {
@@ -222,8 +235,13 @@ export function XtermPane({
     });
 
     void invoke("terminal.reattach", { terminalId })
-      .then(({ scrollback }) => {
+      .then(({ exists, scrollback }) => {
         if (disposed) {
+          return;
+        }
+        if (!exists) {
+          terminal.write(`\r\n\x1b[2m[process ended]\x1b[0m\r\n`);
+          replayed = true;
           return;
         }
         if (scrollback) {
@@ -278,11 +296,81 @@ export function XtermPane({
         cancelAnimationFrame(liveFrame);
         liveFrame = null;
       }
+      if (liveFallback !== null) {
+        clearTimeout(liveFallback);
+        liveFallback = null;
+      }
       live = "";
       pending = "";
       detach();
     };
   }, [terminalId]);
+
+  // Resync when the window becomes visible again (hide/show, minimize):
+  // refit (twice, layout settles late), re-assert pty size, repaint.
+  useEffect(() => {
+    const resync = (): void => {
+      if (document.hidden) {
+        return;
+      }
+      const terminal = terminalRef.current;
+      const fit = fitRef.current;
+      if (!terminal || !fit) {
+        return;
+      }
+      requestAnimationFrame(() => {
+        try {
+          fit.fit();
+        } catch {
+          return;
+        }
+        const id = idRef.current;
+        if (id) {
+          void invoke("terminal.resize", {
+            terminalId: id,
+            cols: terminal.cols,
+            rows: terminal.rows,
+          }).catch(() => undefined);
+        }
+        // Repaint only. The viewport is left exactly where the person put it:
+        // scrolling to the bottom here is what used to throw away the answer
+        // someone had scrolled up to read.
+        try {
+          terminal.refresh(0, terminal.rows - 1);
+        } catch {
+          // Older xterm without refresh; nothing to repaint by hand.
+        }
+        setTimeout(() => {
+          try {
+            fit.fit();
+          } catch {
+            return;
+          }
+          const lateId = idRef.current;
+          if (lateId) {
+            void invoke("terminal.resize", {
+              terminalId: lateId,
+              cols: terminal.cols,
+              rows: terminal.rows,
+            }).catch(() => undefined);
+          }
+          try {
+            terminal.refresh(0, terminal.rows - 1);
+          } catch {
+            // ignore
+          }
+        }, 300);
+      });
+    };
+    const onVis = (): void => resync();
+    const onFocus = (): void => resync();
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, []);
 
   useEffect(() => {
     if (focused) {
@@ -290,5 +378,37 @@ export function XtermPane({
     }
   }, [focused, terminalId]);
 
-  return <div className="xterm-pane" ref={containerRef} />;
+  // A person who scrolled up to read something keeps that place while new
+  // output arrives; a small way back to the newest line appears instead of
+  // the view jumping under them.
+  const [scrolledUp, setScrolledUp] = useState(false);
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (!terminal) {
+      return;
+    }
+    const subscription = terminal.onScroll(() => {
+      const { baseY, viewportY } = terminal.buffer.active;
+      setScrolledUp(baseY - viewportY > 1);
+    });
+    return () => subscription.dispose();
+  }, []);
+
+  return (
+    <div className="xterm-pane" ref={containerRef}>
+      {scrolledUp ? (
+        <button
+          type="button"
+          className="xterm-pane__latest"
+          title="Jump to the newest output"
+          onClick={() => {
+            terminalRef.current?.scrollToBottom();
+            setScrolledUp(false);
+          }}
+        >
+          Latest output
+        </button>
+      ) : null}
+    </div>
+  );
 }

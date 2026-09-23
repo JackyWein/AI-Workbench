@@ -65,6 +65,8 @@ export class IslandController {
   #hiddenWithMain = false;
   /** Whether the main window currently holds focus. */
   #mainFocused = false;
+  #focusTimer: NodeJS.Timeout | null = null;
+  #startupGraceUntil = 0;
   /**
    * Set by an explicit hide; while true, focus changes must not resurrect the
    * island. Cleared by an explicit show or by re-enabling the island.
@@ -143,14 +145,18 @@ export class IslandController {
         }),
       ),
     );
-    // Time passes too: an entry ages out and usage changes on its own.
+    // Time passes too: an entry ages out and usage changes on its own, and
+    // an island that lost its z-order (full-screen app, other topmost tool)
+    // is put back rather than staying gone until someone toggles it.
     this.#timer = setInterval(
-      () =>
+      () => {
+        this.#reassertVisibility();
         this.refresh().catch((error: unknown) =>
           this.#services.logger.warn("Island refresh failed", {
             error: error instanceof Error ? error.message : String(error),
           }),
-        ),
+        );
+      },
       2_000,
     );
     this.#timer.unref?.();
@@ -163,11 +169,23 @@ export class IslandController {
       this.#window.apply(settings.statusIsland);
     }
     await this.refresh();
+    // From the first second the focus rule governs, but a startup grace keeps
+    // the island visible until the first blur (always-on at launch).
+    this.#startupGraceUntil = Date.now() + 30_000;
     // From the first second the focus rule governs: a focused main window
     // means no island on top of it. Reads focus without touching the window:
     // focusMainWindow would show and focus it as a side effect.
     const main = this.#options.getMainWindow();
-    this.setMainFocused(Boolean(main && !main.isDestroyed() && main.isFocused()));
+    this.#mainFocused = Boolean(main && !main.isDestroyed() && main.isFocused());
+    // Do not hide immediately on a focused start; the first blur or grace
+    // expiry governs. This makes "always on at launch" true.
+    if (Date.now() < this.#startupGraceUntil) {
+      if (this.#services.attention.preferences.enabled && !this.#window.visible) {
+        this.#window.show();
+      }
+      return;
+    }
+    this.setMainFocused(this.#mainFocused);
   }
 
   /** Collects the current picture and lets the service decide (spec §102). */
@@ -349,7 +367,16 @@ export class IslandController {
               // A turn's clock runs from when the tool started on it.
               startedAt: activity?.state === "working" ? activity.since : tile.startedAt,
               icon: iconOf(tile.providerId),
-              detail: (tile.metrics ? metricsLine(tile.metrics) : "") || status,
+              // What it is doing, in that order of truth: what it waits on,
+              // then what it reported doing, then its own words, then the
+              // numbers. A bare "running" is the last resort, not the answer.
+              detail: waiting
+                ? `waiting for you · ${waiting.summary || waiting.kind}`
+                : activity?.state === "working"
+                  ? ["working", tile.detail, tile.metrics ? metricsLine(tile.metrics) : ""]
+                      .filter(Boolean)
+                      .join(" · ")
+                  : (tile.detail ?? (tile.metrics ? metricsLine(tile.metrics) : status)),
             });
           }
           // The tool itself said it waits on the person (spec §99): the
@@ -701,13 +728,48 @@ export class IslandController {
   }
 
   /**
-   * The island belongs on screen from launch, but never on top of the app
-   * itself: a focused main window hides it, losing focus brings it back.
+   * The island belongs on screen from launch. By default it stays visible
+   * even with a focused main (hideWhenMainFocused opt-in hides it).
    * Explicit choices (manual hide, disabled island) always win over this.
    */
   setMainFocused(focused: boolean): void {
     this.#mainFocused = focused;
-    this.#applyFocusRule();
+    if (this.#focusTimer) {
+      clearTimeout(this.#focusTimer);
+    }
+    // Debounce focus flapping (Alt+Tab, click-through, fullscreen noise).
+    this.#focusTimer = setTimeout(() => {
+      this.#focusTimer = null;
+      // Startup grace: show wins until first blur or timeout.
+      if (Date.now() < this.#startupGraceUntil) {
+        if (focused) {
+          return;
+        }
+        this.#startupGraceUntil = 0;
+      }
+      this.#applyFocusRule();
+    }, 150);
+    this.#focusTimer.unref?.();
+  }
+
+  /**
+   * A window that was hidden behind a full-screen app is still "visible" to
+   * the OS in some cases (behind an exclusive overlay) and the app's own
+   * hide paths already set their flags; what this covers is a window that
+   * ended up not visible without a decision (crash, another topmost tool).
+   * Only an enabled, not-manually-hidden island is put back — and shown
+   * without focus, so it never steals the keyboard.
+   */
+  #reassertVisibility(): void {
+    const preferences = this.#services.attention.preferences;
+    if (!preferences.enabled || this.#manualHidden || this.#hiddenWithMain) {
+      return;
+    }
+    if (!this.#window.visible) {
+      this.#window.show();
+      this.#tray.refresh();
+      this.#services.logger.info("Island was not visible and was shown again");
+    }
   }
 
   #applyFocusRule(): void {
@@ -715,7 +777,16 @@ export class IslandController {
     if (!preferences.enabled || this.#manualHidden) {
       return;
     }
+    const hideOnFocus = preferences.hideWhenMainFocused ?? false;
     if (this.#mainFocused) {
+      if (!hideOnFocus) {
+        // Default: always-on, even with focused main. Ensure visible.
+        if (!this.#window.visible) {
+          this.#window.show();
+          this.#tray.refresh();
+        }
+        return;
+      }
       if (this.#window.visible) {
         this.#window.hide();
         this.#tray.refresh();
@@ -728,7 +799,7 @@ export class IslandController {
     // Reads through getMainWindow on purpose: focusMainWindow would restore
     // and focus the window as a side effect, which un-minimizes it.
     const main = this.#options.getMainWindow();
-    const mainGone = !main || main.isDestroyed() || !main.isVisible();
+    const mainGone = !main || main.isDestroyed() || !main.isVisible() || main.isMinimized();
     if (mainGone && !preferences.stayVisibleWhenHidden) {
       if (this.#window.visible) {
         this.#window.hide();

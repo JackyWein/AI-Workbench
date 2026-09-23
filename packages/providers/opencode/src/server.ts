@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:net";
+import { execCli, findExecutable } from "@ai-workbench/transport-cli";
 import type {
   TerminalActivity,
   TerminalAttention,
@@ -608,6 +609,11 @@ export async function answerRequest(
 export async function opencodeServerTelemetry(): Promise<Required<
   Pick<CliInteractiveTelemetry, "args" | "env" | "watch" | "watchAttention" | "watchActivity" | "respond">
 > | null> {
+  // V2 removed the root --port/--hostname flags (Unrecognized flag). Probe
+  // once: without them the terminal still starts, just without live status.
+  if (!(await supportsRootServerFlags())) {
+    return null;
+  }
   const port = await freePort();
   if (port === null) {
     return null;
@@ -663,4 +669,31 @@ export async function opencodeServerTelemetry(): Promise<Required<
       return answered;
     },
   };
+}
+
+/**
+ * Whether the installed `opencode` still accepts the V1 root server flags.
+ * Unknown (not installed, probe timeout) defaults to true to preserve the
+ * verified 1.18.32 path; a readable help text without the flags disables
+ * telemetry so the terminal starts plain instead of printing help + error.
+ */
+async function supportsRootServerFlags(): Promise<boolean> {
+  try {
+    const found = await findExecutable("opencode");
+    if (!found) {
+      return true;
+    }
+    const { stdout, exit } = await execCli({
+      executablePath: found.path,
+      args: ["--help"],
+      timeoutMs: 5000,
+    });
+    const text = `${stdout ?? ""}\n${exit.stderr ?? ""}`;
+    if (!text.trim()) {
+      return true;
+    }
+    return text.includes("--port") && text.includes("--hostname");
+  } catch {
+    return true;
+  }
 }

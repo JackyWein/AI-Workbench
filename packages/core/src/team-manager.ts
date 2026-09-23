@@ -1,6 +1,7 @@
 import { asc, desc, eq } from "drizzle-orm";
+import { relative, resolve, sep } from "node:path";
 import type { Database } from "@ai-workbench/database";
-import { teamAgents, teamRuns, teams, type TeamAgentRow, type TeamRow } from "@ai-workbench/database";
+import { teamAgents, teamRuns, teams, workspaces, type TeamAgentRow, type TeamRow } from "@ai-workbench/database";
 import type {
   AgentDefinition,
   AuthStatus,
@@ -68,6 +69,31 @@ export class TeamRunNotFoundError extends Error {
     super(`Team run "${id}" does not exist`);
     this.name = "TeamRunNotFoundError";
   }
+}
+
+/** A team was pointed at a folder outside its workspace without permission. */
+export class TeamOutsideWorkspaceError extends Error {
+  constructor(
+    readonly target: string,
+    readonly workspacePath: string,
+  ) {
+    super(
+      `"${target}" is outside this team's workspace (${workspacePath}). ` +
+        "Turn on \"work outside the workspace\" to allow it.",
+    );
+    this.name = "TeamOutsideWorkspaceError";
+  }
+}
+
+/** Whether `target` is the folder itself or somewhere beneath it. */
+function isInside(root: string, target: string): boolean {
+  const from = resolve(root);
+  const to = resolve(target);
+  if (from === to) {
+    return true;
+  }
+  const rel = relative(from, to);
+  return rel.length > 0 && !rel.startsWith("..") && !rel.startsWith(`..${sep}`);
 }
 
 export interface TeamManagerOptions {
@@ -199,6 +225,60 @@ export class TeamManager {
     return this.require(teamId);
   }
 
+  /**
+   * Points the team at a folder, or back at its workspace with null.
+   *
+   * A folder outside the workspace is refused unless the person turned
+   * `allowOutsideWorkspace` on: a team never wanders off on its own, and when
+   * it may, that was a decision someone made. Every agent follows the team
+   * folder, so "where does this team work" has one honest answer.
+   */
+  async setWorkingDirectory(
+    teamId: string,
+    workingDirectory: string | null,
+    allowOutsideWorkspace?: boolean,
+  ): Promise<TeamDefinition> {
+    const team = await this.require(teamId);
+    const workspace = await this.#db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, team.workspaceId))
+      .limit(1);
+    const workspacePath = workspace[0]?.path;
+    if (!workspacePath) {
+      throw new TeamNotFoundError(team.workspaceId);
+    }
+    const allowOutside =
+      allowOutsideWorkspace ?? team.settings.allowOutsideWorkspace;
+    const target = workingDirectory === null ? null : resolve(workingDirectory);
+
+    if (target && !isInside(workspacePath, target) && !allowOutside) {
+      throw new TeamOutsideWorkspaceError(target, workspacePath);
+    }
+
+    const settings: TeamSettings = {
+      ...team.settings,
+      allowOutsideWorkspace: allowOutside,
+      workingDirectory: target,
+    };
+    await this.#db
+      .update(teams)
+      .set({ settings: settings as unknown as Record<string, unknown>, updatedAt: new Date() })
+      .where(eq(teams.id, teamId));
+
+    if (target) {
+      // The folder is the team's, so every member works there — a per-agent
+      // override would only make "where does this team work" unanswerable.
+      for (const agent of team.agents) {
+        await this.#db
+          .update(teamAgents)
+          .set({ workingDirectory: target })
+          .where(eq(teamAgents.id, agent.id));
+      }
+    }
+    return this.require(teamId);
+  }
+
   async delete(teamId: string): Promise<boolean> {
     for (const [runId, active] of this.#active) {
       if (active.service.run.teamId === teamId) {
@@ -310,7 +390,14 @@ export class TeamManager {
   async pauseRun(runId: string): Promise<TeamRun> {
     const active = this.#active.get(runId);
     if (!active) {
-      return this.getSnapshot(runId).then((snapshot) => snapshot.run);
+      const snapshot = await this.getSnapshot(runId);
+      if (snapshot.run.status === "running") {
+        const paused = { ...snapshot.run, status: "paused" as const, stopReason: "paused" as const, finishedAt: new Date() };
+        await this.#store.saveRun(paused);
+        this.#publish({ type: "TEAM_FINISHED", runId, status: "paused", stopReason: "paused", outcome: null });
+        return paused;
+      }
+      return snapshot.run;
     }
     return active.orchestrator.pause();
   }
@@ -319,11 +406,16 @@ export class TeamManager {
     const active = this.#active.get(runId);
     if (!active) {
       const snapshot = await this.getSnapshot(runId);
+      if (snapshot.run.status === "running" || snapshot.run.status === "paused") {
+        const cancelled = { ...snapshot.run, status: "cancelled" as const, stopReason: "cancelled" as const, finishedAt: new Date() };
+        await this.#store.saveRun(cancelled);
+        this.#publish({ type: "TEAM_FINISHED", runId, status: "cancelled", stopReason: "cancelled", outcome: null });
+        return cancelled;
+      }
       return snapshot.run;
     }
-    await active.orchestrator.pause();
-    const stopped = await active.service.stop("cancelled", "cancelled");
-    await active.orchestrator.dispose();
+    const stopped = await active.orchestrator.cancel("cancelled");
+    await active.orchestrator.dispose().catch(() => undefined);
     this.#active.delete(runId);
     this.#publish({
       type: "TEAM_FINISHED",

@@ -42,6 +42,7 @@ function runWith(tasks: Array<{ status: string; title?: string; assignedTo?: str
         maxConcurrentAgents: 3,
         maxMessages: 200,
         maxDelegationsPerTask: 4,
+        agentTurnSilenceSeconds: 600,
       },
       agentCalls: 3,
       failures: 0,

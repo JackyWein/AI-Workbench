@@ -24,9 +24,16 @@ export interface TeamOrchestratorOptions {
   readonly service: TeamService;
   readonly runtime: AgentRuntime;
   readonly logger: Logger;
-  /** Bounds one agent turn, independently of the run's own limits. */
+  /**
+   * Overrides the run's `agentTurnSilenceSeconds`. Tests use it; production
+   * reads the run's own limit so a team can be given a different budget than
+   * the 10-minute default.
+   */
   readonly turnTimeoutMs?: number;
 }
+
+/** How often a working turn says so while it works. */
+const PROGRESS_MS = 5_000;
 
 interface AgentSession {
   readonly adapter: AIProviderAdapter;
@@ -45,17 +52,32 @@ export class TeamOrchestrator {
   readonly #service: TeamService;
   readonly #runtime: AgentRuntime;
   readonly #logger: Logger;
-  readonly #turnTimeoutMs: number;
   readonly #sessions = new Map<string, AgentSession>();
+  readonly #turnTimeoutMs: number | undefined;
 
   #stopping = false;
+  #stopReason: "paused" | "cancelled" = "paused";
   #running: Promise<TeamRun> | null = null;
 
   constructor(options: TeamOrchestratorOptions) {
     this.#service = options.service;
     this.#runtime = options.runtime;
     this.#logger = options.logger.child("TEAM");
-    this.#turnTimeoutMs = options.turnTimeoutMs ?? 120_000;
+    this.#turnTimeoutMs = options.turnTimeoutMs;
+  }
+
+  /**
+   * How long one turn may go silent before it is cut off. The run's own
+   * setting wins over the 10-minute default; an explicit override (tests)
+   * wins over both. This is the silence budget, not the work budget: a turn
+   * that keeps producing resets it.
+   */
+  get #silenceMs(): number {
+    if (this.#turnTimeoutMs !== undefined) {
+      return this.#turnTimeoutMs;
+    }
+    const seconds = this.#service.run.limits.agentTurnSilenceSeconds;
+    return (Number.isFinite(seconds) && seconds > 0 ? seconds : 600) * 1000;
   }
 
   get busy(): boolean {
@@ -68,6 +90,7 @@ export class TeamOrchestrator {
       return this.#running;
     }
     this.#stopping = false;
+    this.#stopReason = "paused";
     this.#running = this.#loop().finally(() => {
       this.#running = null;
     });
@@ -77,15 +100,65 @@ export class TeamOrchestrator {
   /** Asks the run to stop after the turns in flight; never kills mid-answer. */
   async pause(): Promise<TeamRun> {
     this.#stopping = true;
+    this.#stopReason = "paused";
     await this.#running?.catch(() => undefined);
     return this.#service.run.status === "running"
       ? this.#service.stop("paused", "paused")
       : this.#service.run;
   }
 
+  /**
+   * Cancels immediately: in-flight provider turns are cancelled at once,
+   * then the run is awaited with a grace race so Stop never hangs on a
+   * 120s turn timeout. Teardown failures never mask the stop itself.
+   */
+  async cancel(reason: "cancelled" | "paused" = "cancelled"): Promise<TeamRun> {
+    this.#stopping = true;
+    this.#stopReason = reason;
+    await Promise.allSettled(
+      [...this.#sessions].map(async ([agentId, session]) => {
+        try {
+          await session.adapter.cancel(session.handle);
+        } catch (error) {
+          this.#logger.warn("Agent turn cancel failed", {
+            agentId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }),
+    );
+    if (this.#running) {
+      await Promise.race([
+        this.#running.catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
+    // The loop may have stopped as paused just before cancel won the race;
+    // a cancel request always ends cancelled, never paused.
+    if (reason === "cancelled" && this.#service.run.status !== "cancelled") {
+      const status = this.#service.run.status;
+      if (status === "running" || status === "paused") {
+        return this.#service.stop("cancelled", "cancelled");
+      }
+    }
+    if (this.#service.run.status === "running") {
+      return reason === "paused"
+        ? this.#service.stop("paused", "paused")
+        : this.#service.stop("cancelled", "cancelled");
+    }
+    return this.#service.run;
+  }
+
   async dispose(): Promise<void> {
     this.#stopping = true;
-    await this.#running?.catch(() => undefined);
+    // Never hang teardown on a turn that ignores cancellation: 5s grace,
+    // then sessions are destroyed anyway.
+    if (this.#running) {
+      await Promise.race([
+        this.#running.catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
     for (const [agentId, session] of this.#sessions) {
       try {
         await session.adapter.destroySession?.(session.handle);
@@ -107,7 +180,9 @@ export class TeamOrchestrator {
 
     for (;;) {
       if (this.#stopping) {
-        return this.#service.stop("paused", "paused");
+        return this.#stopReason === "cancelled"
+          ? this.#service.stop("cancelled", "cancelled")
+          : this.#service.stop("paused", "paused");
       }
 
       const verdict = canCallAgent(this.#service.run, new Date());
@@ -238,6 +313,19 @@ export class TeamOrchestrator {
       const message = error instanceof Error ? error.message : String(error);
       this.#logger.error("Agent turn failed", { agentId: agent.id, error: message });
       this.#service.emitAgentFailed(agent.id, message);
+      // A failed turn must be visible in the run, not silent: without this
+      // the Messages tab stays empty and the run just ends with noWorkLeft.
+      try {
+        await this.#service.sendMessage({
+          from: agent.id,
+          to: "*",
+          type: "warning",
+          content: `${agent.displayName} turn failed: ${message}`,
+          ...(task ? { taskId: task.id } : {}),
+        });
+      } catch {
+        // Mailbox limits must not mask the original turn failure.
+      }
       if (task) {
         await this.#service.failTask(task.id, `${agent.displayName}: ${message}`);
       }
@@ -378,36 +466,99 @@ export class TeamOrchestrator {
     }
   }
 
-  /** One provider call, counted against the run's budget and bounded in time. */
+  /**
+   * One provider call, counted against the run's budget and bounded in time.
+   *
+   * The bound is a *silence* budget: any text, tool call or status from the
+   * provider pushes it back, so a slow model keeps its turn for as long as it
+   * keeps doing something. A hard cap (the run's own runtime limit, or 10×
+   * the silence budget) stops a provider that trickles one event per minute
+   * from holding the run forever.
+   */
   async #ask(agent: AgentDefinition, prompt: string): Promise<string> {
     const session = await this.#sessionFor(agent);
     await this.#service.countAgentCall();
 
     const collected: string[] = [];
     const stream = session.adapter.sendMessage(session.handle, { text: prompt });
+    const silenceMs = this.#silenceMs;
+    const hardCapMs = Math.max(
+      silenceMs,
+      Math.min(
+        this.#service.run.limits.maxRuntimeMinutes * 60_000,
+        silenceMs * 10,
+      ),
+    );
 
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const deadline = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`no answer within ${this.#turnTimeoutMs}ms`)),
-        this.#turnTimeoutMs,
-      );
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
+    let lastDetail = "";
+    let rejectDeadline: ((error: Error) => void) | null = null;
+
+    const restartSilence = (): void => {
+      if (timer) {
+        clearTimeout(timer);
+      }
+      timer = setTimeout(() => {
+        rejectDeadline?.(
+          new Error(
+            `no answer for ${Math.round(silenceMs / 1000)}s — the agent went quiet`,
+          ),
+        );
+      }, silenceMs);
       timer.unref?.();
+    };
+
+    const deadline = new Promise<never>((_resolve, reject) => {
+      rejectDeadline = reject;
+      restartSilence();
+      // The absolute cap is not slid: it ends the turn no matter what.
+      const cap = setTimeout(() => {
+        reject(
+          new Error(
+            `turn exceeded ${Math.round(hardCapMs / 60_000)} minutes and was stopped`,
+          ),
+        );
+      }, hardCapMs);
+      cap.unref?.();
     });
 
     const consume = (async (): Promise<string> => {
       for await (const event of stream) {
+        // Anything the tool says is proof of life, so the silence budget
+        // starts over — the run's own runtime cap still bounds the total.
+        restartSilence();
         if (event.type === "text_delta") {
           collected.push(event.text);
+          lastDetail = "writing";
+          this.#service.emitAgentProgress(agent.id, lastDetail);
         } else if (event.type === "message") {
           // A provider that answers in one piece rather than streaming.
           collected.push(event.text);
+          lastDetail = "writing";
+          this.#service.emitAgentProgress(agent.id, lastDetail);
+        } else if (event.type === "tool_call") {
+          lastDetail = event.toolCall.summary ?? event.toolCall.name;
+          this.#service.emitAgentProgress(agent.id, lastDetail);
+        } else if (event.type === "tool_result") {
+          lastDetail = `${event.toolCall.summary ?? event.toolCall.name} — ${event.toolCall.state}`;
+          this.#service.emitAgentProgress(agent.id, lastDetail);
+        } else if (event.type === "status") {
+          lastDetail = event.status;
+          this.#service.emitAgentProgress(agent.id, lastDetail);
         } else if (event.type === "error") {
           throw new Error(event.error.message);
         }
       }
       return collected.join("");
     })();
+
+    // A turn that streams for minutes without a status change still says so,
+    // so the island and the run view show work rather than silence.
+    progressTimer = setInterval(() => {
+      this.#service.emitAgentProgress(agent.id, lastDetail || "working");
+    }, PROGRESS_MS);
+    progressTimer.unref?.();
 
     try {
       return await Promise.race([consume, deadline]);
@@ -424,6 +575,9 @@ export class TeamOrchestrator {
     } finally {
       if (timer) {
         clearTimeout(timer);
+      }
+      if (progressTimer) {
+        clearInterval(progressTimer);
       }
     }
   }

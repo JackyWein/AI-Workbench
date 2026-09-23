@@ -2,12 +2,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ProviderEvent } from "@ai-workbench/shared";
-import type { ProviderContext } from "@ai-workbench/provider-base";
+import type { ProviderContext, ProviderSessionHandle } from "@ai-workbench/provider-base";
 import { CliProviderAdapter, isPendingSessionId } from "../adapter.js";
 import { parseModelLines } from "../models.js";
 import { parseOpencodeStatsUsage } from "../usage.js";
 import { parseProfile, readPath, substitute, type CliProviderProfileInput } from "../profile.js";
-import { builtInCliProfiles, claudeCodeProfile } from "../profiles.js";
+import { antigravityProfile, builtInCliProfiles, claudeCodeProfile } from "../profiles.js";
 
 const fixtures = join(
   import.meta.dirname,
@@ -102,6 +102,25 @@ async function adapterFor(
   return adapter;
 }
 
+/**
+ * A turn always belongs to an opened session: that is where the working
+ * folder comes from, and a turn without one is refused rather than started in
+ * whatever folder the app happens to run in.
+ */
+async function opened(
+  adapter: CliProviderAdapter,
+  sessionId = "s1",
+): Promise<ProviderSessionHandle> {
+  const info = await adapter.createSession({
+    sessionId,
+    workingDirectory: process.cwd(),
+  });
+  return {
+    sessionId,
+    providerSessionId: info.providerSessionId,
+  };
+}
+
 async function collect(stream: AsyncIterable<ProviderEvent>): Promise<ProviderEvent[]> {
   const events: ProviderEvent[] = [];
   for await (const event of stream) {
@@ -152,6 +171,16 @@ describe("profile helpers", () => {
     // Not run against the real tools here, so the UI must say so.
     expect(byId.get("codex")?.unverified).toBe(true);
     expect(byId.get("antigravity")?.unverified).toBe(true);
+  });
+
+  it("offers an interactive terminal only where the profile declares one", async () => {
+    const adapter = await adapterFor(antigravityProfile, "agy");
+    const capabilities = await adapter.getCapabilities();
+
+    // The Agents view filters on this capability; without `interactive` in
+    // the profile the tool could not be launched there at all.
+    expect(capabilities?.supported.includes("interactiveTerminal")).toBe(true);
+    expect(adapter.describeInteractiveLaunch).toBeDefined();
   });
 
   it("rejects a profile that is not valid", () => {
@@ -259,23 +288,31 @@ describe("CliProviderAdapter with a streaming JSON CLI", () => {
   it("ignores output that is not valid JSON", async () => {
     const adapter = await adapterFor(jsonProfile, jsonCli);
     const events = await collect(
-      adapter.sendMessage(
-        { sessionId: "s1", providerSessionId: "pending:s1" },
-        { text: "hi" },
-      ),
+      adapter.sendMessage(await opened(adapter), { text: "hi" }),
     );
     // The fixture prints a plain-text line in the middle of the stream.
     expect(textOf(events)).not.toContain("this line is not json");
     expect(events.at(-1)).toEqual({ type: "completed", reason: "finished" });
   });
 
+  it("refuses a turn that has no working folder", async () => {
+    // A session that was never opened has no folder, and the adapter must not
+    // fall back to the application's own directory.
+    const adapter = await adapterFor(jsonProfile, jsonCli);
+    const events = await collect(
+      adapter.sendMessage({ sessionId: "never-opened", providerSessionId: "x" }, { text: "hi" }),
+    );
+    const error = events.find((event) => event.type === "error");
+    expect(error && "error" in error ? error.error.message : "").toMatch(
+      /no working folder/,
+    );
+    expect(events.some((event) => event.type === "text_delta")).toBe(false);
+  });
+
   it("normalizes a provider error and fails the turn", async () => {
     const adapter = await adapterFor(jsonProfile, jsonCli);
     const events = await collect(
-      adapter.sendMessage(
-        { sessionId: "s1", providerSessionId: "pending:s1" },
-        { text: "make it boom" },
-      ),
+      adapter.sendMessage(await opened(adapter), { text: "make it boom" }),
     );
 
     const error = events.find((event) => event.type === "error");
@@ -287,7 +324,7 @@ describe("CliProviderAdapter with a streaming JSON CLI", () => {
     const adapter = new CliProviderAdapter(parseProfile(jsonProfile));
     await adapter.initialize(contextFor(jsonCli, { arguments: [jsonCli, "--delay", "40"] }));
 
-    const handle = { sessionId: "s1", providerSessionId: "pending:s1" };
+    const handle = await opened(adapter);
     const events: ProviderEvent[] = [];
     for await (const event of adapter.sendMessage(handle, { text: "a long answer please" })) {
       events.push(event);
@@ -310,10 +347,7 @@ describe("CliProviderAdapter with a streaming JSON CLI", () => {
     });
 
     const events = await collect(
-      adapter.sendMessage(
-        { sessionId: "s1", providerSessionId: "pending:s1" },
-        { text: "hi" },
-      ),
+      adapter.sendMessage(await opened(adapter), { text: "hi" }),
     );
     const error = events.find((event) => event.type === "error");
     expect(error && "error" in error ? error.error.kind : "").toBe("notInstalled");
@@ -349,10 +383,7 @@ describe("recorded stream from the real Claude Code CLI", () => {
   it("extracts the session id, the answer and real usage", async () => {
     const adapter = await replayAdapter();
     const events = await collect(
-      adapter.sendMessage(
-        { sessionId: "s1", providerSessionId: "pending:s1" },
-        { text: "Reply with exactly: ok" },
-      ),
+      adapter.sendMessage(await opened(adapter), { text: "Reply with exactly: ok" }),
     );
 
     expect(events).toContainEqual({
@@ -391,12 +422,7 @@ describe("recorded stream from the real Claude Code CLI", () => {
     const before = await adapter.getUsage?.();
     expect(before?.state).toBe("unavailable");
 
-    await collect(
-      adapter.sendMessage(
-        { sessionId: "s1", providerSessionId: "pending:s1" },
-        { text: "hi" },
-      ),
-    );
+    await collect(adapter.sendMessage(await opened(adapter), { text: "hi" }));
 
     const after = await adapter.getUsage?.();
     expect(after?.state).toBe("available");
@@ -409,10 +435,7 @@ describe("CliProviderAdapter with a plain text CLI", () => {
   it("turns each output line into a delta", async () => {
     const adapter = await adapterFor(textProfile, streamCli);
     const events = await collect(
-      adapter.sendMessage(
-        { sessionId: "s1", providerSessionId: "pending:s1" },
-        { text: "ignored" },
-      ),
+      adapter.sendMessage(await opened(adapter), { text: "ignored" }),
     );
 
     expect(textOf(events)).toBe("line 1\nline 2\nline 3\n");
@@ -555,6 +578,9 @@ describe("argument assembly", () => {
     handle: { sessionId: string; providerSessionId: string; modelId?: string },
   ): Promise<string[]> {
     const adapter = await adapterFor(profile, argvCli);
+    // Open the session first (that is where the working folder comes from),
+    // then keep the handle the test asked about for the argument assertions.
+    await adapter.createSession({ sessionId: handle.sessionId, workingDirectory: process.cwd() });
     const events = await collect(adapter.sendMessage(handle, { text: "the prompt" }));
     // The fixture prints only the arguments after its own script path.
     const printed = textOf(events).trim();

@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
@@ -100,6 +100,32 @@ describe("team runs in the application", () => {
     });
     return { teamId: team.id, workspaceId: workspace.id };
   }
+
+  it("refuses to work outside the workspace unless the person allows it", async () => {
+    const { teamId } = await makeTeam();
+    const outside = resolve(directory, "..", "elsewhere");
+
+    // The default is the workspace: a team never wanders off on its own.
+    const untouched = await app.teams.require(teamId);
+    expect(untouched.settings.allowOutsideWorkspace).toBe(false);
+    expect(untouched.settings.workingDirectory).toBeNull();
+    expect(untouched.agents[0]?.workingDirectory).toBe(directory);
+
+    await expect(
+      app.teams.setWorkingDirectory(teamId, outside),
+    ).rejects.toThrow(/outside this team's workspace/);
+
+    // Said yes on purpose: now the folder is allowed and every member follows.
+    const moved = await app.teams.setWorkingDirectory(teamId, outside, true);
+    expect(moved.settings.allowOutsideWorkspace).toBe(true);
+    expect(moved.settings.workingDirectory).toBe(outside);
+    expect(moved.agents.every((agent) => agent.workingDirectory === outside)).toBe(true);
+
+    // Saying no again hands the workspace folder back.
+    const back = await app.teams.setWorkingDirectory(teamId, null, false);
+    expect(back.settings.workingDirectory).toBeNull();
+    expect(back.settings.allowOutsideWorkspace).toBe(false);
+  });
 
   it("persists a team with its agents and a selectable lead", async () => {
     const { teamId } = await makeTeam();

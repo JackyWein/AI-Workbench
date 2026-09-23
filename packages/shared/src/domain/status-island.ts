@@ -49,6 +49,8 @@ export const islandPreferencesSchema = z.object({
   enabled: z.boolean().default(true),
   startWithApp: z.boolean().default(true),
   stayVisibleWhenHidden: z.boolean().default(true),
+  /** When false (default) the island stays visible even with focused main. */
+  hideWhenMainFocused: z.boolean().default(false),
   alwaysOnTop: z.boolean().default(true),
   autoExpand: z.boolean().default(true),
   position: islandPositionSchema.default("topCenter"),

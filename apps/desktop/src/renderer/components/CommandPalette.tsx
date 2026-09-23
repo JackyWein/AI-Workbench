@@ -63,6 +63,7 @@ function modelDetail(provider: ProviderSummary, model: ModelInfo): string {
 export function CommandPalette(): JSX.Element | null {
   const open = useWorkbench((state) => state.paletteOpen);
   const setOpen = useWorkbench((state) => state.setPaletteOpen);
+  const initialQuery = useWorkbench((state) => state.paletteQuery);
   const workspaces = useWorkbench((state) => state.workspaces);
   const sessions = useWorkbench((state) => state.sessions);
   const providers = useWorkbench((state) => state.providers);
@@ -168,6 +169,22 @@ export function CommandPalette(): JSX.Element | null {
         },
       },
     ];
+
+    // Design preview (developer mode only): team inside a session with mock
+    // data. No backend, no IPC — delete with TeamSessionPreview.tsx.
+    if (settings.developerMode && activeSessionId) {
+      list.push({
+        id: "preview.team-session",
+        label: store.getState().teamPreview
+          ? "Preview off: team in session (mockup)"
+          : "Preview on: team in session (mockup)",
+        group: "Session",
+        run: () => {
+          const state = store.getState();
+          state.setTeamPreview(!state.teamPreview);
+        },
+      });
+    }
 
     // Reasoning effort lives here now that the header is crumbs + pills: only
     // the active tool's own options appear, and Default clears back to none.
@@ -374,6 +391,7 @@ export function CommandPalette(): JSX.Element | null {
     providers,
     settings.theme,
     settings.statusIsland,
+    settings.developerMode,
     activeSessionId,
   ]);
 
@@ -408,11 +426,11 @@ export function CommandPalette(): JSX.Element | null {
 
   useEffect(() => {
     if (open) {
-      setQuery("");
+      setQuery(initialQuery ?? "");
       setIndex(0);
       inputRef.current?.focus();
     }
-  }, [open]);
+  }, [open, initialQuery]);
 
   useEffect(() => {
     setIndex(0);

@@ -2512,6 +2512,7 @@ input[type="checkbox"].mini-switch:disabled {
 }
 
 .xterm-pane {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -2521,6 +2522,31 @@ input[type="checkbox"].mini-switch:disabled {
 
 .xterm-pane .xterm {
   height: 100%;
+}
+
+/* The way back to the newest line, shown only when the view is away from the
+   bottom. It floats over the output instead of moving it. */
+.xterm-pane__latest {
+  position: absolute;
+  right: var(--space-5);
+  bottom: var(--space-4);
+  z-index: 2;
+  padding: 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-overlay);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+  box-shadow: var(--shadow-popover);
+}
+
+.xterm-pane__latest:hover {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.terminal {
+  position: relative;
 }
 
 .activity-trace {

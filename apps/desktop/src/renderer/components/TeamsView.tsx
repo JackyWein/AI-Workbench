@@ -9,6 +9,7 @@ import type {
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { Logo } from "./Logo.js";
+import { SettingDisclosure, Switch } from "./Controls.js";
 import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
 
 /**
@@ -96,7 +97,17 @@ function TeamEntry({
   const startRun = useWorkbench((state) => state.startTeamRun);
   const deleteTeam = useWorkbench((state) => state.deleteTeam);
   const setLead = useWorkbench((state) => state.setTeamLead);
+  const setWorkingDirectory = useWorkbench((state) => state.setTeamWorkingDirectory);
   const openRun = useWorkbench((state) => state.openTeamRun);
+  const [folder, setFolder] = useState<string | null>(null);
+  const [outside, setOutside] = useState(false);
+
+  // Where this team actually writes. Shown, not implied: a team that runs in
+  // the wrong folder is the one mistake that cannot be undone quietly.
+  const homePath = useWorkbench(
+    (state) => state.workspaces.find((entry) => entry.id === team.workspaceId)?.path ?? "",
+  );
+  const folderPath = team.settings.workingDirectory ?? homePath;
   const [goal, setGoal] = useState("");
   const [starting, setStarting] = useState(false);
 
@@ -126,6 +137,15 @@ function TeamEntry({
       </div>
 
       <dl className="detail-list">
+        <div className="detail">
+          <dt className="detail__label">Works in</dt>
+          <dd className="detail__value detail__value--path">
+            {folderPath || "No folder set"}
+            {team.settings.workingDirectory ? (
+              <span className="detail__note">outside the workspace, on purpose</span>
+            ) : null}
+          </dd>
+        </div>
         {team.agents.map((agent) => (
           <div className="detail" key={agent.id}>
             <dt className="detail__label">
@@ -141,6 +161,76 @@ function TeamEntry({
       </dl>
 
       <div className="provider-entry__config">
+        <SettingDisclosure label="Where this team works">
+          <div className="form-grid">
+            <label className="stacked-field form-grid__full">
+              <span className="field__description">
+                Folder. Leave empty to use the workspace folder ({homePath || "not set"}).
+              </span>
+              <input
+                className="text-input"
+                value={folder ?? ""}
+                placeholder={homePath}
+                spellCheck={false}
+                onChange={(event) => setFolder(event.target.value)}
+              />
+            </label>
+          </div>
+          <label className="stacked-field">
+            <span className="field__description">
+              Allow working outside the workspace. Off means a folder inside it;
+              on lets the team write anywhere you name here.
+            </span>
+            <Switch
+              label="Allow working outside the workspace"
+              checked={outside || team.settings.allowOutsideWorkspace}
+              onChange={(value) => {
+                setOutside(value);
+                if (!value) {
+                  // Turning it off also gives the team its workspace folder back.
+                  setFolder(null);
+                  void setWorkingDirectory({
+                    teamId: team.id,
+                    workingDirectory: null,
+                    allowOutsideWorkspace: false,
+                  });
+                }
+              }}
+            />
+          </label>
+          <div className="scope-toggles">
+            <button
+              type="button"
+              className="quiet-button"
+              onClick={() =>
+                void setWorkingDirectory({
+                  teamId: team.id,
+                  workingDirectory: folder?.trim() ? folder.trim() : null,
+                  allowOutsideWorkspace: outside || team.settings.allowOutsideWorkspace,
+                })
+              }
+            >
+              Save folder
+            </button>
+            {team.settings.workingDirectory ? (
+              <button
+                type="button"
+                className="quiet-button"
+                onClick={() => {
+                  setFolder(null);
+                  setOutside(false);
+                  void setWorkingDirectory({
+                    teamId: team.id,
+                    workingDirectory: null,
+                    allowOutsideWorkspace: team.settings.allowOutsideWorkspace,
+                  });
+                }}
+              >
+                Back to the workspace folder
+              </button>
+            ) : null}
+          </div>
+        </SettingDisclosure>
         <label className="stacked-field">
           <span className="field__description">Goal</span>
           <input
@@ -277,6 +367,7 @@ function RunDetail({
   const resumeRun = useWorkbench((state) => state.resumeTeamRun);
   const cancelRun = useWorkbench((state) => state.cancelTeamRun);
   const [tab, setTab] = useState<RunTab>("tasks");
+  const [stopping, setStopping] = useState(false);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Roving tabindex, like the workspace tools: one tab stop, arrows move and
@@ -331,29 +422,41 @@ function RunDetail({
           <button
             type="button"
             className="quiet-button"
-            onClick={() => void pauseRun(runId)}
+            disabled={stopping}
+            onClick={() => {
+              setStopping(true);
+              void pauseRun(runId).finally(() => setStopping(false));
+            }}
           >
             <Pause size={13} strokeWidth={1.75} aria-hidden="true" />
-            Pause
+            {stopping ? "Pausing…" : "Pause"}
           </button>
         ) : run.status === "paused" ? (
           <button
             type="button"
             className="quiet-button"
-            onClick={() => void resumeRun(runId)}
+            disabled={stopping}
+            onClick={() => {
+              setStopping(true);
+              void resumeRun(runId).finally(() => setStopping(false));
+            }}
           >
             <Play size={13} strokeWidth={1.75} aria-hidden="true" />
-            Resume
+            {stopping ? "Working…" : "Resume"}
           </button>
         ) : null}
         {running || run.status === "paused" ? (
           <button
             type="button"
             className="quiet-button"
-            onClick={() => void cancelRun(runId)}
+            disabled={stopping}
+            onClick={() => {
+              setStopping(true);
+              void cancelRun(runId).finally(() => setStopping(false));
+            }}
           >
             <Square size={13} strokeWidth={1.75} aria-hidden="true" />
-            Stop
+            {stopping ? "Stopping…" : "Stop"}
           </button>
         ) : null}
         <span className="row__meta">
@@ -478,6 +581,7 @@ function AgentActivity({
   readonly providers: readonly ProviderSummary[];
 }): JSX.Element {
   const teams = useWorkbench((state) => state.teams);
+  const progress = useWorkbench((state) => state.agentProgress);
 
   const team = teams.find((entry) => entry.id === snapshot.run.teamId);
 
@@ -491,7 +595,11 @@ function AgentActivity({
         <div className="detail" key={agent.id}>
           <dt className="detail__label">{agent.displayName}</dt>
           <dd className="detail__value">
-            {agentActivity(agent.id, snapshot)}
+            {agentActivity(
+              agent.id,
+              snapshot,
+              progress[`${snapshot.run.id}:${agent.id}`]?.detail,
+            )}
             <span className="row__meta">
               {" "}
               · <AgentProvider providerId={agent.providerId} providers={providers} />
@@ -503,14 +611,22 @@ function AgentActivity({
   );
 }
 
-function agentActivity(agentId: string, snapshot: TeamRunSnapshot): string {
+function agentActivity(
+  agentId: string,
+  snapshot: TeamRunSnapshot,
+  liveDetail?: string,
+): string {
   const current = snapshot.tasks.find(
     (task) =>
       task.assignedTo === agentId &&
       (task.status === "running" || task.status === "claimed"),
   );
   if (current) {
-    return `Working on ${current.title}`;
+    // What the tool itself last reported wins over the task title, so a long
+    // turn shows the agent's real work instead of only "Working on …".
+    return liveDetail && liveDetail.length > 0
+      ? `Working · ${liveDetail}`
+      : `Working on ${current.title}`;
   }
   const done = snapshot.tasks.filter(
     (task) => task.assignedTo === agentId && task.status === "completed",

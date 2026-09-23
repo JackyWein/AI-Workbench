@@ -36,6 +36,7 @@ const LIMITS = {
   maxConcurrentAgents: 3,
   maxMessages: 200,
   maxDelegationsPerTask: 4,
+  agentTurnSilenceSeconds: 600,
 };
 
 function bootService(): { service: TeamService; team: TeamDefinition; events: TeamEvent[] } {
@@ -46,7 +47,12 @@ function bootService(): { service: TeamService; team: TeamDefinition; events: Te
     workspaceId: "ws",
     leadAgentId: "lead",
     agents: [agent("lead", "Lead"), agent("worker", "Worker")],
-    settings: { instructions: "", limits: LIMITS },
+    settings: {
+      instructions: "",
+      allowOutsideWorkspace: false,
+      workingDirectory: null,
+      limits: LIMITS,
+    },
     createdAt: now,
     updatedAt: now,
   };

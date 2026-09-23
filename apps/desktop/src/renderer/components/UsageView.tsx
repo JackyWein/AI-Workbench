@@ -1,4 +1,4 @@
-import { type JSX, useMemo, useState } from "react";
+import { type JSX, useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import type {
   AgentTerminal,
@@ -54,6 +54,21 @@ export function UsageView(): JSX.Element {
       setRefreshing(false);
     }
   };
+
+  // Refresh on open + every 60s while open + on focus (no aggressive polling).
+  useEffect(() => {
+    void refreshUsage();
+    const timer = setInterval(() => void refreshUsage(), 60_000);
+    const onFocus = (): void => {
+      void refreshUsage();
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="view">
@@ -144,7 +159,7 @@ function UsageCard({
           </span>
           {plan ? <span className="usage-card__plan">{capitalize(plan)}</span> : null}
         </span>
-        {snapshot && limits.length > 0 ? (
+        {snapshot ? (
           <time
             className="usage-card__age"
             dateTime={snapshot.updatedAt.toISOString()}
@@ -164,14 +179,19 @@ function UsageCard({
       ) : null}
 
       {amounts.length > 0 ? (
-        <dl className="amounts">
-          {amounts.map((limit) => (
-            <div className="amounts__item" key={limit.id}>
-              <dt>{limit.label}</dt>
-              <dd>{amountOf(limit)}</dd>
-            </div>
-          ))}
-        </dl>
+        <>
+          {quotas.length === 0 ? (
+            <p className="usage-card__note">No quota — consumed amounts.</p>
+          ) : null}
+          <dl className="amounts">
+            {amounts.map((limit) => (
+              <div className="amounts__item" key={limit.id}>
+                <dt>{limit.label}</dt>
+                <dd>{amountOf(limit)}</dd>
+              </div>
+            ))}
+          </dl>
+        </>
       ) : null}
 
       {limits.length === 0 ? (
@@ -188,6 +208,7 @@ export function Quota({ limit, now }: { readonly limit: UsageLimit; readonly now
   const percent = usedPercent(limit) ?? 0;
   const reset = hasReset(limit, now);
   const tone = reset ? "stale" : meterTone(percent);
+  const noResetInfo = !limit.resetsAt && !limit.resetsText;
   return (
     <div className="quota" data-tone={tone}>
       <div className="quota__row">
@@ -210,6 +231,7 @@ export function Quota({ limit, now }: { readonly limit: UsageLimit; readonly now
             ? `Reset at ${formatWhen(limit.resetsAt, now)} · not reported since`
             : `Resets ${formatIn(limit.resetsAt, now)} · ${formatWhen(limit.resetsAt, now)}`
           : (limit.resetsText ?? "Reset time not reported")}
+        {percent >= 100 && !reset && noResetInfo ? " · limit may still apply" : null}
       </p>
     </div>
   );

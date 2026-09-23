@@ -11,14 +11,11 @@ import { formatIn, meterTone, tightestLimit, useNow } from "../lib/usage.js";
 import { Logo } from "./Logo.js";
 import { SettingDisclosure, SettingGroup, Switch } from "./Controls.js";
 import { familyOf } from "../lib/provider-label.js";
-// Relative on purpose: the custom-provider package joins the workspace aliases
-// when it is promoted to a first-class dependency, and until then this slice
-// needs no config, lockfile or core change to validate a custom provider.
 import {
   createCustomProfile,
   parseCustomModels,
   type OpenAiCompatibleProfile,
-} from "../../../../../packages/providers/openai-compatible/src/profile.js";
+} from "@ai-workbench/provider-openai-compatible";
 
 interface ProvidersViewProps {
   readonly providers: ProviderSummary[];
@@ -44,10 +41,14 @@ export function ProvidersView({ providers, configs }: ProvidersViewProps): JSX.E
 
   // A family supports several accounts once one is connected, detected, or
   // registered as its own entry. The UI learns this from data, never brands.
+  // Defensive: malformed entries never crash the whole screen (grey-screen).
+  const safeProviders = Array.isArray(providers) ? providers.filter((p) => p && p.metadata && typeof p.metadata.id === "string") : [];
+  const safeAccounts = Array.isArray(accounts) ? accounts.filter((a) => a && typeof a.family === "string") : [];
+  const safeDetected = Array.isArray(detectedAccounts) ? detectedAccounts.filter((d) => d && typeof d.family === "string") : [];
   const multiAccountFamilies = new Set([
-    ...accounts.map((account) => account.family),
-    ...detectedAccounts.map((detected) => detected.family),
-    ...providers
+    ...safeAccounts.map((account) => account.family),
+    ...safeDetected.map((detected) => detected.family),
+    ...safeProviders
       .filter((provider) => provider.metadata.account)
       .map((provider) => familyOf(provider)),
   ]);
@@ -61,8 +62,8 @@ export function ProvidersView({ providers, configs }: ProvidersViewProps): JSX.E
     }
   };
 
-  const installed = providers.filter((provider) => provider.installation.state === "installed");
-  const missing = providers.filter((provider) => provider.installation.state !== "installed");
+  const installed = safeProviders.filter((provider) => provider.installation?.state === "installed");
+  const missing = safeProviders.filter((provider) => provider.installation?.state !== "installed");
   const entry = (provider: ProviderSummary): JSX.Element => (
     <ProviderEntry
       key={provider.metadata.id}
@@ -137,17 +138,19 @@ function ProviderEntry({
   const now = useNow(60_000);
   const [open, setOpen] = useState(false);
   const [allCapabilities, setAllCapabilities] = useState(false);
+  const safeModels = Array.isArray(provider.models) ? provider.models.filter((m) => m && typeof m.id === "string") : [];
   const [path, setPath] = useState(config?.executablePath ?? "");
-  const [args, setArgs] = useState((config?.arguments ?? []).join(" "));
-  const [models, setModels] = useState(formatModels(provider.models));
+  const [args, setArgs] = useState(Array.isArray(config?.arguments) ? (config.arguments as string[]).join(" ") : "");
+  const [models, setModels] = useState(formatModels(safeModels));
   const [saving, setSaving] = useState(false);
 
   const id = provider.metadata.id;
   const detailsId = `provider-${id}-details`;
-  const configurable = provider.metadata.transportTypes.includes("cli");
+  const transportTypes = Array.isArray(provider.metadata.transportTypes) ? provider.metadata.transportTypes : [];
+  const configurable = transportTypes.includes("cli");
   const configuredModels = modelsOf(config);
   const tightest = tightestLimit(usage, new Set([id]), now);
-  const capabilities = provider.capabilities.supported;
+  const capabilities = Array.isArray(provider.capabilities?.supported) ? provider.capabilities.supported : [];
   const shownCapabilities = allCapabilities
     ? capabilities
     : capabilities.slice(0, CAPABILITY_PREVIEW);
@@ -184,9 +187,9 @@ function ProviderEntry({
             data-open={open}
           />
           <span className="logo-well logo-well--sm" aria-hidden="true">
-            <Logo name={provider.metadata.icon} label={provider.metadata.displayName} size={14} />
+            <Logo name={provider.metadata.icon} label={provider.metadata.displayName ?? provider.metadata.id ?? "Unknown"} size={14} />
           </span>
-          <span className="provider-row__name">{provider.metadata.displayName}</span>
+          <span className="provider-row__name">{provider.metadata.displayName ?? provider.metadata.id}</span>
           <span className="row__meta">{installationLabel(provider)}</span>
         </button>
 
@@ -206,11 +209,11 @@ function ProviderEntry({
             {tightest.percentUsed}%
           </button>
         ) : null}
-        {provider.installation.state === "installed" ? (
+        {provider.installation?.state === "installed" ? (
           <span className={`pill ${authTone(provider)}`}>{authPillLabel(provider)}</span>
         ) : null}
         <Switch
-          label={provider.enabled ? `Hide ${provider.metadata.displayName}` : `Show ${provider.metadata.displayName}`}
+          label={provider.enabled ? `Hide ${provider.metadata.displayName ?? provider.metadata.id}` : `Show ${provider.metadata.displayName ?? provider.metadata.id}`}
           checked={provider.enabled}
           onChange={(enabled) => void saveProviderConfig({ providerId: id, enabled })}
         />
@@ -234,13 +237,13 @@ function ProviderEntry({
           </div>
           <div className="detail">
             <dt className="detail__label">Runs as</dt>
-            <dd className="detail__value">{provider.metadata.transportTypes.join(", ")}</dd>
+            <dd className="detail__value">{transportTypes.join(", ") || "Unknown"}</dd>
           </div>
-          {provider.installation.executablePath ? (
+          {provider.installation?.executablePath ? (
             <div className="detail">
               <dt className="detail__label">Executable</dt>
               <dd className="detail__value detail__value--path">
-                {provider.installation.executablePath}
+                {provider.installation?.executablePath}
               </dd>
             </div>
           ) : null}
@@ -476,7 +479,7 @@ function AccountsSection({ family }: { readonly family: string }): JSX.Element {
 
 /** The models a stored configuration holds; anything malformed is skipped. */
 function modelsOf(config: StoredProviderConfig | undefined): ModelInfo[] {
-  const raw: unknown = config?.settings["models"];
+  const raw: unknown = (config?.settings as Record<string, unknown> | undefined)?.["models"];
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -487,8 +490,12 @@ function modelsOf(config: StoredProviderConfig | undefined): ModelInfo[] {
 }
 
 /** "id = Display name" per line, which is how the field round-trips. */
-function formatModels(models: readonly ModelInfo[]): string {
+function formatModels(models: readonly ModelInfo[] | undefined | null): string {
+  if (!Array.isArray(models)) {
+    return "";
+  }
   return models
+    .filter((model) => model && typeof model.id === "string")
     .map((model) =>
       model.displayName && model.displayName !== model.id
         ? `${model.id} = ${model.displayName}`
@@ -521,14 +528,15 @@ function modelsLabel(
   provider: ProviderSummary,
   configured: readonly ModelInfo[],
 ): string {
-  if (provider.models.length === 0) {
+  const list = Array.isArray(provider.models) ? provider.models.filter((m) => m && typeof m.id === "string") : [];
+  if (list.length === 0) {
     return "None yet — add them below";
   }
-  const names = provider.models.map((model) => model.displayName).join(", ");
+  const names = list.map((model) => model.displayName ?? model.id).join(", ");
 
   // Where a list came from changes how much it can be trusted, so it is said
   // rather than left for the user to assume (spec §56).
-  const sources = new Set(provider.models.map((model) => model.source ?? "profile"));
+  const sources = new Set(list.map((model) => model.source ?? "profile"));
   const provenance = sources.has("provider")
     ? "reported by the tool"
     : configured.length > 0 || sources.has("user")
@@ -684,12 +692,14 @@ function CustomProviderSection({
   const [problem, setProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const activeIds = new Set(summaries.map((summary) => summary.metadata.id));
-  const saved = Object.values(configs).filter(
+  const activeIds = new Set(summaries.map((summary) => summary?.metadata?.id).filter((id): id is string => typeof id === "string"));
+  const saved = Object.values(configs ?? {}).filter(
     (config) =>
-      config.providerId.startsWith("custom-") ||
-      config.baseUrl !== null ||
-      config.credentialReference !== null,
+      config &&
+      typeof config.providerId === "string" &&
+      (config.providerId.startsWith("custom-") ||
+        config.baseUrl !== null ||
+        config.credentialReference !== null),
   );
 
   const save = async (): Promise<void> => {

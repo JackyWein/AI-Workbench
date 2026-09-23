@@ -430,6 +430,12 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       return services.teams.create({ ...input, workingDirectory: workspace.path });
     },
     "team.setLead": (input) => services.teams.setLeadAgent(input.teamId, input.agentId),
+    "team.setWorkingDirectory": (input) =>
+      services.teams.setWorkingDirectory(
+        input.teamId,
+        input.workingDirectory,
+        input.allowOutsideWorkspace,
+      ),
     "team.delete": async (input) => ({
       deleted: await services.teams.delete(input.teamId),
     }),

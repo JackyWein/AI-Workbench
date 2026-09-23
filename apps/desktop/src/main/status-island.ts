@@ -108,7 +108,16 @@ export class StatusIslandWindow {
       return;
     }
     const window = this.#ensure();
-    window.setAlwaysOnTop(preferences.alwaysOnTop, "floating");
+    // On Windows the island must survive full-screen apps: "floating" loses
+    // to exclusive/borderless full-screen windows, "screen-saver" sits above
+    // everything the desktop draws. (A truly exclusive full-screen mode on a
+    // monitor that bypasses the desktop compositor still cannot be covered by
+    // any window; that is an OS limit, not ours.) Re-applied on every
+    // configure so a later z-order change cannot pin us below another app.
+    window.setAlwaysOnTop(
+      preferences.alwaysOnTop,
+      process.platform === "win32" ? "screen-saver" : "floating",
+    );
     this.#place(window, preferences);
   }
 

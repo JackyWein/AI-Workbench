@@ -583,6 +583,15 @@ export class TeamService {
     this.#emit({ type: "AGENT_FAILED", runId: this.#run.id, agentId, error });
   }
 
+  /**
+   * Still working, with the tool's own words for what it is doing. Called
+   * while a turn streams or runs tools, so a long turn reads as alive rather
+   * than stuck (spec §50). The detail is capped by the event schema.
+   */
+  emitAgentProgress(agentId: string, detail: string): void {
+    this.#emit({ type: "AGENT_PROGRESS", runId: this.#run.id, agentId, detail });
+  }
+
   /** Something a person has to look at before the run can go on (spec §50). */
   emitAttentionRequired(reason: string): void {
     this.#emit({ type: "USER_ATTENTION_REQUIRED", runId: this.#run.id, reason });

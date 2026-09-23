@@ -387,7 +387,22 @@ export class CliProviderAdapter implements AIProviderAdapter {
     this.#runs.set(session.sessionId, state);
 
     const setup = this.#sessions.get(session.sessionId);
-    const mcp = this.#mcpLaunch(setup?.toolAccess);
+    // A turn must know where it works. Without this the child process would
+    // inherit the application's own folder and write there — which is never
+    // what the person asked for, so it is refused instead of guessed.
+    if (!setup?.workingDirectory) {
+      yield {
+        type: "error",
+        error: {
+          kind: "protocol",
+          message:
+            "This turn has no working folder, so it was not started. Open the session's workspace again, or set the team's folder.",
+          retryable: false,
+        },
+      };
+      return;
+    }
+    const mcp = this.#mcpLaunch(setup.toolAccess);
     if (mcp.warning) {
       yield { type: "warning", message: mcp.warning };
     }

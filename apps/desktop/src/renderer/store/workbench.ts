@@ -34,8 +34,28 @@ import type {
   SshConnectionTest,
   Workspace,
 } from "@ai-workbench/shared";
-import { defaultAppSettings } from "@ai-workbench/shared";
+import { defaultAppSettings, providerSummarySchema } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
+
+/**
+ * Drops malformed provider summaries at the IPC boundary so one bad entry
+ * can never crash a view. Invalid entries are logged, never rendered.
+ */
+function validProviders(value: unknown): ProviderSummary[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const valid: ProviderSummary[] = [];
+  for (const entry of value) {
+    const parsed = providerSummarySchema.safeParse(entry);
+    if (parsed.success) {
+      valid.push(parsed.data);
+    } else {
+      console.warn("[providers] dropped malformed summary", parsed.error.issues[0]?.message);
+    }
+  }
+  return valid;
+}
 
 export type MainView =
   | "chat"
@@ -117,11 +137,20 @@ interface WorkbenchState {
   /** The run whose detail is open, and its contents. */
   openRunId: string | null;
   runSnapshots: Record<string, TeamRunSnapshot>;
+  /**
+   * What each agent is doing right now, keyed `runId:agentId` (spec §50).
+   * Progress is an event, not a snapshot field, so it is kept here instead of
+   * re-reading the whole run on every heartbeat.
+   */
+  agentProgress: Record<string, { agentId: string; detail: string; at: number }>;
 
   activeWorkspaceId: string | null;
   activeSessionId: string | null;
   view: MainView;
   paletteOpen: boolean;
+  paletteQuery: string;
+  /** Design preview: team inside a session (mock data, developer mode only). */
+  teamPreview: boolean;
   workspacePanelOpen: boolean;
   workspaceTab: WorkspaceTab;
   workspaceMode: WorkspaceMode;
@@ -137,7 +166,8 @@ interface WorkbenchState {
   initialize(): Promise<void>;
   setError(error: string | null): void;
   setView(view: MainView): void;
-  setPaletteOpen(open: boolean): void;
+  setPaletteOpen(open: boolean, initialQuery?: string): void;
+  setTeamPreview(on: boolean): void;
   setWorkspacePanelOpen(open: boolean): void;
   toggleWorkspacePanel(tab?: WorkspaceTab): void;
   setWorkspaceTab(tab: WorkspaceTab): void;
@@ -175,7 +205,22 @@ interface WorkbenchState {
     providerId?: string;
     /** Null clears it: the tool then runs its own default model. */
     modelId?: string | null;
+    /** Replaces the whole record; the caller merges what it wants to keep. */
+    uiState?: Record<string, unknown>;
   }): Promise<void>;
+  /**
+   * Puts this session in team mode: the chosen team and, when it has one, its
+   * most recent run (the live one if there is one) become what the session
+   * shows instead of a single provider conversation.
+   */
+  setSessionTeam(input: {
+    sessionId: string;
+    teamId: string;
+    /** Starts a run with this goal instead of opening an existing one. */
+    goal?: string;
+  }): Promise<void>;
+  /** Leaves team mode; the session is a normal solo conversation again. */
+  clearSessionTeam(sessionId: string): Promise<void>;
   deleteSession(id: string): Promise<void>;
 
   sendMessage(text: string): Promise<void>;
@@ -236,6 +281,12 @@ interface WorkbenchState {
   }): Promise<void>;
   deleteTeam(teamId: string): Promise<void>;
   setTeamLead(teamId: string, agentId: string): Promise<void>;
+  /** Moves a team to a folder; outside the workspace needs the explicit flag. */
+  setTeamWorkingDirectory(input: {
+    teamId: string;
+    workingDirectory: string | null;
+    allowOutsideWorkspace?: boolean;
+  }): Promise<boolean>;
   startTeamRun(teamId: string, goal: string): Promise<void>;
   openTeamRun(runId: string | null): Promise<void>;
   refreshTeamRun(runId: string): Promise<void>;
@@ -327,11 +378,14 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   teamRuns: {},
   openRunId: null,
   runSnapshots: {},
+  agentProgress: {},
 
   activeWorkspaceId: null,
   activeSessionId: null,
   view: "chat",
   paletteOpen: false,
+  paletteQuery: "",
+  teamPreview: false,
   workspacePanelOpen: false,
   workspaceTab: "terminal",
   workspaceMode: storedUi.workspaceMode ?? "chat",
@@ -356,7 +410,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
       set({
         workspaces,
-        providers,
+        providers: validProviders(providers),
         settings,
         usage,
         providerConfigs: byProviderId(configs),
@@ -377,7 +431,12 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
   setError: (error) => set({ error }),
   setView: (view) => set({ view }),
-  setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
+  setPaletteOpen: (paletteOpen, initialQuery) =>
+    set((state) => ({
+      paletteOpen,
+      paletteQuery: paletteOpen ? (initialQuery ?? state.paletteQuery) : state.paletteQuery,
+    })),
+  setTeamPreview: (teamPreview) => set({ teamPreview }),
   setWorkspacePanelOpen: (workspacePanelOpen) => set({ workspacePanelOpen }),
   setWorkspaceTab: (workspaceTab) => set({ workspaceTab, workspacePanelOpen: true }),
   setWorkspaceMode: (workspaceMode) => {
@@ -606,10 +665,67 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
   async updateSession(input) {
     try {
-      await invoke("session.update", input);
+      const updated = await invoke("session.update", input);
+      // Adopt what the host stored, so the view shows the change immediately
+      // (a team binding lives in the session's own record).
+      set((state) => ({
+        sessions: state.sessions.map((session) =>
+          session.id === updated.id ? updated : session,
+        ),
+      }));
+      return;
     } catch (error) {
       set({ error: describeError(error) });
     }
+  },
+
+  async setSessionTeam({ sessionId, teamId, goal }) {
+    try {
+      const session = get().sessions.find((entry) => entry.id === sessionId);
+      if (!session) {
+        return;
+      }
+      let runId: string | null = null;
+      const value = goal?.trim();
+      if (value) {
+        // A goal means a new run; otherwise the newest run of the team is
+        // shown, the live one first if there is one.
+        const started = await invoke("team.startRun", { teamId, goal: value });
+        runId = started.id;
+      } else {
+        const runs = await invoke("team.listRuns", { teamId });
+        runId =
+          runs.find((run) => run.status === "running" || run.status === "paused")?.id ??
+          runs[0]?.id ??
+          null;
+      }
+      const updated = await invoke("session.update", {
+        id: sessionId,
+        uiState: { ...session.uiState, teamId, teamRunId: runId },
+      });
+      set((state) => ({
+        sessions: state.sessions.map((entry) => (entry.id === sessionId ? updated : entry)),
+        view: "chat",
+        workspaceMode: "chat",
+      }));
+      if (runId) {
+        await get().refreshTeamRun(runId);
+      }
+    } catch (error) {
+      set({ error: describeError(error) });
+    }
+  },
+
+  async clearSessionTeam(sessionId) {
+    const session = get().sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      return;
+    }
+    const { teamId: _teamId, teamRunId: _runId, ...rest } = session.uiState as Record<
+      string,
+      unknown
+    >;
+    await get().updateSession({ id: sessionId, uiState: rest });
   },
 
   async deleteSession(id) {
@@ -666,7 +782,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async refreshProviders() {
     try {
       const providers = await invoke("provider.refresh", undefined);
-      set({ providers });
+      set({ providers: validProviders(providers) });
     } catch (error) {
       set({ error: describeError(error) });
     }
@@ -675,9 +791,14 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async rescanModels(providerId) {
     try {
       const summary = await invoke("provider.rescanModels", { providerId });
+      const parsed = providerSummarySchema.safeParse(summary);
+      if (!parsed.success) {
+        set({ error: "The tool reported models in an unreadable form." });
+        return;
+      }
       set((state) => ({
         providers: state.providers.map((provider) =>
-          provider.metadata.id === summary.metadata.id ? summary : provider,
+          provider.metadata.id === parsed.data.metadata.id ? parsed.data : provider,
         ),
       }));
     } catch (error) {
@@ -982,6 +1103,28 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       await get().refreshTeams();
     } catch (error) {
       set({ error: describeError(error) });
+    }
+  },
+
+  /**
+   * Points a team at a folder, or back at its workspace with null. A folder
+   * outside the workspace is refused by the host unless the person allowed it
+   * here — this is the switch that makes it a decision, not a side effect.
+   */
+  async setTeamWorkingDirectory(input: {
+    teamId: string;
+    workingDirectory: string | null;
+    allowOutsideWorkspace?: boolean;
+  }): Promise<boolean> {
+    try {
+      const team = await invoke("team.setWorkingDirectory", input);
+      set((state) => ({
+        teams: state.teams.map((entry) => (entry.id === team.id ? team : entry)),
+      }));
+      return true;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return false;
     }
   },
 
@@ -1306,6 +1449,18 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         // The run's own state is the source of truth, so a team event refreshes
         // it rather than being replayed into a second copy here (spec §50).
         const { runId } = event.event;
+        if (event.event.type === "AGENT_PROGRESS") {
+          // A heartbeat arrives every few seconds per agent: keep it as
+          // display state and do NOT re-read the whole run snapshot for it.
+          const { agentId, detail } = event.event;
+          set((state) => ({
+            agentProgress: {
+              ...state.agentProgress,
+              [`${runId}:${agentId}`]: { agentId, detail, at: Date.now() },
+            },
+          }));
+          break;
+        }
         if (get().openRunId === runId) {
           void get().refreshTeamRun(runId);
         }

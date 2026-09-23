@@ -38,6 +38,14 @@ export const teamRunConfigSchema = z.object({
   maxConcurrentAgents: z.number().int().positive().max(16).default(3),
   maxMessages: z.number().int().positive().max(10_000).default(200),
   maxDelegationsPerTask: z.number().int().positive().max(64).default(4),
+  /**
+   * How long one agent turn may go without producing anything, in seconds.
+   * A turn that streams text or runs tools resets it (see the orchestrator),
+   * so this is the silence budget, not the time budget of the work. The
+   * default matches the command line adapters' own process timeout: a slower
+   * model is a reason to wait, not to be cut off.
+   */
+  agentTurnSilenceSeconds: z.number().int().positive().max(3600).default(600),
 });
 export type TeamRunConfig = z.infer<typeof teamRunConfigSchema>;
 
@@ -45,6 +53,17 @@ export const teamSettingsSchema = z.object({
   limits: teamRunConfigSchema.default({}),
   /** Extra instructions handed to every agent of this team. */
   instructions: z.string().max(10_000).default(""),
+  /**
+   * May this team work outside the workspace it belongs to? Off by default:
+   * a team writes where its folder says, and going elsewhere is a decision a
+   * person makes, never a side effect (spec §19, §25).
+   */
+  allowOutsideWorkspace: z.boolean().default(false),
+  /**
+   * Where the team works. Null means "the workspace's folder". Set only with
+   * `allowOutsideWorkspace` when it points outside that workspace.
+   */
+  workingDirectory: z.string().min(1).nullable().default(null),
 });
 export type TeamSettings = z.infer<typeof teamSettingsSchema>;
 
@@ -236,6 +255,17 @@ export const teamEventSchema = z.discriminatedUnion("type", [
     runId: z.string(),
     agentId: z.string(),
     error: z.string(),
+  }),
+  /**
+   * An agent is still working. Emitted while a turn streams or runs tools so
+   * a long turn never looks like a frozen run (spec §50). `detail` is the
+   * tool's own wording, truncated, never invented.
+   */
+  z.object({
+    type: z.literal("AGENT_PROGRESS"),
+    runId: z.string(),
+    agentId: z.string(),
+    detail: z.string().max(200).default(""),
   }),
   z.object({ type: z.literal("TASK_CREATED"), runId: z.string(), task: teamTaskSchema }),
   z.object({

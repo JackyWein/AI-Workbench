@@ -26,7 +26,7 @@ import { LOGOS, resolveTheme } from "@ai-workbench/ui";
 import "./island.css";
 
 type HoverMode = "agents" | "usage";
-type Face = "approval" | "question" | "working" | "idle" | "none";
+type Face = "approval" | "question" | "working" | "done" | "idle" | "none";
 /** How the unit just arrived in its shape, for its entrance motion. */
 type Arrival = "dock" | "free" | null;
 
@@ -432,6 +432,8 @@ function Island(): JSX.Element | null {
         return <QuestionCard entries={derived.questions} bridge={bridge} now={now} />;
       case "working":
         return <WorkingSheet derived={derived} bridge={bridge} now={now} />;
+      case "done":
+        return <DoneSheet derived={derived} bridge={bridge} now={now} />;
       case "idle":
         return <IdleSheet derived={derived} sessions={state.sessions} now={now} />;
       case "none":
@@ -644,6 +646,8 @@ interface Derived {
   readonly badge: number | null;
   readonly approvals: IslandEntry[];
   readonly questions: IslandEntry[];
+  /** What finished and is still worth opening (spec §97). */
+  readonly finished: IslandEntry[];
   /** Every agent at work, one row apiece: sessions, terminals and teams. */
   readonly agents: IslandAgentRow[];
   readonly usageRows: IslandUsageRow[];
@@ -656,6 +660,7 @@ function deriveFace(state: IslandState): Derived {
   const questions = state.entries.filter((entry) => entry.widget === "agentQuestion");
   const teams = state.entries.filter((entry) => entry.widget === "teamProgress");
   const active = state.entries.filter((entry) => entry.widget === "activeAgents");
+  const done = state.entries.filter((entry) => entry.widget === "completedWork");
   // Tools first, teams after: the lead is the agent a person watches.
   const agents = [...active, ...teams].flatMap((entry) => entry.agents);
   // An entry that came without rows still gets one, so nothing at work is
@@ -682,6 +687,7 @@ function deriveFace(state: IslandState): Derived {
   const base = {
     approvals,
     questions,
+    finished: done,
     agents: rows,
     usageRows,
     usageAt,
@@ -730,6 +736,20 @@ function deriveFace(state: IslandState): Derived {
       badge: null,
     };
   }
+  // Something finished and nothing needs a person right now: say so plainly
+  // and let the glow mark it, so finishing is visible without being noisy.
+  if (done.length > 0) {
+    const first = done[0];
+    return {
+      ...base,
+      face: "done",
+      label: `Finished · ${first?.title ?? "work"}`,
+      unitTitle: first?.title ?? "Finished",
+      markIcon: first?.icon ?? null,
+      markName: first?.title ?? "",
+      badge: null,
+    };
+  }
   if (state.sessions.recent === 0) {
     return {
       ...base,
@@ -764,6 +784,8 @@ function circleHint(face: Face, hoverMode: HoverMode): string {
       return "Question waiting — click to keep the card open";
     case "working":
       return hoverMode === "agents" ? "Click for usage" : "Click for agents";
+    case "done":
+      return "Finished — click to open it";
     case "idle":
       return "Idle — hover for usage";
     case "none":
@@ -861,6 +883,8 @@ function Pill({
         return lead ? [lead.title, lead.detail].filter(Boolean).join(" · ") : "Working";
       case "question":
         return `${askerName(firstQuestion)} asks`;
+      case "done":
+        return lead ? `${lead.title} finished` : (derived.unitTitle ?? "Finished");
       case "idle":
         return `Idle · ${plural(derived.recent, "session")}`;
       case "none":
@@ -881,6 +905,8 @@ function Pill({
       }
       case "question":
         return { text: `${derived.questions.length} new`, tone: "accent" };
+      case "done":
+        return lead?.startedAt ? { text: clock(lead.startedAt, now) } : null;
       case "idle":
       case "none":
         return topLeft === null ? null : { text: `${Math.round(topLeft)}%` };
@@ -941,6 +967,49 @@ function WorkingSheet({
         <p className="isl__xl">Usage</p>
         <UsageRows rows={derived.usageRows} />
       </div>
+    </div>
+  );
+}
+
+/** Docked, open, finished: what finished, and one way back into it. */
+function DoneSheet({
+  derived,
+  bridge,
+  now,
+}: {
+  readonly derived: Derived;
+  readonly bridge: IslandBridge;
+  readonly now: number;
+}): JSX.Element {
+  const done = derived.finished;
+  return (
+    <div className="isl__x">
+      <div className="isl__xh">
+        <span className="isl__live">DONE</span>
+        <span>{done.length === 1 ? "Finished" : `${done.length} finished`}</span>
+      </div>
+      {done.length > 0 ? (
+        done.map((entry) => (
+          <AgentRow
+            key={entry.key}
+            row={{
+              key: entry.key,
+              title: entry.title.slice(0, 120),
+              detail: entry.detail.slice(0, 160),
+              icon: entry.icon,
+              startedAt: entry.at,
+              target: entry.action?.target ?? null,
+            }}
+            bridge={bridge}
+            now={now}
+            className="isl__xrow"
+          />
+        ))
+      ) : (
+        <div className="isl__xstat">
+          <span>{derived.unitTitle}</span>
+        </div>
+      )}
     </div>
   );
 }

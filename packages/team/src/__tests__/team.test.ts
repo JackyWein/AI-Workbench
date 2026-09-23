@@ -47,6 +47,8 @@ function makeTeam(agents: AgentDefinition[], leadAgentId: string | null): TeamDe
     agents,
     settings: {
       instructions: "",
+      allowOutsideWorkspace: false,
+      workingDirectory: null,
       limits: {
         maxAgentCalls: 30,
         maxTasks: 50,
@@ -56,6 +58,7 @@ function makeTeam(agents: AgentDefinition[], leadAgentId: string | null): TeamDe
         maxConcurrentAgents: 3,
         maxMessages: 200,
         maxDelegationsPerTask: 4,
+        agentTurnSilenceSeconds: 600,
       },
     },
     createdAt: now,
@@ -376,6 +379,75 @@ describe("autonomous collaboration", () => {
     const failed = service.listTasks({ status: "failed" });
     expect(failed.length).toBeGreaterThan(0);
     expect(failed[0]?.error).toContain("not available");
+  });
+
+  it("keeps a slow turn alive while the provider keeps working", async () => {
+    // The turn takes far longer than the silence budget in total, but it
+    // produces something throughout: a fixed deadline would cut it off, a
+    // sliding one lets the work finish (the reported "no answer within
+    // 120000ms" on a real coding task).
+    const slow = new MockProviderAdapter({ chunkDelayMs: 40, startupDelayMs: 0 });
+    await slow.initialize({
+      config: { id: "mock", adapterId: "mock", transport: "in-process", authType: "none" },
+      logger: nullLogger,
+      stateDirectory: "/tmp",
+    });
+    const { service, events } = boot([agent("lead", "Lead")]);
+
+    const orchestrator = new TeamOrchestrator({
+      service,
+      runtime: { adapterFor: () => slow },
+      logger: nullLogger,
+      // 60ms of silence allowed; the mock's chunks arrive every 40ms.
+      turnTimeoutMs: 60,
+    });
+
+    const started = Date.now();
+    const run = await orchestrator.run();
+    const elapsed = Date.now() - started;
+    await orchestrator.dispose();
+
+    // The whole run outlasted the silence budget many times over, and was
+    // still not cut off: the budget is for silence, not for work.
+    expect(elapsed).toBeGreaterThan(60);
+    expect(
+      events.some((event) => event.type === "AGENT_FAILED" && /went quiet/.test(event.error)),
+    ).toBe(false);
+    // It reports that it is working rather than sitting silent.
+    expect(events.some((event) => event.type === "AGENT_PROGRESS")).toBe(true);
+    expect(run.status).not.toBe("running");
+  });
+
+  it("still cuts off a turn that goes completely silent", async () => {
+    const { service, events } = boot([agent("lead", "Lead")]);
+    const stalled = new MockProviderAdapter({ chunkDelayMs: 0, startupDelayMs: 0 });
+    await stalled.initialize({
+      config: { id: "mock", adapterId: "mock", transport: "in-process", authType: "none" },
+      logger: nullLogger,
+      stateDirectory: "/tmp",
+    });
+    // A turn that never emits and never ends.
+    stalled.sendMessage = async function* () {
+      await new Promise((resolve) => setTimeout(resolve, 60_000));
+      yield { type: "message", text: "too late" } as never;
+    };
+
+    const orchestrator = new TeamOrchestrator({
+      service,
+      runtime: { adapterFor: () => stalled },
+      logger: nullLogger,
+      turnTimeoutMs: 50,
+    });
+
+    const run = await orchestrator.run();
+    await orchestrator.dispose();
+
+    // The silent turn is reported as a failure with the reason, not as a run
+    // that quietly finished.
+    expect(
+      events.some((event) => event.type === "AGENT_FAILED" && /went quiet/.test(event.error)),
+    ).toBe(true);
+    expect(run.status).not.toBe("running");
   });
 
   it("restores a run from its store and continues", async () => {

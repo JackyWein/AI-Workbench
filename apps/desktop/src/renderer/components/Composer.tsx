@@ -2,11 +2,11 @@ import { type JSX, useEffect, useRef, useState } from "react";
 import { ListOrdered, Plus, Square } from "lucide-react";
 import { layout } from "@ai-workbench/ui";
 import { useWorkbench } from "../store/workbench.js";
+import { ModelPicker } from "./ModelPicker.js";
 
 interface ComposerProps {
   readonly busy: boolean;
   readonly disabled: boolean;
-  readonly modelName: string | null;
   readonly onSend: (text: string) => void;
   readonly onCancel: () => void;
 }
@@ -14,7 +14,6 @@ interface ComposerProps {
 export function Composer({
   busy,
   disabled,
-  modelName,
   onSend,
   onCancel,
 }: ComposerProps): JSX.Element {
@@ -85,15 +84,7 @@ export function Composer({
           >
             <ListOrdered size={14} strokeWidth={1.75} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            className="pill pill--acc"
-            onClick={() => setPaletteOpen(true)}
-            title="Change model (Ctrl+K, then a model)"
-          >
-            {/* No model chosen: the tool runs its own default. */}
-            {modelName ?? "Default model"} ▾
-          </button>
+          <ModelPicker />
           {busy ? (
             <button type="button" className="ghost-button" onClick={onCancel}>
               <Square size={12} strokeWidth={2} aria-hidden="true" />
