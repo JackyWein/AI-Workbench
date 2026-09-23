@@ -3,6 +3,17 @@ import { defineConfig } from "vitest/config";
 
 const root = import.meta.dirname;
 
+/*
+ * These are integration tests: they open databases, spawn shells and run
+ * command line tools. A Windows CI runner takes seconds over what a Linux
+ * one does in milliseconds, so the budget is set for the slowest machine
+ * the suite has to pass on rather than the fastest. Measured on GitHub's
+ * Windows runners: starting the test application (a database and its
+ * migrations) takes around 14 s there, and a test that restarts it took
+ * 50 s on a slow runner, past the 30 s that is plenty everywhere else.
+ */
+const budgetMs = process.platform === "win32" ? 120_000 : 30_000;
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -41,13 +52,7 @@ export default defineConfig({
     environment: "node",
     include: ["packages/**/*.test.ts", "apps/**/*.test.ts"],
     reporters: ["default"],
-    /*
-     * These are integration tests: they open databases, spawn shells and run
-     * command line tools. A Windows CI runner takes seconds over what a Linux
-     * one does in milliseconds, so the budget is set for the slowest machine
-     * the suite has to pass on rather than the fastest.
-     */
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    testTimeout: budgetMs,
+    hookTimeout: budgetMs,
   },
 });

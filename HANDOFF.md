@@ -88,6 +88,11 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
    Release file names carry no space: GitHub stores "AI Workbench-x" as
    "AI.Workbench-x" while latest*.yml names "AI-Workbench-x", so the
    updater of 0.0.4's first upload found nothing to download.
+   On GitHub's Windows runners every start of the test application (a
+   database and its migrations, nothing else) takes about 14 s against
+   milliseconds on Linux, so Windows tests get 120 s instead of 30 s. Why
+   was not found from here; worth timing the packaged app's first start on
+   a real Windows machine.
 
 ## Things that will bite you
 
