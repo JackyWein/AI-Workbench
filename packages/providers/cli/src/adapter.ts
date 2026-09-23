@@ -16,6 +16,7 @@ import {
   type AgentMessage,
   type InteractiveLaunch,
   type InteractiveLaunchRequest,
+  type InteractiveTelemetry,
   type ProviderContext,
   type ProviderImportables,
   type ProviderSessionConfig,
@@ -28,6 +29,7 @@ import { TimedCache } from "./cache.js";
 import { createExtensionContext, runHook } from "./extension-context.js";
 import type {
   CliExtensionContext,
+  CliInteractiveTelemetry,
   CliParseState,
   CliProviderExtensions,
 } from "./extensions.js";
@@ -72,6 +74,7 @@ const AUTH_TTL_MS = 2 * 60_000;
 const HOOK_TIMEOUT_MS = {
   discoverModels: 60_000,
   readUsage: 60_000,
+  interactiveTelemetry: 20_000,
   probeAuth: 30_000,
   discoverImportables: 60_000,
 } as const;
@@ -125,6 +128,9 @@ export class CliProviderAdapter implements AIProviderAdapter {
   /** Present when the tool has its own interactive interface (spec §26). */
   describeInteractiveLaunch?: (request: InteractiveLaunchRequest) => Promise<InteractiveLaunch>;
 
+  /** Present when the tool has a sign-in command for its accounts (spec §14). */
+  describeLogin?: () => Promise<InteractiveLaunch | null>;
+
   constructor(profile: CliProviderProfile, options: CliAdapterOptions = {}) {
     this.#profile = profile;
     this.#options = options;
@@ -153,6 +159,9 @@ export class CliProviderAdapter implements AIProviderAdapter {
     }
     if (profile.interactive) {
       this.describeInteractiveLaunch = (request) => this.#describeInteractiveLaunch(request);
+    }
+    if (profile.accounts && profile.accounts.loginArgs.length > 0) {
+      this.describeLogin = () => this.#describeLogin();
     }
 
     this.metadata = {
@@ -202,6 +211,7 @@ export class CliProviderAdapter implements AIProviderAdapter {
     this.#installation.clear();
     this.#auth.clear();
     this.#usage.reset();
+    await this.#usage.load(context.stateDirectory);
 
     this.#extensionContext = createExtensionContext({
       profile: this.#profile,
@@ -535,11 +545,25 @@ export class CliProviderAdapter implements AIProviderAdapter {
     if (mcp.warning) {
       this.#logger.warn(mcp.warning, { providerId: this.metadata.id });
     }
+    const telemetry =
+      this.#extensions.interactiveTelemetry && request.runId
+        ? await this.#runExtension(
+            "interactiveTelemetry",
+            HOOK_TIMEOUT_MS.interactiveTelemetry,
+            (extensions, context) =>
+              extensions.interactiveTelemetry?.(context, {
+                runId: request.runId ?? "",
+                workingDirectory: request.workingDirectory,
+                startedAt: request.startedAt ?? new Date(),
+              }) ?? Promise.resolve(null),
+          )
+        : null;
     return {
       command,
       args: [
         // Configured arguments come first on every run of the tool.
         ...(this.#context?.config.arguments ?? []),
+        ...(telemetry?.args ?? []),
         ...buildInteractiveArgs(this.#profile, {
           modelId: request.modelId,
           reasoningEffort: request.reasoningEffort,
@@ -549,8 +573,50 @@ export class CliProviderAdapter implements AIProviderAdapter {
           mcp: mcp.launch,
         }),
       ],
-      env: { ...this.#env, ...mcp.launch.env },
+      env: { ...this.#env, ...mcp.launch.env, ...telemetry?.env },
       cwd: request.workingDirectory,
+      ...(telemetry ? { telemetry: this.#forwardTelemetry(telemetry) } : {}),
+    };
+  }
+
+  /** The tool's own sign-in, run against this entry's configuration home. */
+  async #describeLogin(): Promise<InteractiveLaunch | null> {
+    const loginArgs = this.#profile.accounts?.loginArgs ?? [];
+    const command = await this.#transport?.locate();
+    if (!command || loginArgs.length === 0) {
+      return null;
+    }
+    return {
+      command,
+      args: [...(this.#context?.config.arguments ?? []), ...loginArgs],
+      env: { ...this.#env },
+      cwd: this.#accountHome() ?? process.cwd(),
+    };
+  }
+
+  /**
+   * Hands a run's metrics on, and lets the account limits it reports refresh
+   * this entry's usage: a terminal is as good a witness as a turn.
+   */
+  #forwardTelemetry(telemetry: CliInteractiveTelemetry): InteractiveTelemetry {
+    return {
+      source: telemetry.source,
+      watch: (onMetrics) => {
+        try {
+          return telemetry.watch((metrics) => {
+            if (metrics.limits.length > 0) {
+              this.#usage.observeTurn(metrics.limits, metrics.updatedAt);
+            }
+            onMetrics(metrics);
+          });
+        } catch (error) {
+          this.#logger.warn("Provider extension failed", {
+            hook: "interactiveTelemetry.watch",
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return () => undefined;
+        }
+      },
     };
   }
 

@@ -10,6 +10,8 @@ export default tseslint.config(
       "**/out/**",
       "**/dist/**",
       "packages/database/migrations/**",
+      ".scratch/**",
+      "brag-output/**",
     ],
   },
   js.configs.recommended,

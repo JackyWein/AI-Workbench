@@ -46,6 +46,12 @@ export const jsonRuleSchema = z.object({
   valueKey: z.string().optional(),
   inputTokensKey: z.string().optional(),
   outputTokensKey: z.string().optional(),
+  cacheReadTokensKey: z.string().optional(),
+  cacheWriteTokensKey: z.string().optional(),
+  /** Dot-path of the turn's cost in US dollars, as the tool reports it. */
+  costKey: z.string().optional(),
+  /** Dot-path of the turn's duration in milliseconds. */
+  durationKey: z.string().optional(),
   limits: z.array(usageLimitRuleSchema).default([]),
 });
 export type JsonRule = z.infer<typeof jsonRuleSchema>;
@@ -237,6 +243,13 @@ export const cliProviderProfileSchema = z.object({
 
   output: cliOutputSchema,
   env: z.record(z.string()).default({}),
+  /**
+   * Variables that mark a process as running inside this tool, e.g. as a child
+   * of one of its sessions. When the application itself was started from such
+   * a session they would leak into every run and change how the tool behaves,
+   * so the host removes them from its own environment once at startup.
+   */
+  hostEnvUnset: z.array(z.string().min(1)).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
   /** Extra classification for exit failures: regex source -> error kind. */
   errorPatterns: z

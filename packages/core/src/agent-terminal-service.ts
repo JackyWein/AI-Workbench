@@ -8,6 +8,7 @@ import {
   type AgentTerminal,
   type LaunchAgentTerminalInput,
   type Logger,
+  type TerminalMetrics,
   type UpdateAgentTerminalInput,
 } from "@ai-workbench/shared";
 import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
@@ -55,7 +56,16 @@ interface Runtime {
   exitCode: number | null;
   detail?: string;
   startedAt: Date | null;
+  /** The last numbers the tool reported for this run. */
+  metrics: TerminalMetrics | null;
+  /** Stops following the tool's reports; null when nothing is followed. */
+  stopTelemetry: (() => void) | null;
 }
+
+/** How long a tool may keep writing its final numbers after it exits. */
+const TELEMETRY_GRACE_MS = 4000;
+/** Metrics of one terminal are published at most this often. */
+const METRICS_THROTTLE_MS = 750;
 
 /**
  * Terminal agents (spec §26, §91): each one is a provider's own interactive
@@ -163,14 +173,25 @@ export class AgentTerminalService {
       this.#byTerminal.delete(runtime.terminalId);
       this.#terminals.close(runtime.terminalId);
     }
+    runtime?.stopTelemetry?.();
+    const metrics = runtime?.metrics ?? null;
     this.#runtime.set(id, {
       workspaceId: current.workspaceId,
       terminalId: null,
       state: "stopped",
       exitCode: null,
       startedAt: null,
+      metrics,
+      stopTelemetry: null,
     });
-    const next = { ...current, terminalId: null, state: "stopped" as const, exitCode: null, startedAt: null };
+    const next = {
+      ...current,
+      terminalId: null,
+      state: "stopped" as const,
+      exitCode: null,
+      startedAt: null,
+      metrics,
+    };
     this.#publish(next);
     return next;
   }
@@ -182,6 +203,7 @@ export class AgentTerminalService {
       this.#byTerminal.delete(runtime.terminalId);
       this.#terminals.close(runtime.terminalId);
     }
+    runtime?.stopTelemetry?.();
     this.#runtime.delete(id);
 
     const transient = this.#transient.get(id);
@@ -250,6 +272,7 @@ export class AgentTerminalService {
       state: "stopped",
       exitCode: null,
       startedAt: null,
+      metrics: null,
       createdAt: new Date(),
     };
     this.#transient.set(entry.id, entry);
@@ -266,6 +289,17 @@ export class AgentTerminalService {
     const runtime = this.#runtime.get(id);
     if (runtime) {
       this.#runtime.set(id, { ...runtime, terminalId: null, state: "exited", exitCode });
+      // The tool may write its last numbers while it shuts down.
+      const stop = runtime.stopTelemetry;
+      if (stop) {
+        setTimeout(() => {
+          stop();
+          const current = this.#runtime.get(id);
+          if (current?.stopTelemetry === stop) {
+            this.#runtime.set(id, { ...current, stopTelemetry: null });
+          }
+        }, TELEMETRY_GRACE_MS).unref?.();
+      }
     }
 
     const transient = this.#transient.get(id);
@@ -292,7 +326,8 @@ export class AgentTerminalService {
       }
       this.#byTerminal.delete(runtime.terminalId);
       this.#terminals.close(runtime.terminalId);
-      this.#runtime.set(id, { ...runtime, terminalId: null, state: "stopped" });
+      runtime.stopTelemetry?.();
+      this.#runtime.set(id, { ...runtime, terminalId: null, state: "stopped", stopTelemetry: null });
     }
   }
 
@@ -311,6 +346,8 @@ export class AgentTerminalService {
     try {
       launch = await adapter.describeInteractiveLaunch({
         workingDirectory: terminal.workingDirectory,
+        runId: `${terminal.id}-${Date.now().toString(36)}`,
+        startedAt: new Date(),
         ...(terminal.modelId ? { modelId: terminal.modelId } : {}),
         ...(terminal.reasoningEffort ? { reasoningEffort: terminal.reasoningEffort } : {}),
         ...(terminal.permissionMode ? { permissionMode: terminal.permissionMode } : {}),
@@ -336,12 +373,15 @@ export class AgentTerminalService {
         ...(resolved ? { command: { file: resolved.file, args: resolved.args }, env: resolved.env } : {}),
       });
       const startedAt = new Date();
+      this.#runtime.get(terminal.id)?.stopTelemetry?.();
       this.#runtime.set(terminal.id, {
         workspaceId: terminal.workspaceId,
         terminalId: created.id,
         state: "running",
         exitCode: null,
         startedAt,
+        metrics: null,
+        stopTelemetry: null,
       });
       this.#byTerminal.set(created.id, terminal.id);
       this.#logger.info("Terminal agent started", {
@@ -355,8 +395,12 @@ export class AgentTerminalService {
         state: "running",
         exitCode: null,
         startedAt,
+        metrics: null,
       };
       delete (next as { detail?: string }).detail;
+      if (launch?.telemetry) {
+        this.#follow(terminal.id, launch.telemetry);
+      }
       if (this.#transient.has(terminal.id)) {
         this.#transient.set(terminal.id, next);
       }
@@ -365,6 +409,54 @@ export class AgentTerminalService {
     } catch (error) {
       return this.#fail(terminal, error instanceof Error ? error.message : String(error));
     }
+  }
+
+  /**
+   * Follows what the tool reports about this run. Updates are published at a
+   * calm rate and only when something changed, so a chatty status line does
+   * not flood the renderer.
+   */
+  #follow(id: string, telemetry: NonNullable<InteractiveLaunch["telemetry"]>): void {
+    let lastSignature = "";
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+    const flush = (): void => {
+      timer = null;
+      void this.#require(id)
+        .then((terminal) => this.#publish(terminal))
+        .catch(() => undefined);
+    };
+    const stopWatching = telemetry.watch((metrics) => {
+      const runtime = this.#runtime.get(id);
+      if (stopped || !runtime) {
+        return;
+      }
+      const signature = JSON.stringify({ ...metrics, updatedAt: undefined });
+      if (signature === lastSignature) {
+        return;
+      }
+      lastSignature = signature;
+      runtime.metrics = metrics;
+      timer ??= setTimeout(flush, METRICS_THROTTLE_MS);
+    });
+    const stop = (): void => {
+      stopped = true;
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      stopWatching();
+    };
+    const runtime = this.#runtime.get(id);
+    if (runtime) {
+      runtime.stopTelemetry = stop;
+    } else {
+      stop();
+    }
+    this.#logger.debug("Following terminal telemetry", {
+      agentTerminalId: id,
+      source: telemetry.source,
+    });
   }
 
   #fail(terminal: AgentTerminal, detail: string): AgentTerminal {
@@ -380,8 +472,16 @@ export class AgentTerminalService {
       exitCode: null,
       detail,
       startedAt: null,
+      metrics: null,
+      stopTelemetry: null,
     });
-    const next: AgentTerminal = { ...terminal, terminalId: null, state: "failed", detail };
+    const next: AgentTerminal = {
+      ...terminal,
+      terminalId: null,
+      state: "failed",
+      detail,
+      metrics: null,
+    };
     this.#publish(next);
     return next;
   }
@@ -416,6 +516,7 @@ export class AgentTerminalService {
       exitCode: runtime?.exitCode ?? null,
       ...(runtime?.detail ? { detail: runtime.detail } : {}),
       startedAt: runtime?.startedAt ?? null,
+      metrics: runtime?.metrics ?? null,
       createdAt: row.createdAt,
     };
   }

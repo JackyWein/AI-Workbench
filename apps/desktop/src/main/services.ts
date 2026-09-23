@@ -22,10 +22,15 @@ import { McpManager } from "@ai-workbench/mcp";
 import { ClaudeSkillImporter, MarkdownSkillImporter } from "@ai-workbench/skills";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import {
-  CliProviderAdapter,
-  builtInCliProfiles,
+  antigravityProfile,
+  cliProviderFactory,
   parseProfile,
+  scrubHostEnvironment,
 } from "@ai-workbench/provider-cli";
+import { claudeCode, claudeCodeFactory } from "@ai-workbench/provider-claude";
+import { codexFactory } from "@ai-workbench/provider-codex";
+import { geminiFactory } from "@ai-workbench/provider-gemini";
+import { opencodeFactory } from "@ai-workbench/provider-opencode";
 import { registerCustomProviders } from "@ai-workbench/provider-openai-compatible";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import { resolveInteractiveCommand } from "@ai-workbench/transport-cli";
@@ -167,10 +172,24 @@ async function createServicesInner(
 
   await providers.register(new MockProviderAdapter(), overridesFor("mock"));
 
-  // CLI-backed providers are data: adding one is a profile, not a code change.
-  for (const profile of builtInCliProfiles) {
-    const adapter = new CliProviderAdapter(parseProfile(profile));
-    await providers.register(adapter, overridesFor(adapter.metadata.id));
+  // CLI-backed providers are profile data plus, where a tool needs code, the
+  // extensions of its own package. Each family registers its default entry
+  // now and further accounts through the account service below.
+  const scrubbed = scrubHostEnvironment([claudeCode]);
+  if (scrubbed.length > 0) {
+    logger.child("PROVIDER").info("Started from inside a tool session; its markers were removed", {
+      variables: scrubbed,
+    });
+  }
+  const cliFactories = [
+    claudeCodeFactory(),
+    codexFactory(),
+    cliProviderFactory(parseProfile(antigravityProfile)),
+    geminiFactory(),
+    opencodeFactory(),
+  ];
+  for (const factory of cliFactories) {
+    await providers.registerFactory(factory, overridesFor(factory.family));
   }
 
   // Custom OpenAI-compatible endpoints from stored configs (spec §16, §17):

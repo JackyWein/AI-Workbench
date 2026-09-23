@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { permissionModeSchema } from "./provider.js";
+import { usageLimitSchema } from "./usage.js";
 
 /**
  * A terminal agent: a provider's own interactive interface running in a real
@@ -34,6 +35,55 @@ export const agentTerminalStateSchema = z.enum([
 ]);
 export type AgentTerminalState = z.infer<typeof agentTerminalStateSchema>;
 
+/** Token counts a tool reported for one of its sessions. */
+export const terminalTokensSchema = z.object({
+  input: z.number().nonnegative(),
+  output: z.number().nonnegative(),
+  /** Input served from the provider's prompt cache, when it tells them apart. */
+  cacheRead: z.number().nonnegative().optional(),
+  /** Input written to the provider's prompt cache. */
+  cacheWrite: z.number().nonnegative().optional(),
+  /** Output spent on reasoning, when reported separately. */
+  reasoning: z.number().nonnegative().optional(),
+});
+export type TerminalTokens = z.infer<typeof terminalTokensSchema>;
+
+/**
+ * What a terminal agent's tool reported about its own session (spec §55, §56).
+ *
+ * Every field is optional because every tool says something different; the
+ * provider package reads the tool's own channel — a status line hook, a
+ * session log or the tool's local API — and fills in only what it was told.
+ * Nothing here is derived from the terminal's screen.
+ */
+export const terminalMetricsSchema = z.object({
+  /** Where the numbers came from, in words the person understands. */
+  source: z.string().min(1),
+  /** The tool's own id for the session, when it said. */
+  providerSessionId: z.string().min(1).optional(),
+  /** The model the session is running on, as the tool names it. */
+  model: z.string().min(1).optional(),
+  /** Time the tool counts the session as running, when it tracks it. */
+  activeMs: z.number().nonnegative().optional(),
+  /** Tokens spent over the whole session. */
+  tokens: terminalTokensSchema.optional(),
+  /** Cost of the session in US dollars. */
+  costUsd: z.number().nonnegative().optional(),
+  /** True when the tool computes the cost itself from list prices. */
+  costEstimated: z.boolean().optional(),
+  /** How full the context window is right now. */
+  context: z
+    .object({
+      usedTokens: z.number().nonnegative(),
+      windowTokens: z.number().positive().optional(),
+    })
+    .optional(),
+  /** Account limits the tool reported alongside, e.g. a 5-hour window. */
+  limits: z.array(usageLimitSchema).default([]),
+  updatedAt: z.date(),
+});
+export type TerminalMetrics = z.infer<typeof terminalMetricsSchema>;
+
 export const agentTerminalSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().min(1),
@@ -51,6 +101,8 @@ export const agentTerminalSchema = z.object({
   exitCode: z.number().int().nullable(),
   detail: z.string().optional(),
   startedAt: z.date().nullable(),
+  /** The last numbers the tool reported for this run; null until it says any. */
+  metrics: terminalMetricsSchema.nullable().default(null),
   createdAt: z.date(),
 });
 export type AgentTerminal = z.infer<typeof agentTerminalSchema>;

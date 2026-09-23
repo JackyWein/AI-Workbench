@@ -1,7 +1,8 @@
 import type { ProviderUsageSnapshot, UsageLimit } from "@ai-workbench/shared";
 
 /** Percentage of a limit still available, or null when it cannot be known. */
-export function remainingPercent(limit: UsageLimit): number | null {  if (limit.unit === "percent" && limit.remaining !== undefined) {
+export function remainingPercent(limit: UsageLimit): number | null {
+  if (limit.unit === "percent" && limit.remaining !== undefined) {
     return clampPercent(limit.remaining);
   }
   if (limit.total !== undefined && limit.total > 0) {
@@ -26,8 +27,10 @@ export function consumedValue(limit: UsageLimit): string | null {
   switch (limit.unit) {
     case "tokens":
       return `${compactNumber(limit.used)} tokens`;
+    case "usd":
+      return formatUsd(limit.used);
     case "credits":
-      return `$${limit.used.toFixed(2)}`;
+      return `${compactNumber(limit.used)} credits`;
     case "requests":
       return `${compactNumber(limit.used)} requests`;
     case "time":
@@ -37,7 +40,15 @@ export function consumedValue(limit: UsageLimit): string | null {
   }
 }
 
-function compactNumber(value: number): string {
+/** Dollars with as many decimals as the amount needs to say something. */
+export function formatUsd(value: number): string {
+  if (value > 0 && value < 0.01) {
+    return "<$0.01";
+  }
+  return `$${value.toFixed(value >= 100 ? 0 : 2)}`;
+}
+
+export function compactNumber(value: number): string {
   if (value >= 1_000_000) {
     return `${(value / 1_000_000).toFixed(1)}m`;
   }

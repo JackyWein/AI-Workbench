@@ -50,6 +50,12 @@ export function parseWithRules(profile: CliProviderProfile, line: string): Provi
     case "usage": {
       const inputTokens = numberAt(decoded, rule.inputTokensKey);
       const outputTokens = numberAt(decoded, rule.outputTokensKey);
+      const optional = {
+        cacheReadTokens: numberAt(decoded, rule.cacheReadTokensKey),
+        cacheWriteTokens: numberAt(decoded, rule.cacheWriteTokensKey),
+        costUsd: numberAt(decoded, rule.costKey),
+        durationMs: numberAt(decoded, rule.durationKey),
+      };
       const limits = rule.limits
         .map((limitRule) => buildLimit(decoded, limitRule))
         .filter((limit): limit is UsageLimit => limit !== null);
@@ -60,6 +66,11 @@ export function parseWithRules(profile: CliProviderProfile, line: string): Provi
             limits,
             ...(inputTokens === undefined ? {} : { inputTokens }),
             ...(outputTokens === undefined ? {} : { outputTokens }),
+            ...Object.fromEntries(
+              Object.entries(optional).filter(
+                (entry): entry is [string, number] => entry[1] !== undefined && entry[1] >= 0,
+              ),
+            ),
           },
         },
       ];

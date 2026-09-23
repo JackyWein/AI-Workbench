@@ -27,7 +27,7 @@ export const codexProfile: CliProviderProfileInput = {
   displayName: "Codex",
   description: "OpenAI's command line coding agent, run non-interactively",
   website: "https://developers.openai.com/codex",
-  icon: "openai",
+  icon: "codex",
   command: "codex",
   // The standalone installer puts the tool under its own home and does not
   // touch PATH; npm, Homebrew and bun installs usually are on PATH already and
