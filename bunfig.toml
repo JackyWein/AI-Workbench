@@ -1,0 +1,5 @@
+# Electron and native N-API modules (node-pty, the SQLite client) are resolved
+# more reliably from a flat node_modules than from an isolated store, so the
+# install stays hoisted, as it was under pnpm.
+[install]
+linker = "hoisted"

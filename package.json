@@ -7,7 +7,7 @@
   "engines": {
     "node": ">=22"
   },
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "bun@1.3.11",
   "scripts": {
     "dev": "bun run --filter \"@ai-workbench/desktop\" dev",
     "postinstall": "node scripts/fix-pty-permissions.mjs",
@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "bun run --filter \"@ai-workbench/database\" generate",
-    "verify": "bun install --frozen-lockfile && bun run lint && bun run typecheck && bun run test && bun run build && bun run verify:app",
+    "verify": "bun run verify:lockfile && bun run lint && bun run typecheck && bun run test && bun run build && bun run verify:app",
     "lint": "eslint .",
     "verify:app": "bash scripts/verify-app.sh",
     "package": "bun run --filter \"@ai-workbench/desktop\" package",
@@ -31,13 +31,6 @@
     "@eslint/js": "^9.18.0",
     "eslint-plugin-react-hooks": "^5.1.0",
     "globals": "^15.14.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "electron",
-      "esbuild",
-      "node-pty"
-    ]
   },
   "repository": {
     "type": "git",

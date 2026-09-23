@@ -1,14 +1,14 @@
 # Verify guide
 
-How to prove a change works. `pnpm verify` is the gate; `PROGRESS.md` may only
+How to prove a change works. `bun run verify` is the gate; `PROGRESS.md` may only
 be updated from criteria a run of it actually proves.
 
-## What `pnpm verify` runs (in order)
+## What `bun run verify` runs (in order)
 
 Defined in `package.json` `scripts`:
 
-1. `verify:lockfile` — `pnpm install --lockfile-only --frozen-lockfile`. Fails
-   if `pnpm-lock.yaml` disagrees with any `package.json`. (CI installs frozen;
+1. `verify:lockfile` — `bun install --frozen-lockfile`. Fails
+   if `bun.lock` disagrees with any `package.json`. (CI installs frozen;
    a stale lockfile fails packaging before any test runs.)
 2. `lint` — ESLint over the workspace.
 3. `typecheck` — strict TS over `tsconfig.node.json` + `tsconfig.web.json`.
@@ -32,22 +32,22 @@ Defined in `package.json` `scripts`:
 ## Windows (with display) vs Linux (Xvfb)
 
 - **Linux / CI / containers:** `verify:app` uses `xvfb-run -a` automatically
-  when `$DISPLAY` is empty (`scripts/verify-app.sh`). Full `pnpm verify`
+  when `$DISPLAY` is empty (`scripts/verify-app.sh`). Full `bun run verify`
   expected green. Chromium runs with `--no-sandbox` in the check only.
-- **Windows:** `pnpm verify:app` needs bash + Xvfb + Electron display and
+- **Windows:** `bun run verify:app` needs bash + Xvfb + Electron display and
   FAILS on a plain Windows box (`REGDB_E_CLASSNOTREG`). Expected on Windows:
   `typecheck + lint + test + build` green; `verify:app` explicitly NOT proven.
-  Run `pnpm verify` (incl. `verify:app`) on Linux/macOS before ticking E2E
+  Run `bun run verify` (incl. `verify:app`) on Linux/macOS before ticking E2E
   criteria. Prereq if Electron was installed with a restrictive policy:
   `node node_modules/electron/install.js`.
-- **Manual desktop checks** (`pnpm dev`): island on in Settings and look at it;
+- **Manual desktop checks** (`bun run dev`): island on in Settings and look at it;
   native folder dialog; tray behavior. G6-style criteria need a human look,
   not just a headless pass.
 
 ## Real-provider runs (opt-in, spends quota)
 
 - Default tests use `MockProvider` (`packages/providers/mock/`) — no quota.
-- `AI_WORKBENCH_REAL_PROVIDER=1 pnpm test` drives the installed Claude Code
+- `AI_WORKBENCH_REAL_PROVIDER=1 bun run test` drives the installed Claude Code
   CLI end-to-end (detection, version, streamed answer, real usage, resume).
   **Never part of the normal run; spends real quota.** Codex/Gemini(Antigravity)
   profiles are UNVERIFIED starting points — correct path/args on the Providers

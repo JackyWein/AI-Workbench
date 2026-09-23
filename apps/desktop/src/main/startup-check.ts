@@ -18,7 +18,7 @@ export interface StartupCheckResult {
 }
 
 /**
- * Headless verification of a real application start, used by `pnpm verify:app`
+ * Headless verification of a real application start, used by `bun run verify:app`
  * and by CI where no display is available.
  *
  * It drives the actual renderer — the same preload bridge, IPC contract and

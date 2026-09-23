@@ -221,7 +221,7 @@ The default test suite never makes paid calls. A separate, opt-in test drives an
 installed CLI through the entire stack:
 
 ```bash
-AI_WORKBENCH_REAL_PROVIDER=1 pnpm test
+AI_WORKBENCH_REAL_PROVIDER=1 bun run test
 ```
 
 It checks what "works end to end" has to mean: the tool is detected with its

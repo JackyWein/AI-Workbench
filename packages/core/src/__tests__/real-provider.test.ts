@@ -22,7 +22,7 @@ import { WorkspaceManager } from "../workspace-manager.js";
  * regular test suite must never do (spec §113). Run it deliberately, when the
  * tool is installed and signed in:
  *
- *   AI_WORKBENCH_REAL_PROVIDER=1 pnpm test
+ *   AI_WORKBENCH_REAL_PROVIDER=1 bun run test
  *
  * The prompts are kept as small as possible.
  */

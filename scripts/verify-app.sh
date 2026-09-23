@@ -15,7 +15,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 if [ ! -f apps/desktop/out/main/index.js ]; then
-  echo "Build output missing. Run: pnpm build"
+  echo "Build output missing. Run: bun run build"
   exit 1
 fi
 

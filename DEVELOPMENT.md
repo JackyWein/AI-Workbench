@@ -2,34 +2,38 @@
 
 ## Requirements
 
-- Node.js 22 or newer
-- pnpm 10 or newer
+- Node.js 22 or newer (the tools themselves run on Node)
+- bun 1.3 or newer (installs dependencies and runs the scripts)
 - Linux desktop builds additionally need the usual Electron runtime libraries
 
 ## Setup
 
 ```bash
-pnpm install
+bun install
 ```
 
-`electron` downloads its binary on install. If that step was skipped by a
-restrictive install policy, run `node node_modules/electron/install.js` once.
+`electron` downloads its binary on first start if it is not there yet; to
+fetch it ahead of time, run `node node_modules/electron/install.js` once.
+
+If `bun run lint` fails with `Cannot find module …/uri.all.js`, the local
+install is damaged (a clean one has that file): remove `node_modules` and
+run `bun install` again.
 
 ## Everyday commands
 
 | Command | What it does |
 |---|---|
-| `pnpm dev` | Starts Electron with hot reloading |
-| `pnpm build` | Production build of main, preload and renderer |
-| `pnpm typecheck` | Strict TypeScript over Node and web projects |
-| `pnpm lint` | ESLint across the workspace |
-| `pnpm test` | Vitest unit and integration tests |
-| `pnpm verify:app` | Starts the built app headlessly and checks it really works |
-| `pnpm verify:lockfile` | Fails if the lockfile and any `package.json` disagree |
-| `pnpm verify` | lockfile + lint + typecheck + test + build + verify:app |
-| `pnpm db:generate` | Regenerates SQL migrations from the Drizzle schema |
+| `bun run dev` | Starts Electron with hot reloading |
+| `bun run build` | Production build of main, preload and renderer |
+| `bun run typecheck` | Strict TypeScript over Node and web projects |
+| `bun run lint` | ESLint across the workspace |
+| `bun run test` | Vitest unit and integration tests |
+| `bun run verify:app` | Starts the built app headlessly and checks it really works |
+| `bun run verify:lockfile` | Fails if the lockfile and any `package.json` disagree |
+| `bun run verify` | lockfile + lint + typecheck + test + build + verify:app |
+| `bun run db:generate` | Regenerates SQL migrations from the Drizzle schema |
 
-Run `pnpm verify` before considering a change finished. `PROGRESS.md` may only
+Run `bun run verify` before considering a change finished. `PROGRESS.md` may only
 be updated from criteria that this command actually proves.
 
 ## What `verify:app` does
@@ -61,7 +65,7 @@ To verify an installed provider end to end — this spends real quota, so it is
 never part of the normal test run:
 
 ```bash
-AI_WORKBENCH_REAL_PROVIDER=1 pnpm test
+AI_WORKBENCH_REAL_PROVIDER=1 bun run test
 ```
 
 ## Repository layout
@@ -89,7 +93,7 @@ there is no separate build step per package.
 ## Adding a database migration
 
 1. Change `packages/database/src/schema.ts`
-2. `pnpm db:generate`
+2. `bun run db:generate`
 3. Add the generated file to `packages/database/src/migrations.ts`
 
 Migrations are embedded in the bundle, so a packaged build does not depend on a

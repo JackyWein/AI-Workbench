@@ -34,7 +34,7 @@ packages/
 scripts/verify-app.sh          Headless end-to-end check (two phases, see verify guide)
 scripts/fix-pty-permissions.mjs  postinstall: fixes node-pty spawn-helper bit
 docs/adr/                      Architecture decision records
-docs/verify-guide.md           What pnpm verify proves, per platform
+docs/verify-guide.md           What bun run verify proves, per platform
 ```
 
 Workspace packages are consumed as TypeScript source and bundled by the app —
@@ -53,8 +53,8 @@ no per-package build step.
    tool itself (generic `modelsArgs` discovery, e.g. `opencode models`) or from
    the Providers screen — never hardcoded.
    (Source: `CLAUDE.md` rules 13–14; `HANDOFF.md` "Do not invent provider facts".)
-3. **PROGRESS only from `pnpm verify` evidence.** `PROGRESS.md` checkboxes move
-   only when a `pnpm verify` run (incl. `verify:app` where required) actually
+3. **PROGRESS only from `bun run verify` evidence.** `PROGRESS.md` checkboxes move
+   only when a `bun run verify` run (incl. `verify:app` where required) actually
    proves the criterion. A regression unchecks its criterion. No green claim
    without a run; no ticking from code reading.
    (Source: `CLAUDE.md` rule 10; `PROGRESS.md` "How this file is verified".)
@@ -73,9 +73,9 @@ never knowingly leave the repo broken.
 2. **Plan** the smallest vertical working slice; no broad unfinished scaffolding.
 3. **Implement:** generic logic in `packages/core|shared|…`, provider specifics
    only in `packages/providers/*`, UI via capabilities + design tokens.
-   DB change? `packages/database/src/schema.ts` → `pnpm db:generate` → register
+   DB change? `packages/database/src/schema.ts` → `bun run db:generate` → register
    in `packages/database/src/migrations.ts`.
-4. **Verify:** `pnpm verify` is the gate (table below). On Windows expect
+4. **Verify:** `bun run verify` is the gate (table below). On Windows expect
    `verify:app` to fail for platform reasons — state that explicitly, do not
    fake it (see "Traps").
 5. **Update:** `HANDOFF.md` (what changed, what is open, next steps).
@@ -85,24 +85,24 @@ never knowingly leave the repo broken.
 
 | Command | What it does | When |
 |---|---|---|
-| `pnpm install` | Install + postinstall fixes node-pty bit | After clone / lockfile change |
-| `pnpm dev` | Electron with hot reload | Manual UI checks |
-| `pnpm typecheck` | Strict TS (`tsconfig.node.json` + `tsconfig.web.json`) | After any code change |
-| `pnpm lint` | ESLint over workspace | After any code change |
-| `pnpm test` | Vitest unit + integration (~210 tests) | After any code change |
-| `pnpm build` | electron-vite production build | Before verify:app / when done |
-| `pnpm verify:app` | Headless real-app check, 2 phases (create + resume) | E2E proof; needs display/Xvfb |
-| `pnpm verify:lockfile` | Fails if lockfile disagrees with any package.json | Runs first inside verify |
-| `pnpm verify` | lockfile + lint + typecheck + test + build + verify:app | THE gate before "done" |
-| `pnpm db:generate` | Regenerate SQL migrations from Drizzle schema | After schema change |
-| `AI_WORKBENCH_REAL_PROVIDER=1 pnpm test` | E2E vs installed Claude Code CLI (opt-in) | Manual only, spends quota |
+| `bun install` | Install + postinstall fixes node-pty bit | After clone / lockfile change |
+| `bun run dev` | Electron with hot reload | Manual UI checks |
+| `bun run typecheck` | Strict TS (`tsconfig.node.json` + `tsconfig.web.json`) | After any code change |
+| `bun run lint` | ESLint over workspace | After any code change |
+| `bun run test` | Vitest unit + integration (~210 tests) | After any code change |
+| `bun run build` | electron-vite production build | Before verify:app / when done |
+| `bun run verify:app` | Headless real-app check, 2 phases (create + resume) | E2E proof; needs display/Xvfb |
+| `bun run verify:lockfile` | Fails if lockfile disagrees with any package.json | Runs first inside verify |
+| `bun run verify` | lockfile + lint + typecheck + test + build + verify:app | THE gate before "done" |
+| `bun run db:generate` | Regenerate SQL migrations from Drizzle schema | After schema change |
+| `AI_WORKBENCH_REAL_PROVIDER=1 bun run test` | E2E vs installed Claude Code CLI (opt-in) | Manual only, spends quota |
 
-Details: `docs/verify-guide.md`. Engine pins: Node ≥ 22, pnpm 10.33
+Details: `docs/verify-guide.md`. Engine pins: Node ≥ 22, bun 1.3.11
 (`package.json`).
 
 ## Traps (read before debugging)
 
-- **Windows: no bash/Xvfb.** `pnpm verify:app` = `bash scripts/verify-app.sh` and
+- **Windows: no bash/Xvfb.** `bun run verify:app` = `bash scripts/verify-app.sh` and
   fails on plain Windows (`REGDB_E_CLASSNOTREG`, no Xvfb). On Windows only
   `typecheck + lint + test + build` are expected green; `verify:app` must run on
   Linux/macOS. Never mark E2E proven from a Windows box.
@@ -116,8 +116,8 @@ Details: `docs/verify-guide.md`. Engine pins: Node ≥ 22, pnpm 10.33
   failure (`scripts/verify-app.sh` `run_phase`). A suspiciously fast pass with
   no `PASS` lines means a stray `electron` process — kill it, rerun.
 - **Lockfile frozen.** CI installs with `--frozen-lockfile`; a stale
-  `pnpm-lock.yaml` fails packaging before any test runs. `pnpm verify:lockfile`
-  (= `pnpm install --lockfile-only --frozen-lockfile`) runs first in verify —
+  `bun.lock` fails packaging before any test runs. `bun run verify:lockfile`
+  (= `bun install --frozen-lockfile`) runs first in verify —
   keep the lockfile in step after any dependency change.
 - **Headless ≠ manual.** Native folder dialog (G1 "choose working directory"),
   OS secret-storage round trip, tray on headless, and final visual sign-off

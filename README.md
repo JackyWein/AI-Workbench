@@ -63,13 +63,13 @@ for providers without MCP, through the same operations written as action
 blocks.
 
 See `PROGRESS.md` for what is verified, measured only from acceptance criteria
-that a run of `pnpm verify` actually proves.
+that a run of `bun run verify` actually proves.
 
 ## Quick start
 
 ```bash
-pnpm install
-pnpm dev
+bun install
+bun run dev
 ```
 
 Then: add a workspace with the button next to the title, create a session, and
@@ -82,7 +82,7 @@ and to correct an executable path if one lives somewhere unusual.
 To check a production build the way CI does:
 
 ```bash
-pnpm verify
+bun run verify
 ```
 
 ## Documentation

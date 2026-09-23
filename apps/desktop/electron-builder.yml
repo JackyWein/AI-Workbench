@@ -22,8 +22,8 @@ asarUnpack:
   - "node_modules/@libsql/**"
 
 # N-API modules are ABI stable, so there is nothing to rebuild per Electron
-# version. Keeping this off also avoids a rebuild pass that pnpm workspaces
-# make unreliable.
+# version. Keeping this off also avoids a rebuild pass that workspace
+# installs make unreliable.
 npmRebuild: false
 
 # The provider setting only decides which metadata electron-builder writes

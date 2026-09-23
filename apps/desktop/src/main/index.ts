@@ -13,7 +13,7 @@ import { createMainWindow, resolveRendererFile } from "./window.js";
 
 const isDevelopment = !app.isPackaged;
 
-/** Set by `pnpm verify:app`, which starts the app headlessly and exits. */
+/** Set by `bun run verify:app`, which starts the app headlessly and exits. */
 const startupCheckOnly = process.env["AI_WORKBENCH_STARTUP_CHECK"] === "1";
 
 let services: AppServices | null = null;

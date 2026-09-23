@@ -10,7 +10,7 @@ export interface UpdaterDeps {
 /**
  * The slice of electron-updater this file uses. It is declared locally on
  * purpose: the package is loaded with a dynamic import at runtime, so
- * typecheck and development runs keep working before `pnpm install` has
+ * typecheck and development runs keep working before `bun install` has
  * provided it, and the bundler always keeps it external. After install the
  * real module satisfies this shape.
  */
