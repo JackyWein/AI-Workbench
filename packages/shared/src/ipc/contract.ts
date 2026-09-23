@@ -67,7 +67,9 @@ import {
 } from "../domain/status-island.js";
 import {
   createTeamInputSchema,
+  updateTeamInputSchema,
   teamDefinitionSchema,
+  teamMessageSchema,
   teamRunSchema,
   teamRunSnapshotSchema,
 } from "../domain/team.js";
@@ -449,6 +451,13 @@ export const ipcContract = {
    * workspace's folder. A folder outside the workspace needs
    * `allowOutsideWorkspace: true`, which is the person saying yes on purpose.
    */
+  /** A note from the person to a running team's lead, read on its next turn. */
+  "team.sendMessage": {
+    input: z.object({ runId: z.string().min(1), content: z.string().min(1).max(20_000) }),
+    output: teamMessageSchema,
+  },
+  /** Name, members, lead and instructions; refused while a run is going. */
+  "team.update": { input: updateTeamInputSchema, output: teamDefinitionSchema },
   "team.setWorkingDirectory": {
     input: z.object({
       teamId: z.string().min(1),
@@ -467,10 +476,16 @@ export const ipcContract = {
     input: z.object({ runId: z.string().min(1) }),
     output: teamRunSnapshotSchema,
   },
+  /**
+   * Starts a run. It works in `workspaceId`'s folder (the session's or the
+   * one open when it is started from Teams), or in the team's own folder
+   * when one is set; without `workspaceId`, the team's home workspace.
+   */
   "team.startRun": {
     input: z.object({
       teamId: z.string().min(1),
       goal: z.string().min(1).max(20_000),
+      workspaceId: z.string().min(1).optional(),
     }),
     output: teamRunSchema,
   },

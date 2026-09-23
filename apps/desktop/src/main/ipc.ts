@@ -430,6 +430,8 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       return services.teams.create({ ...input, workingDirectory: workspace.path });
     },
     "team.setLead": (input) => services.teams.setLeadAgent(input.teamId, input.agentId),
+    "team.update": (input) => services.teams.update(input),
+    "team.sendMessage": (input) => services.teams.sendNote(input.runId, input.content),
     "team.setWorkingDirectory": (input) =>
       services.teams.setWorkingDirectory(
         input.teamId,

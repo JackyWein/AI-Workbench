@@ -1,5 +1,5 @@
 import { type JSX, useEffect, useState } from "react";
-import type { ChatMessage, TeamDefinition, TeamRunSnapshot } from "@ai-workbench/shared";
+import type { ChatMessage } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
@@ -21,6 +21,7 @@ import {
   TeamSessionPreview,
 } from "./components/TeamSessionPreview.js";
 import { TeamSessionView } from "./components/TeamSessionView.js";
+import { TeamPanel } from "./components/TeamPanel.js";
 import { UsageView } from "./components/UsageView.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillsView } from "./components/SkillsView.js";
@@ -48,90 +49,6 @@ function needsResume(messages: readonly ChatMessage[]): boolean {
   );
 }
 
-/** The right panel of a team session: the roster and the run at a glance. */
-function TeamSidePanel({
-  team,
-  snapshot,
-}: {
-  readonly team: TeamDefinition;
-  readonly snapshot: TeamRunSnapshot | null;
-}): JSX.Element {
-  const progress = useWorkbench((state) => state.agentProgress);
-  const providers = useWorkbench((state) => state.providers);
-  const done = snapshot?.tasks.filter((task) => task.status === "completed").length ?? 0;
-  return (
-    <aside className="context" aria-label="Team">
-      <div className="context__card">
-        <div className="context__model">
-          <div className="context__model-text">
-            <span className="context__model-name">{team.name}</span>
-            <span className="context__model-provider">
-              {team.agents.length} agents
-            </span>
-          </div>
-        </div>
-        {snapshot ? (
-          <div className="context__status">
-            <span className="pill">{snapshot.run.status}</span>
-          </div>
-        ) : null}
-      </div>
-      <div className="context__section">
-        <p className="context__heading">Members</p>
-        <div className="detail-list">
-          {team.agents.map((agent) => {
-            const live = snapshot ? progress[`${snapshot.run.id}:${agent.id}`]?.detail : null;
-            const task = snapshot?.tasks.find(
-              (entry) => entry.assignedTo === agent.id && entry.status === "running",
-            );
-            const provider = providers.find((entry) => entry.metadata.id === agent.providerId);
-            return (
-              <div className="detail" key={agent.id}>
-                <dt className="detail__label">{agent.displayName}</dt>
-                <dd className="detail__value">
-                  <span
-                    className="status-dot"
-                    data-state={live ? "running" : task ? "waiting" : "idle"}
-                    aria-hidden="true"
-                  />{" "}
-                  {provider?.metadata.displayName ?? agent.providerId}{" "}
-                  <span className="row__meta">
-                    · {live ?? (task ? task.title : "waiting")}
-                  </span>
-                </dd>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-      {snapshot ? (
-        <div className="context__section">
-          <p className="context__heading">Run</p>
-          <div className="detail-list">
-            <div className="detail">
-              <dt className="detail__label">Agent calls</dt>
-              <dd className="detail__value">
-                {snapshot.run.agentCalls} of {snapshot.run.limits.maxAgentCalls}
-              </dd>
-            </div>
-            <div className="detail">
-              <dt className="detail__label">Tasks</dt>
-              <dd className="detail__value">
-                {done} of {snapshot.tasks.length} done
-              </dd>
-            </div>
-            {snapshot.run.stopReason ? (
-              <div className="detail">
-                <dt className="detail__label">Stopped because</dt>
-                <dd className="detail__value">{snapshot.run.stopReason}</dd>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-    </aside>
-  );
-}
 
 export function App(): JSX.Element {
   const state = useWorkbench();
@@ -396,7 +313,7 @@ export function App(): JSX.Element {
         state.teamPreview && state.settings.developerMode ? (
           <TeamPreviewPanel />
         ) : sessionTeam ? (
-          <TeamSidePanel team={sessionTeam} snapshot={teamSnapshot ?? null} />
+          <TeamPanel team={sessionTeam} snapshot={teamSnapshot ?? null} />
         ) : (
         <ContextPanel
           session={session}

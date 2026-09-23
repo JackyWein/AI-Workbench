@@ -105,7 +105,7 @@ export function MessageItem({ message, streaming, onRetry }: MessageItemProps): 
 }
 
 /** Plain prose with fenced code rendered as numbered blocks (presentation only). */
-function MessageBody({
+export function MessageBody({
   content,
   role,
 }: {

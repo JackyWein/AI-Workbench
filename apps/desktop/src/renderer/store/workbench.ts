@@ -33,6 +33,7 @@ import type {
   SshConnection,
   SshConnectionTest,
   Workspace,
+  UpdateTeamInputData,
 } from "@ai-workbench/shared";
 import { defaultAppSettings, providerSummarySchema } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
@@ -287,7 +288,12 @@ interface WorkbenchState {
     workingDirectory: string | null;
     allowOutsideWorkspace?: boolean;
   }): Promise<boolean>;
-  startTeamRun(teamId: string, goal: string): Promise<void>;
+  /** Starts a run in the workspace that is open (or the given one). */
+  startTeamRun(teamId: string, goal: string, workspaceId?: string): Promise<void>;
+  /** Name, members, lead and instructions; false (and an error) if refused. */
+  updateTeam(input: UpdateTeamInputData): Promise<boolean>;
+  /** A note to a running team's lead, read on its next turn. */
+  sendTeamNote(runId: string, content: string): Promise<boolean>;
   openTeamRun(runId: string | null): Promise<void>;
   refreshTeamRun(runId: string): Promise<void>;
   pauseTeamRun(runId: string): Promise<void>;
@@ -690,7 +696,12 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       if (value) {
         // A goal means a new run; otherwise the newest run of the team is
         // shown, the live one first if there is one.
-        const started = await invoke("team.startRun", { teamId, goal: value });
+        // The run works in this session's workspace, wherever the team was made.
+        const started = await invoke("team.startRun", {
+          teamId,
+          goal: value,
+          workspaceId: session.workspaceId,
+        });
         runId = started.id;
       } else {
         const runs = await invoke("team.listRuns", { teamId });
@@ -1111,6 +1122,30 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
    * outside the workspace is refused by the host unless the person allowed it
    * here — this is the switch that makes it a decision, not a side effect.
    */
+  async sendTeamNote(runId, content) {
+    try {
+      await invoke("team.sendMessage", { runId, content });
+      await get().refreshTeamRun(runId);
+      return true;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return false;
+    }
+  },
+
+  async updateTeam(input) {
+    try {
+      const team = await invoke("team.update", input);
+      set((state) => ({
+        teams: state.teams.map((entry) => (entry.id === team.id ? team : entry)),
+      }));
+      return true;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return false;
+    }
+  },
+
   async setTeamWorkingDirectory(input: {
     teamId: string;
     workingDirectory: string | null;
@@ -1128,9 +1163,14 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  async startTeamRun(teamId, goal) {
+  async startTeamRun(teamId, goal, workspaceId) {
     try {
-      const run = await invoke("team.startRun", { teamId, goal });
+      const where = workspaceId ?? get().activeWorkspaceId ?? undefined;
+      const run = await invoke("team.startRun", {
+        teamId,
+        goal,
+        ...(where ? { workspaceId: where } : {}),
+      });
       await get().refreshTeams();
       await get().openTeamRun(run.id);
     } catch (error) {

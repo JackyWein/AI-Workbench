@@ -16,14 +16,17 @@ import type {
   ProviderUsageSnapshot,
   TeamDefinition,
   TeamEvent,
+  TeamMessage,
   TeamRun,
   TeamRunSnapshot,
   TeamSettings,
+  UpdateTeamInputData,
 } from "@ai-workbench/shared";
 import {
   agentDefinitionSchema,
   createTeamInputSchema,
   teamSettingsSchema,
+  updateTeamInputSchema,
 } from "@ai-workbench/shared";
 import {
   describeTeamMcpServer,
@@ -82,6 +85,22 @@ export class TeamOutsideWorkspaceError extends Error {
         "Turn on \"work outside the workspace\" to allow it.",
     );
     this.name = "TeamOutsideWorkspaceError";
+  }
+}
+
+/** A team cannot change while one of its runs is going. */
+export class TeamBusyError extends Error {
+  constructor(readonly teamId: string) {
+    super("This team has a run going. Pause or stop it before changing the team.");
+    this.name = "TeamBusyError";
+  }
+}
+
+/** A run cannot work in a workspace that is not on this computer. */
+export class TeamWorkspaceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "TeamWorkspaceError";
   }
 }
 
@@ -279,6 +298,76 @@ export class TeamManager {
     return this.require(teamId);
   }
 
+  /**
+   * Renames the team, changes who is on it and what each member runs on, and
+   * picks the lead. A member that keeps its id keeps its place in earlier
+   * runs; one left out leaves the team. Refused while a run is going: the
+   * run would otherwise lose an agent it is waiting on.
+   */
+  async update(raw: UpdateTeamInputData): Promise<TeamDefinition> {
+    const input = updateTeamInputSchema.parse(raw);
+    const team = await this.require(input.teamId);
+    const busy = [...this.#active.values()].some(
+      (active) => active.service.run.teamId === team.id && active.service.run.status === "running",
+    );
+    if (busy) {
+      throw new TeamBusyError(team.id);
+    }
+
+    let agentIds = team.agents.map((agent) => agent.id);
+    if (input.agents) {
+      const current = new Map(team.agents.map((agent) => [agent.id, agent]));
+      // The folder column predates runs choosing their own; it is kept filled
+      // for the rows' sake and never decides where a run works.
+      const legacyFolder = team.agents[0]?.workingDirectory ?? (await this.#workspacePath(team.workspaceId));
+      const next: AgentDefinition[] = input.agents.map((agent) => {
+        const existing = agent.id ? current.get(agent.id) : undefined;
+        return agentDefinitionSchema.parse({
+          ...agent,
+          id: existing?.id ?? newAgentId(),
+          workingDirectory: existing?.workingDirectory ?? legacyFolder,
+        });
+      });
+      const kept = new Set(next.map((agent) => agent.id));
+      for (const agent of team.agents) {
+        if (!kept.has(agent.id)) {
+          await this.#db.delete(teamAgents).where(eq(teamAgents.id, agent.id));
+        }
+      }
+      for (const [position, agent] of next.entries()) {
+        const row = { ...toAgentRow(agent, team.id), position };
+        if (current.has(agent.id)) {
+          await this.#db.update(teamAgents).set(row).where(eq(teamAgents.id, agent.id));
+        } else {
+          await this.#db.insert(teamAgents).values(row);
+        }
+      }
+      agentIds = next.map((agent) => agent.id);
+    }
+
+    const leadAgentId =
+      input.leadAgentIndex !== undefined
+        ? (agentIds[input.leadAgentIndex] ?? agentIds[0] ?? null)
+        : team.leadAgentId && agentIds.includes(team.leadAgentId)
+          ? team.leadAgentId
+          : (agentIds[0] ?? null);
+    const settings: TeamSettings = {
+      ...team.settings,
+      ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
+    };
+    await this.#db
+      .update(teams)
+      .set({
+        ...(input.name === undefined ? {} : { name: input.name }),
+        leadAgentId,
+        settings: settings as unknown as Record<string, unknown>,
+        updatedAt: new Date(),
+      })
+      .where(eq(teams.id, team.id));
+    this.#logger.info("Team updated", { teamId: team.id, agents: agentIds.length });
+    return this.require(team.id);
+  }
+
   async delete(teamId: string): Promise<boolean> {
     for (const [runId, active] of this.#active) {
       if (active.service.run.teamId === teamId) {
@@ -316,17 +405,20 @@ export class TeamManager {
   }
 
   /** Creates a run and starts it. The promise resolves when the run ends. */
-  async startRun(input: { teamId: string; goal: string }): Promise<TeamRun> {
+  async startRun(input: { teamId: string; goal: string; workspaceId?: string }): Promise<TeamRun> {
     const team = await this.require(input.teamId);
     if (team.agents.length === 0) {
       throw new Error("A team needs at least one agent before it can run");
     }
+    // Teams are not tied to a folder: a run works where it is started from.
+    const workspaceId = input.workspaceId ?? team.workspaceId;
+    const folder = await this.#runFolder(team, workspaceId);
 
     const now = new Date();
     const run: TeamRun = {
       id: newRunId(),
       teamId: team.id,
-      workspaceId: team.workspaceId,
+      workspaceId,
       goal: input.goal,
       status: "pending",
       stopReason: null,
@@ -347,7 +439,7 @@ export class TeamManager {
     };
     await this.#store.saveRun(run);
 
-    this.#drive(team, {
+    this.#drive(team, folder, {
       run,
       tasks: [],
       messages: [],
@@ -383,8 +475,27 @@ export class TeamManager {
       }
     }
     const team = await this.require(snapshot.run.teamId);
-    this.#drive(team, snapshot);
+    this.#drive(team, await this.#runFolder(team, snapshot.run.workspaceId), snapshot);
     return snapshot.run;
+  }
+
+  /**
+   * A note from the person to a running team. It goes to the lead (or to
+   * everyone on a team without one) and is read on that agent's next turn,
+   * like any message on the team; nothing interrupts a turn in flight.
+   */
+  async sendNote(runId: string, content: string): Promise<TeamMessage> {
+    const active = this.#active.get(runId);
+    const status = active?.service.run.status;
+    if (!active || (status !== "running" && status !== "pending")) {
+      throw new Error("This run is not going; give the team a new goal instead.");
+    }
+    return active.service.sendMessage({
+      from: "user",
+      to: active.service.team.leadAgentId ?? "*",
+      type: "request",
+      content,
+    });
   }
 
   async pauseRun(runId: string): Promise<TeamRun> {
@@ -449,9 +560,47 @@ export class TeamManager {
 
   // --- internals -----------------------------------------------------------
 
-  #drive(team: TeamDefinition, snapshot: TeamRunSnapshot): void {
+  /**
+   * The folder a run works in: the team's own folder when the person set
+   * one, otherwise the folder of the workspace the run was started from.
+   */
+  async #runFolder(team: TeamDefinition, workspaceId: string): Promise<string> {
+    if (team.settings.workingDirectory) {
+      return team.settings.workingDirectory;
+    }
+    const [workspace] = await this.#db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    if (!workspace) {
+      throw new TeamWorkspaceError("The workspace this run was started from no longer exists.");
+    }
+    if (workspace.connectionId) {
+      throw new TeamWorkspaceError(
+        `"${workspace.name}" is on another machine; team agents run on this computer, so start the run from a local workspace.`,
+      );
+    }
+    return workspace.path;
+  }
+
+  async #workspacePath(workspaceId: string): Promise<string> {
+    const [workspace] = await this.#db
+      .select()
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .limit(1);
+    return workspace?.path ?? "";
+  }
+
+  #drive(team: TeamDefinition, folder: string, snapshot: TeamRunSnapshot): void {
+    // Every member works in the run's folder, whatever their rows once said.
+    const running: TeamDefinition = {
+      ...team,
+      agents: team.agents.map((agent) => ({ ...agent, workingDirectory: folder })),
+    };
     const service = new TeamService({
-      team,
+      team: running,
       snapshot,
       store: this.#store,
       logger: this.#logger,

@@ -91,6 +91,26 @@ export type CreateTeamInput = z.infer<typeof createTeamInputSchema>;
 /** Before defaults are applied, which is what a caller writes. */
 export type CreateTeamInputData = z.input<typeof createTeamInputSchema>;
 
+/**
+ * Changes to a team. An agent that carries the id of one of the team's
+ * agents is that agent, edited; one without an id joins the team; an agent
+ * left out leaves it. Where agents work is not theirs to set: a run works in
+ * the workspace it is started from, or in the team's own folder.
+ */
+export const updateTeamInputSchema = z.object({
+  teamId: z.string().min(1),
+  name: z.string().min(1).max(200).optional(),
+  agents: z
+    .array(agentDefinitionSchema.omit({ workingDirectory: true }).partial({ id: true }))
+    .min(1)
+    .optional(),
+  /** Index into `agents` (or the current agents) of the lead. */
+  leadAgentIndex: z.number().int().nonnegative().optional(),
+  instructions: z.string().max(10_000).optional(),
+});
+export type UpdateTeamInput = z.infer<typeof updateTeamInputSchema>;
+export type UpdateTeamInputData = z.input<typeof updateTeamInputSchema>;
+
 /** Where a task stands in the graph (spec §45). */
 export const teamTaskStatusSchema = z.enum([
   "pending",

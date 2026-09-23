@@ -1,23 +1,34 @@
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useEffect, useMemo, useRef, useState, type JSX } from "react";
+import { Pause, Play, Square } from "lucide-react";
 import type {
   AgentDefinition,
-  ChatMessage,
   Session,
+  TeamArtifact,
+  TeamDecision,
   TeamDefinition,
+  TeamMessage,
+  TeamRun,
   TeamRunSnapshot,
+  TeamTask,
 } from "@ai-workbench/shared";
 import { Composer } from "./Composer.js";
+import { MessageBody } from "./MessageItem.js";
 import { SessionHeader } from "./SessionHeader.js";
 import { useWorkbench } from "../store/workbench.js";
+import { useNow } from "../lib/usage.js";
 
 /**
- * A team inside a session (spec §40–§53, §80).
+ * A team working inside a session (spec §40–§53, §80).
  *
- * The Teams screen edits a team; this shows one working: every member as a tab,
- * that member's own conversation (what it was told, what it answered, the
- * artifacts it published) and what it is doing right now. The run snapshot is
- * the single source of truth, so this stays honest: nothing here is invented,
- * and a member that has not spoken yet says so.
+ * The session's own conversation makes way for the team's: every member is a
+ * tab with its own story — what it was asked, what it answered, the tasks it
+ * worked on and what it published — in the order it happened, and a line on
+ * what it is doing right now. The run is the only source; nothing here is
+ * made up, and a member that has not spoken yet says so.
+ *
+ * The box at the bottom gives the team a goal, which starts a run in this
+ * session's workspace, or, while a run is going, a note to its lead that the
+ * lead reads on its next turn.
  */
 export function TeamSessionView({
   session,
@@ -29,28 +40,24 @@ export function TeamSessionView({
   readonly snapshot: TeamRunSnapshot | null;
 }): JSX.Element {
   const providers = useWorkbench((state) => state.providers);
+  const workspaces = useWorkbench((state) => state.workspaces);
   const progress = useWorkbench((state) => state.agentProgress);
   const refreshTeamRun = useWorkbench((state) => state.refreshTeamRun);
   const pauseTeamRun = useWorkbench((state) => state.pauseTeamRun);
   const resumeTeamRun = useWorkbench((state) => state.resumeTeamRun);
   const cancelTeamRun = useWorkbench((state) => state.cancelTeamRun);
-  const startTeamRun = useWorkbench((state) => state.startTeamRun);
   const setSessionTeam = useWorkbench((state) => state.setSessionTeam);
   const clearSessionTeam = useWorkbench((state) => state.clearSessionTeam);
-  const sendMessage = useWorkbench((state) => state.sendMessage);
-  const cancel = useWorkbench((state) => state.cancel);
-  const busy = useWorkbench((state) => state.busy[session.id] ?? false);
+  const sendTeamNote = useWorkbench((state) => state.sendTeamNote);
+  const now = useNow(5_000);
 
   const runId = (session.uiState["teamRunId"] as string | null | undefined) ?? null;
-  const homePath = useWorkbench(
-    (state) => state.workspaces.find((entry) => entry.id === team.workspaceId)?.path ?? "",
-  );
-  const [agentId, setAgentId] = useState<string>(team.agents[0]?.id ?? "");
+  const workspace = workspaces.find((entry) => entry.id === session.workspaceId);
+  const [member, setMember] = useState<string>(TEAM);
   const [working, setWorking] = useState(false);
-  const [goal, setGoal] = useState("");
 
-  // Follow the run: it moves on its own (events refresh it), but a tick keeps
-  // the view honest while a turn streams without emitting a team event.
+  // Follow the run: team events refresh it, and a slow tick keeps it honest
+  // while a turn streams without producing a team event.
   useEffect(() => {
     if (!runId) {
       return;
@@ -60,400 +67,520 @@ export function TeamSessionView({
     return () => clearInterval(timer);
   }, [refreshTeamRun, runId]);
 
-  const run = snapshot?.run ?? null;
-  const running = run?.status === "running" || run?.status === "paused";
+  const run = snapshot && snapshot.run.id === runId ? snapshot.run : null;
+  const going = run?.status === "running" || run?.status === "pending";
+  const lead = team.agents.find((agent) => agent.id === team.leadAgentId) ?? team.agents[0];
+  // Where this run writes: the team's own folder, or this session's workspace.
+  const folder =
+    team.settings.workingDirectory ??
+    workspaces.find((entry) => entry.id === (run?.workspaceId ?? session.workspaceId))?.path ??
+    workspace?.path ??
+    null;
 
-  const tabs = useMemo(
-    () => [...team.agents, ...(team.agents.length > 1 ? [ALL] : [])],
-    [team.agents],
-  );
-  const shown = agentId === ALL ? "all" : agentId || (team.agents[0]?.id ?? "");
-
-  const start = async (): Promise<void> => {
-    const value = goal.trim();
-    if (!value) {
-      return;
+  const live = (agentId: string): string | null => {
+    if (!run) {
+      return null;
     }
+    const entry = progress[`${run.id}:${agentId}`];
+    return entry && going && now - entry.at < LIVE_MS ? entry.detail : null;
+  };
+
+  const act = (action: () => Promise<unknown>): void => {
     setWorking(true);
-    try {
-      await startTeamRun(team.id, value);
-      await setSessionTeam({ sessionId: session.id, teamId: team.id, goal: value });
-      setGoal("");
-    } finally {
-      setWorking(false);
-    }
+    void action().finally(() => setWorking(false));
   };
 
   return (
     <>
       <SessionHeader
         session={session}
-        workspace={undefined}
+        workspace={workspace}
         providers={providers}
         usage={null}
-        status={run ? (running ? "working" : "idle") : undefined}
+        status={going ? "working" : run ? "idle" : undefined}
       />
-      <div className="main__body">
-        <div className="panel__tabs" role="tablist" aria-label="Team members">
-          {tabs.map((entry) => {
-            const id = entry === ALL ? ALL : (entry as AgentDefinition).id;
-            const label = entry === ALL ? "All" : (entry as AgentDefinition).displayName;
-            return (
+      <div className="main__body team-session">
+        <header className="team-run">
+          <div className="team-run__title">
+            <span className="team-run__team">{team.name}</span>
+            {run ? (
+              <span className="pill" data-tone={statusTone(run)}>
+                {statusLabel(run)}
+              </span>
+            ) : null}
+            <span className="team-run__spacer" />
+            {run?.status === "running" ? (
               <button
-                key={id}
                 type="button"
-                role="tab"
-                className="panel__tab"
-                aria-selected={shown === id}
-                title={id === ALL ? "Everything the team did" : memberState(id, snapshot, progress)}
-                onClick={() => setAgentId(id)}
+                className="quiet-button"
+                disabled={working}
+                onClick={() => act(() => pauseTeamRun(run.id))}
               >
-                {id !== ALL ? (
-                  <span
-                    className="status-dot"
-                    data-state={memberDot(id, snapshot, progress)}
-                    aria-hidden="true"
-                  />
-                ) : null}{" "}
-                {label}
+                <Pause size={13} strokeWidth={1.75} aria-hidden="true" />
+                Pause
               </button>
-            );
-          })}
-          <span style={{ flex: 1 }} />
+            ) : null}
+            {run?.status === "paused" ? (
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={working}
+                onClick={() => act(() => resumeTeamRun(run.id))}
+              >
+                <Play size={13} strokeWidth={1.75} aria-hidden="true" />
+                Resume
+              </button>
+            ) : null}
+            {run && (going || run.status === "paused") ? (
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={working}
+                onClick={() => act(() => cancelTeamRun(run.id))}
+              >
+                <Square size={12} strokeWidth={1.75} aria-hidden="true" />
+                Stop
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="quiet-button"
+              title="Leave team mode; the session talks to its own model again"
+              onClick={() => void clearSessionTeam(session.id)}
+            >
+              Solo session
+            </button>
+          </div>
+          {run ? <p className="team-run__goal">{run.goal}</p> : null}
+          <p className="team-run__meta">
+            {folder ? (
+              <>
+                Works in <span className="team-run__path">{folder}</span>
+              </>
+            ) : (
+              "No folder: open a local workspace"
+            )}
+            {run && snapshot ? (
+              <>
+                {" · "}
+                {snapshot.tasks.filter((task) => task.status === "completed").length} of{" "}
+                {snapshot.tasks.length} tasks done · {run.agentCalls} of {run.limits.maxAgentCalls}{" "}
+                calls
+              </>
+            ) : null}
+          </p>
+        </header>
+
+        <div className="panel__tabs team-tabs" role="tablist" aria-label="Team members">
           <button
             type="button"
+            role="tab"
             className="panel__tab"
-            title="Leave team mode and go back to a normal session"
-            onClick={() => void clearSessionTeam(session.id)}
+            aria-selected={member === TEAM}
+            onClick={() => setMember(TEAM)}
           >
-            Solo session
+            Team
           </button>
+          {team.agents.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              role="tab"
+              className="panel__tab"
+              aria-selected={member === agent.id}
+              title={memberState(agent.id, snapshot, live(agent.id))}
+              onClick={() => setMember(agent.id)}
+            >
+              <span
+                className="status-dot"
+                data-state={memberDot(agent.id, snapshot, live(agent.id))}
+                aria-hidden="true"
+              />
+              {agent.displayName}
+            </button>
+          ))}
         </div>
 
-        {!run ? (
-          <div className="view">
-            <div className="view__inner view__inner--narrow">
-              <header className="view__header">
-                <div className="view__heading">
-                  <h1 className="view__title">{team.name}</h1>
-                  <p className="view__lede">
-                    {team.agents.length} agents. Give it a goal to run.
-                  </p>
-                </div>
-              </header>
-              <div className="composer">
-                <div className="composer__inner">
-                  <textarea
-                    className="composer__input"
-                    rows={2}
-                    value={goal}
-                    placeholder="What should this team achieve?"
-                    aria-label="Team goal"
-                    onChange={(event) => setGoal(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        void start();
-                      }
-                    }}
-                  />
-                  <div className="composer__actions">
-                    <button
-                      type="button"
-                      className="composer__send"
-                      onClick={() => void start()}
-                      disabled={working || goal.trim().length === 0}
-                    >
-                      Start run
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <>
-            <TeamRunHeader snapshot={snapshot} team={team} homePath={homePath} />
-            <TeamMemberFeed
-              snapshot={snapshot}
-              team={team}
-              member={shown}
-              progress={progress}
-            />
-            <div className="scope-toggles" style={{ padding: "4px 0" }}>
-              {run.status === "running" ? (
-                <button
-                  type="button"
-                  className="quiet-button"
-                  disabled={working}
-                  onClick={() => {
-                    setWorking(true);
-                    void pauseTeamRun(run.id).finally(() => setWorking(false));
-                  }}
-                >
-                  Pause
-                </button>
-              ) : run.status === "paused" ? (
-                <button
-                  type="button"
-                  className="quiet-button"
-                  disabled={working}
-                  onClick={() => {
-                    setWorking(true);
-                    void resumeTeamRun(run.id).finally(() => setWorking(false));
-                  }}
-                >
-                  Resume
-                </button>
-              ) : null}
-              {running ? (
-                <button
-                  type="button"
-                  className="quiet-button"
-                  disabled={working}
-                  onClick={() => {
-                    setWorking(true);
-                    void cancelTeamRun(run.id).finally(() => setWorking(false));
-                  }}
-                >
-                  Stop
-                </button>
-              ) : null}
-              <span className="row__meta">
-                {run.agentCalls} calls of {run.limits.maxAgentCalls} · {run.status}
-                {run.stopReason ? ` · ${run.stopReason}` : ""}
-              </span>
-            </div>
-            <Composer
-              busy={busy}
-              disabled={false}
-              onSend={(text) => {
-                // The session still talks to its own provider; the team above
-                // is what it works alongside, and says so if it is not set.
-                if (session.providerId) {
-                  void sendMessage(text);
-                }
-              }}
-              onCancel={() => void cancel()}
-            />
-          </>
-        )}
+        <TeamFeed
+          team={team}
+          snapshot={run ? snapshot : null}
+          member={member}
+          live={live}
+          folder={folder}
+        />
+
+        <Composer
+          busy={false}
+          disabled={false}
+          placeholder={
+            going
+              ? `Note to ${lead?.displayName ?? "the team"} — read on its next turn`
+              : "Give the team a goal…"
+          }
+          onSend={(text) => {
+            if (going && run) {
+              void sendTeamNote(run.id, text);
+            } else {
+              // One new run, in this session's workspace.
+              void setSessionTeam({ sessionId: session.id, teamId: team.id, goal: text });
+            }
+          }}
+          onCancel={() => undefined}
+        />
       </div>
     </>
   );
 }
 
-const ALL = "__all__";
+/** How long a progress report counts as "doing this now". */
+const LIVE_MS = 20_000;
+const TEAM = "__team__";
 
-function TeamRunHeader({
-  snapshot,
-  team,
-  homePath,
-}: {
-  readonly snapshot: TeamRunSnapshot | null;
-  readonly team: TeamDefinition;
-  readonly homePath: string;
-}): JSX.Element {
-  if (!snapshot) {
-    return <p className="row__meta">Loading the run…</p>;
-  }
-  const done = snapshot.tasks.filter((task) => task.status === "completed").length;
-  return (
-    <dl className="detail-list">
-      <div className="detail">
-        <dt className="detail__label">{team.name}</dt>
-        <dd className="detail__value">
-          {snapshot.run.goal}{" "}
-          <span className="row__meta">
-            · {done} of {snapshot.tasks.length} tasks done
-          </span>
-        </dd>
-      </div>
-      {/* Where the team writes, so "it touched my repo" is never a surprise. */}
-      <div className="detail">
-        <dt className="detail__label">Works in</dt>
-        <dd className="detail__value detail__value--path">
-          {team.settings.workingDirectory ?? homePath}
-        </dd>
-      </div>
-    </dl>
-  );
-}
+type FeedEntry =
+  | { readonly kind: "message"; readonly id: string; readonly at: Date; readonly message: TeamMessage }
+  | { readonly kind: "task"; readonly id: string; readonly at: Date; readonly task: TeamTask }
+  | { readonly kind: "artifact"; readonly id: string; readonly at: Date; readonly artifact: TeamArtifact }
+  | { readonly kind: "decision"; readonly id: string; readonly at: Date; readonly decision: TeamDecision };
 
-/**
- * One member's own story: who talked to them, what they answered, what they
- * produced, and what they are doing now. Nothing here is made up — every line
- * comes from the run the team actually persisted.
- */
-function TeamMemberFeed({
-  snapshot,
+function TeamFeed({
   team,
+  snapshot,
   member,
-  progress,
+  live,
+  folder,
 }: {
-  readonly snapshot: TeamRunSnapshot | null;
   readonly team: TeamDefinition;
+  readonly snapshot: TeamRunSnapshot | null;
   readonly member: string;
-  readonly progress: Record<string, { agentId: string; detail: string; at: number }>;
+  readonly live: (agentId: string) => string | null;
+  readonly folder: string | null;
 }): JSX.Element {
-  if (!snapshot) {
-    return <p className="row__meta">Loading what the team did…</p>;
-  }
-  const agent = member === ALL ? null : team.agents.find((entry) => entry.id === member);
-  const messages = snapshot.messages.filter(
-    (message) =>
-      member === ALL ||
-      message.from === member ||
-      message.to === member ||
-      message.to === "*",
-  );
-  const tasks = snapshot.tasks.filter(
-    (task) => member === ALL || task.assignedTo === member,
-  );
-  const artifacts = snapshot.artifacts.filter(
-    (artifact) => member === ALL || artifact.createdBy === member,
-  );
-  const live = member === ALL ? null : progress[`${snapshot.run.id}:${member}`]?.detail;
-  const feed: ChatMessage[] = [];
+  const scroller = useRef<HTMLDivElement>(null);
+  const names = useMemo(() => new Map(team.agents.map((agent) => [agent.id, agent.displayName])), [team.agents]);
+  const nameOf = (id: string): string =>
+    id === "user" ? "You" : id === "*" ? "everyone" : (names.get(id) ?? id);
 
-  for (const task of tasks) {
-    feed.push(
-      line(
-        snapshot,
-        `${task.title}`,
-        task.status === "completed"
-          ? `Completed${task.result ? `: ${task.result}` : ""}`
-          : task.status === "failed"
-            ? `Failed: ${task.error ?? "unknown"}`
-            : task.status === "running"
-              ? "Running"
-              : task.status === "claimed"
-                ? "Claimed"
-                : "Waiting",
-        task.assignedTo ?? "unassigned",
-      ),
-    );
-  }
-  for (const message of messages) {
-    feed.push(
-      line(
-        snapshot,
-        message.content,
-        message.from === member || member === ALL ? "Said" : `To ${message.to}`,
-        message.from,
-      ),
-    );
-  }
-  for (const artifact of artifacts) {
-    feed.push(
-      line(snapshot, `${artifact.name} (${artifact.type})`, "Published", artifact.createdBy),
-    );
-  }
-  feed.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const entries = useMemo(() => (snapshot ? feedFor(snapshot, member) : []), [snapshot, member]);
+
+  // Stays at the newest entry while someone reads there; scrolled up, it
+  // leaves them where they are.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) {
+      return;
+    }
+    const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 160;
+    if (nearBottom) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [entries.length]);
+
+  const agent = member === TEAM ? null : team.agents.find((entry) => entry.id === member);
 
   return (
-    <div className="chat" role="log" aria-live="polite" aria-label="Team activity">
+    <div className="chat team-feed" ref={scroller} role="log" aria-live="polite" aria-label="Team activity">
       <div className="chat__inner">
-        {agent ? (
-          <article className="message" data-role="assistant" data-status="streaming">
-            <div className="message__meta">
-              {agent.displayName} <time>{memberState(agent.id, snapshot, progress)}</time>
-            </div>
-            <div className="message__body">
-              {live ? `Working · ${live}` : memberState(agent.id, snapshot, progress)}
-            </div>
-          </article>
-        ) : null}
-        {feed.length === 0 ? (
-          <p className="row__meta">
-            {member === ALL
-              ? "Nothing yet — the run has not produced anything."
-              : "Nothing from this member yet."}
-          </p>
+        {!snapshot ? (
+          <TeamIntro team={team} folder={folder} />
         ) : (
-          feed.map((entry) => <FeedLine key={entry.id} message={entry} />)
+          <>
+            {agent ? <NowLine agent={agent} snapshot={snapshot} live={live(agent.id)} /> : null}
+            {entries.length === 0 ? (
+              <p className="team-feed__empty">
+                {agent ? `Nothing from ${agent.displayName} yet.` : "Nothing yet — the run has just begun."}
+              </p>
+            ) : (
+              entries.map((entry) => <FeedItem key={entry.id} entry={entry} nameOf={nameOf} />)
+            )}
+            {!agent
+              ? team.agents
+                  .map((member) => ({ member, detail: live(member.id) }))
+                  .filter((entry) => entry.detail !== null)
+                  .map(({ member, detail }) => (
+                    <p className="team-feed__live" key={member.id}>
+                      <span className="status-dot" data-state="running" aria-hidden="true" />
+                      {member.displayName} · {detail}
+                    </p>
+                  ))
+              : null}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function line(
-  snapshot: TeamRunSnapshot,
-  content: string,
-  note: string,
-  author: string,
-): ChatMessage {
-  return {
-    id: `${snapshot.run.id}:${author}:${content.slice(0, 24)}:${note}`,
-    sessionId: snapshot.run.id,
-    role: "assistant",
-    content,
-    status: "complete",
-    providerId: null,
-    modelId: null,
-    toolCalls: [],
-    usage: null,
-    error: null,
-    createdAt: snapshot.run.createdAt,
-    updatedAt: snapshot.run.createdAt,
-  };
+/** Before the first run: who is on the team and where it will work. */
+function TeamIntro({
+  team,
+  folder,
+}: {
+  readonly team: TeamDefinition;
+  readonly folder: string | null;
+}): JSX.Element {
+  return (
+    <div className="team-intro">
+      <p className="team-intro__title">{team.name} is ready</p>
+      <ul className="team-intro__members">
+        {team.agents.map((agent) => (
+          <li key={agent.id}>
+            <span className="team-intro__name">
+              {agent.displayName}
+              {agent.id === team.leadAgentId ? " · lead" : ""}
+            </span>
+            {agent.role ? <span className="team-intro__role">{agent.role}</span> : null}
+          </li>
+        ))}
+      </ul>
+      <p className="team-intro__hint">
+        Write a goal below. The team works in {folder ?? "this session's workspace"}.
+      </p>
+    </div>
+  );
 }
 
-function FeedLine({ message }: { readonly message: ChatMessage }): JSX.Element {
+/** What one member is doing now, in its own words when it reported any. */
+function NowLine({
+  agent,
+  snapshot,
+  live,
+}: {
+  readonly agent: AgentDefinition;
+  readonly snapshot: TeamRunSnapshot;
+  readonly live: string | null;
+}): JSX.Element {
   return (
-    <article className="message" data-role="assistant" data-status={message.status}>
-      <div className="message__meta">
-        {message.modelId} <time>{message.content.length} chars</time>
-      </div>
-      <div className="message__body">{message.content}</div>
-    </article>
+    <p className="team-now" data-state={memberDot(agent.id, snapshot, live)}>
+      <span className="status-dot" data-state={memberDot(agent.id, snapshot, live)} aria-hidden="true" />
+      {memberState(agent.id, snapshot, live)}
+    </p>
   );
+}
+
+function FeedItem({
+  entry,
+  nameOf,
+}: {
+  readonly entry: FeedEntry;
+  readonly nameOf: (id: string) => string;
+}): JSX.Element {
+  const time = entry.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  switch (entry.kind) {
+    case "message": {
+      const { message } = entry;
+      return (
+        <article className="team-entry" data-kind="message" data-type={message.type}>
+          <div className="team-entry__meta">
+            <span className="team-entry__who">{nameOf(message.from)}</span>
+            <span className="team-entry__to">to {nameOf(message.to)}</span>
+            {message.type !== "info" ? <span className="team-entry__tag">{message.type}</span> : null}
+            <time>{time}</time>
+          </div>
+          <Collapsible text={message.content} />
+        </article>
+      );
+    }
+    case "task": {
+      const { task } = entry;
+      return (
+        <article className="team-entry" data-kind="task" data-status={task.status}>
+          <div className="team-entry__meta">
+            <span className="team-entry__who">Task</span>
+            <span className="team-entry__to">
+              {task.assignedTo ? `for ${nameOf(task.assignedTo)}` : `by ${nameOf(task.createdBy)}`}
+            </span>
+            <span className="team-entry__tag" data-status={task.status}>
+              {taskLabel(task)}
+            </span>
+            <time>{time}</time>
+          </div>
+          <p className="team-entry__title">{task.title}</p>
+          {task.status === "failed" && task.error ? (
+            <p className="team-entry__error">{task.error}</p>
+          ) : null}
+          {task.status === "completed" && task.result ? <Collapsible text={task.result} /> : null}
+        </article>
+      );
+    }
+    case "artifact": {
+      const { artifact } = entry;
+      return (
+        <article className="team-entry" data-kind="artifact">
+          <div className="team-entry__meta">
+            <span className="team-entry__who">{nameOf(artifact.createdBy)}</span>
+            <span className="team-entry__to">published</span>
+            <span className="team-entry__tag">{artifact.type}</span>
+            <time>{time}</time>
+          </div>
+          <p className="team-entry__title">{artifact.path ?? artifact.name}</p>
+          {artifact.content ? (
+            <details className="team-entry__details">
+              <summary>Show content</summary>
+              <MessageBody content={artifact.content} role="assistant" />
+            </details>
+          ) : null}
+        </article>
+      );
+    }
+    case "decision": {
+      const { decision } = entry;
+      return (
+        <article className="team-entry" data-kind="decision">
+          <div className="team-entry__meta">
+            <span className="team-entry__who">{nameOf(decision.author)}</span>
+            <span className="team-entry__to">decided</span>
+            <time>{time}</time>
+          </div>
+          <p className="team-entry__title">{decision.title}</p>
+          <Collapsible text={decision.decision} />
+        </article>
+      );
+    }
+  }
+}
+
+/** Long text folds after a few lines, so one answer does not bury the rest. */
+function Collapsible({ text }: { readonly text: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 900;
+  return (
+    <div className="team-entry__body" data-folded={long && !open}>
+      <MessageBody content={long && !open ? `${text.slice(0, 900)}…` : text} role="assistant" />
+      {long ? (
+        <button type="button" className="link-button" onClick={() => setOpen((value) => !value)}>
+          {open ? "Show less" : "Show all"}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * One member's story, or the whole team's: messages it sent or received,
+ * tasks it worked on or handed out, what it published and decided — each at
+ * the moment it happened.
+ */
+function feedFor(snapshot: TeamRunSnapshot, member: string): FeedEntry[] {
+  const mine = (id: string | null): boolean => member === TEAM || id === member;
+  const entries: FeedEntry[] = [];
+  for (const message of snapshot.messages) {
+    if (member === TEAM || message.from === member || message.to === member) {
+      entries.push({ kind: "message", id: `m:${message.id}`, at: message.timestamp, message });
+    }
+  }
+  for (const task of snapshot.tasks) {
+    if (mine(task.assignedTo) || (member !== TEAM && task.createdBy === member && !task.assignedTo)) {
+      // A task shows where it stands, at the moment it last moved.
+      entries.push({
+        kind: "task",
+        id: `t:${task.id}`,
+        at: task.completedAt ?? task.startedAt ?? task.createdAt,
+        task,
+      });
+    }
+  }
+  for (const artifact of snapshot.artifacts) {
+    if (mine(artifact.createdBy)) {
+      entries.push({ kind: "artifact", id: `a:${artifact.id}`, at: artifact.timestamp, artifact });
+    }
+  }
+  for (const decision of snapshot.decisions) {
+    if (mine(decision.author)) {
+      entries.push({ kind: "decision", id: `d:${decision.id}`, at: decision.timestamp, decision });
+    }
+  }
+  return entries.sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+function taskLabel(task: TeamTask): string {
+  switch (task.status) {
+    case "completed":
+      return "done";
+    case "failed":
+      return "failed";
+    case "running":
+    case "claimed":
+      return "working";
+    case "blocked":
+      return "blocked";
+    case "cancelled":
+      return "cancelled";
+    default:
+      return "waiting";
+  }
+}
+
+function statusLabel(run: TeamRun): string {
+  switch (run.status) {
+    case "pending":
+    case "running":
+      return "Working";
+    case "paused":
+      return "Paused";
+    case "completed":
+      return "Done";
+    case "cancelled":
+      return "Stopped";
+    case "failed":
+      return "Failed";
+    default:
+      return run.status;
+  }
+}
+
+function statusTone(run: TeamRun): string {
+  switch (run.status) {
+    case "pending":
+    case "running":
+      return "live";
+    case "completed":
+      return "done";
+    case "failed":
+      return "error";
+    default:
+      return "dim";
+  }
 }
 
 function memberDot(
   agentId: string,
   snapshot: TeamRunSnapshot | null,
-  progress: Record<string, { agentId: string; detail: string; at: number }>,
+  live: string | null,
 ): "running" | "waiting" | "idle" | "error" {
   if (!snapshot) {
     return "idle";
   }
-  if (progress[`${snapshot.run.id}:${agentId}`]) {
+  if (live) {
     return "running";
   }
-  const task = snapshot.tasks.find(
-    (entry) => entry.assignedTo === agentId && entry.status === "running",
-  );
-  if (task) {
+  const tasks = snapshot.tasks.filter((entry) => entry.assignedTo === agentId);
+  if (tasks.some((entry) => entry.status === "running" || entry.status === "claimed")) {
     return "waiting";
   }
-  if (snapshot.tasks.some((entry) => entry.assignedTo === agentId && entry.status === "failed")) {
-    return "error";
-  }
-  return "idle";
+  const last = tasks
+    .filter((entry) => entry.completedAt)
+    .sort((a, b) => (b.completedAt?.getTime() ?? 0) - (a.completedAt?.getTime() ?? 0))[0];
+  return last?.status === "failed" ? "error" : "idle";
 }
 
-function memberState(
-  agentId: string,
-  snapshot: TeamRunSnapshot | null,
-  progress: Record<string, { agentId: string; detail: string; at: number }>,
-): string {
+function memberState(agentId: string, snapshot: TeamRunSnapshot | null, live: string | null): string {
   if (!snapshot) {
-    return "waiting";
+    return "Not started";
   }
-  const live = progress[`${snapshot.run.id}:${agentId}`]?.detail;
   if (live) {
-    return `working · ${live}`;
+    return `Working · ${live}`;
   }
-  const task = snapshot.tasks.find(
-    (entry) => entry.assignedTo === agentId && entry.status === "running",
-  );
-  if (task) {
-    return `working on ${task.title}`;
+  const tasks = snapshot.tasks.filter((entry) => entry.assignedTo === agentId);
+  const current = tasks.find((entry) => entry.status === "running" || entry.status === "claimed");
+  if (current) {
+    return `Working on ${current.title}`;
   }
-  const done = snapshot.tasks.filter(
-    (entry) => entry.assignedTo === agentId && entry.status === "completed",
-  ).length;
-  return done > 0 ? `idle · ${done} done` : "waiting";
+  const done = tasks.filter((entry) => entry.status === "completed").length;
+  const failed = tasks.filter((entry) => entry.status === "failed").length;
+  if (done === 0 && failed === 0) {
+    return "Waiting for work";
+  }
+  return [done > 0 ? `${done} done` : "", failed > 0 ? `${failed} failed` : ""]
+    .filter(Boolean)
+    .join(" · ");
 }

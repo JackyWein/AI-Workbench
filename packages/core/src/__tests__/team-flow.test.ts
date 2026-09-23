@@ -1,8 +1,10 @@
+import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
+import type { ProviderSessionConfig, ProviderSessionInfo } from "@ai-workbench/provider-base";
 import type { AppEvent, TeamEvent } from "@ai-workbench/shared";
 import { EventBus } from "../event-bus.js";
 import { createNullLogger } from "../logger.js";
@@ -10,8 +12,19 @@ import { ProviderManager } from "../provider-manager.js";
 import { TeamManager } from "../team-manager.js";
 import { WorkspaceManager } from "../workspace-manager.js";
 
+/** The mock provider, noting the folder every agent session was opened in. */
+class FolderRecordingMock extends MockProviderAdapter {
+  readonly folders: string[] = [];
+
+  override async createSession(config: ProviderSessionConfig): Promise<ProviderSessionInfo> {
+    this.folders.push(config.workingDirectory);
+    return super.createSession(config);
+  }
+}
+
 interface TestApp {
   readonly events: EventBus;
+  readonly folders: string[];
   readonly database: DatabaseHandle;
   readonly workspaces: WorkspaceManager;
   readonly teams: TeamManager;
@@ -36,15 +49,15 @@ async function bootApp(directory: string): Promise<TestApp> {
     logger,
     stateDirectory: join(directory, "providers"),
   });
-  await providers.register(
-    new MockProviderAdapter({ chunkDelayMs: 0, startupDelayMs: 0 }),
-  );
+  const mock = new FolderRecordingMock({ chunkDelayMs: 0, startupDelayMs: 0 });
+  await providers.register(mock);
 
   const workspaces = new WorkspaceManager({ db: database.db, events, logger });
   const teams = new TeamManager({ db: database.db, events, logger, providers });
 
   return {
     events,
+    folders: mock.folders,
     database,
     workspaces,
     teams,
@@ -125,6 +138,84 @@ describe("team runs in the application", () => {
     const back = await app.teams.setWorkingDirectory(teamId, null, false);
     expect(back.settings.workingDirectory).toBeNull();
     expect(back.settings.allowOutsideWorkspace).toBe(false);
+  });
+
+  it("works in the workspace a run is started from, not where the team was made", async () => {
+    const { teamId } = await makeTeam();
+    const elsewhere = join(directory, "other-project");
+    await mkdir(elsewhere, { recursive: true });
+    const other = await app.workspaces.create({ name: "Other", path: elsewhere });
+
+    const run = await app.teams.startRun({ teamId, goal: "Ship it", workspaceId: other.id });
+    expect(run.workspaceId).toBe(other.id);
+    await settle(app, run.id);
+
+    expect(app.folders.length).toBeGreaterThan(0);
+    expect(new Set(app.folders)).toEqual(new Set([other.path]));
+  });
+
+  it("works in the team's own folder when the person set one", async () => {
+    const { teamId } = await makeTeam();
+    await mkdir(join(directory, "other"), { recursive: true });
+    const other = await app.workspaces.create({ name: "Other", path: join(directory, "other") });
+    const fixed = resolve(directory, "..", "fixed-folder");
+    await app.teams.setWorkingDirectory(teamId, fixed, true);
+
+    const run = await app.teams.startRun({ teamId, goal: "Ship it", workspaceId: other.id });
+    await settle(app, run.id);
+    expect(new Set(app.folders)).toEqual(new Set([fixed]));
+  });
+
+  it("edits a team: name, members, what they run on and who leads", async () => {
+    const { teamId } = await makeTeam();
+    const before = await app.teams.require(teamId);
+    const [lead, builder] = before.agents;
+
+    const after = await app.teams.update({
+      teamId,
+      name: "Delivery two",
+      instructions: "Keep it small.",
+      agents: [
+        { id: builder!.id, displayName: "Builder", providerId: "mock", modelId: "mock-fast", role: "builds" },
+        { id: lead!.id, displayName: "Lead", providerId: "mock", role: "plans" },
+        { displayName: "Tester", providerId: "mock", role: "tests" },
+      ],
+      leadAgentIndex: 1,
+    });
+
+    expect(after.name).toBe("Delivery two");
+    expect(after.settings.instructions).toBe("Keep it small.");
+    expect(after.agents.map((agent) => agent.displayName)).toEqual(["Builder", "Lead", "Tester"]);
+    // The members kept their ids; the reviewer left; the tester is new.
+    expect(after.agents[0]).toMatchObject({ id: builder!.id, modelId: "mock-fast", role: "builds" });
+    expect(after.agents[1]?.id).toBe(lead!.id);
+    expect(after.agents.some((agent) => agent.displayName === "Reviewer")).toBe(false);
+    expect(after.leadAgentId).toBe(lead!.id);
+  });
+
+  it("refuses to change a team while one of its runs is going", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Ship it" });
+    const snapshot = await app.teams.getSnapshot(run.id);
+    if (snapshot.run.status === "running") {
+      await expect(app.teams.update({ teamId, name: "Renamed" })).rejects.toThrow(/run going/);
+    }
+    await settle(app, run.id);
+    await expect(app.teams.update({ teamId, name: "Renamed" })).resolves.toMatchObject({
+      name: "Renamed",
+    });
+  });
+
+  it("hands a note from the person to the lead of a going run, and only then", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Ship it" });
+    const note = await app.teams.sendNote(run.id, "Use the blue palette.");
+    const team = await app.teams.require(teamId);
+    expect(note).toMatchObject({ from: "user", to: team.leadAgentId, content: "Use the blue palette." });
+    await settle(app, run.id);
+    const snapshot = await app.teams.getSnapshot(run.id);
+    expect(snapshot.messages.some((message) => message.from === "user")).toBe(true);
+    await expect(app.teams.sendNote(run.id, "Too late")).rejects.toThrow(/not going/);
   });
 
   it("persists a team with its agents and a selectable lead", async () => {

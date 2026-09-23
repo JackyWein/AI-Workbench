@@ -9,6 +9,8 @@ interface ComposerProps {
   readonly disabled: boolean;
   readonly onSend: (text: string) => void;
   readonly onCancel: () => void;
+  /** What the box asks for, when it is not a reply to the session's model. */
+  readonly placeholder?: string;
 }
 
 export function Composer({
@@ -16,6 +18,7 @@ export function Composer({
   disabled,
   onSend,
   onCancel,
+  placeholder,
 }: ComposerProps): JSX.Element {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -51,7 +54,7 @@ export function Composer({
           rows={1}
           value={text}
           disabled={disabled}
-          placeholder={disabled ? "Select a session to start" : "Reply…"}
+          placeholder={disabled ? "Select a session to start" : (placeholder ?? "Reply…")}
           aria-label="Message"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {

@@ -955,6 +955,77 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // A team picked in a session of another workspace works there, starts once,
+  // and the session shows it working: members, feed, where it writes.
+  const teamSpace = join(workspaceDirectory, "team-space");
+  await mkdir(teamSpace, { recursive: true });
+  await check(
+    "a team picked in a session works in that session's workspace",
+    `(async () => {
+       const api = window.workbench;
+       const folder = ${JSON.stringify(teamSpace)};
+       const workspace = (await api.invoke('workspace.list', undefined))
+         .find(entry => entry.path === folder)
+         ?? await api.invoke('workspace.create', { name: 'Team space', path: folder });
+       const session = (await api.invoke('session.list', { workspaceId: workspace.id }))[0]
+         ?? await api.invoke('session.create', {
+           workspaceId: workspace.id, name: 'Team session', type: 'solo', providerId: 'mock',
+         });
+       await new Promise(resolve => setTimeout(resolve, 400));
+       const row = [...document.querySelectorAll('.sidebar__scroll .row')]
+         .find(node => node.textContent?.includes('Team space'));
+       if (!row) return 'no sidebar row for the workspace';
+       row.click();
+       await new Promise(resolve => setTimeout(resolve, 600));
+
+       // The model pill offers the team; picking it puts the team in the session.
+       const pill = document.querySelector('.composer .popover > .pill');
+       if (!pill) return 'no model pill';
+       pill.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       const option = [...document.querySelectorAll('.popover__panel [role="option"]')]
+         .find(node => node.textContent?.includes('Check team'));
+       if (!option) return 'the picker does not offer the team';
+       option.click();
+       if (!(await ${waitFor("document.querySelector('.team-intro, .team-run__goal')", 4000)})) return 'no team view';
+
+       // A goal from the box starts one run, in this workspace.
+       const goal = 'Check the team works in its session ' + Date.now();
+       const box = document.querySelector('.composer__input');
+       const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+       setter.call(box, goal);
+       box.dispatchEvent(new Event('input', { bubbles: true }));
+       box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+       const team = (await api.invoke('team.list', {})).find(entry => entry.name === 'Check team');
+       let runs = [];
+       const deadline = Date.now() + 25000;
+       while (Date.now() < deadline) {
+         await new Promise(resolve => setTimeout(resolve, 300));
+         runs = (await api.invoke('team.listRuns', { teamId: team.id })).filter(run => run.goal === goal);
+         if (runs.length > 0 && runs.every(run => run.status !== 'running' && run.status !== 'pending')) break;
+       }
+       if (runs.length !== 1) return runs.length + ' runs started for one goal';
+       if (runs[0].workspaceId !== workspace.id) return 'the run is not in the session workspace';
+       if (runs[0].status !== 'completed') return 'the run ended ' + runs[0].status;
+
+       await new Promise(resolve => setTimeout(resolve, 3500));
+       const entries = document.querySelectorAll('.team-entry').length;
+       const members = document.querySelectorAll('.team-roster__member').length;
+       const path = document.querySelector('.team-run__path')?.textContent;
+       if (entries === 0) return 'the feed is empty';
+       if (members !== 3) return members + ' members in the roster';
+       if (path !== folder) return 'works in ' + path;
+       window.__checkTeamSessionId = session.id;
+       // Back to the check's own workspace for the checks after this one.
+       [...document.querySelectorAll('.sidebar__scroll .row')]
+         .find(node => node.textContent?.includes('Check workspace'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 600));
+       return true;
+     })()`,
+    40_000,
+  );
+
   // --- status island: widgets, priority, deep links ---------------------------
 
   await check(
@@ -1454,6 +1525,29 @@ export async function runStartupCheck(
       await capture("agents-three", openShell);
       await capture("providers", sidebar("Providers"));
       await capture("teams", sidebar("Teams"));
+      await capture(
+        "teams-edit",
+        `${sidebar("Teams")}
+         await new Promise(resolve => setTimeout(resolve, 300));
+         [...document.querySelectorAll('.provider-entry')]
+           .find(node => node.textContent?.includes('Check team'))
+           ?.querySelector('button[aria-expanded]')?.click();`,
+      );
+      // A team at work in a session: members, feed, where it writes.
+      const teamSession = `[...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Team space'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 300));
+         [...document.querySelectorAll('button')]
+           .find(node => node.textContent?.trim() === 'Chat')?.click();
+         await new Promise(resolve => setTimeout(resolve, 900));`;
+      await capture("team-session", teamSession);
+      await capture(
+        "team-session-member",
+        `${teamSession}
+         [...document.querySelectorAll('.team-tabs [role="tab"]')]
+           .find(node => node.textContent?.includes('Builder'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 300));`,
+      );
       await capture("settings", sidebar("Settings"));
       await capture("skills", sidebar("Skills"));
       await capture("usage", sidebar("Usage"));

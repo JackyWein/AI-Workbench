@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
-import { Pause, Play, Plus, Square, Trash2 } from "lucide-react";
+import { Pause, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import type {
   ProviderSummary,
   TeamDefinition,
@@ -9,7 +9,7 @@ import type {
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { Logo } from "./Logo.js";
-import { SettingDisclosure, Switch } from "./Controls.js";
+import { Switch } from "./Controls.js";
 import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
 
 /**
@@ -53,7 +53,7 @@ export function TeamsView(): JSX.Element {
           on it from here at any time.
         </p>
 
-        {creating ? <NewTeamForm onDone={() => setCreating(false)} /> : null}
+        {creating ? <TeamForm onDone={() => setCreating(false)} /> : null}
 
         {teams.length === 0 && !creating ? (
           <p className="field__description">
@@ -97,17 +97,15 @@ function TeamEntry({
   const startRun = useWorkbench((state) => state.startTeamRun);
   const deleteTeam = useWorkbench((state) => state.deleteTeam);
   const setLead = useWorkbench((state) => state.setTeamLead);
-  const setWorkingDirectory = useWorkbench((state) => state.setTeamWorkingDirectory);
   const openRun = useWorkbench((state) => state.openTeamRun);
-  const [folder, setFolder] = useState<string | null>(null);
-  const [outside, setOutside] = useState(false);
+  const [editing, setEditing] = useState(false);
 
-  // Where this team actually writes. Shown, not implied: a team that runs in
+  // Where a run started here writes. Shown, not implied: a team that runs in
   // the wrong folder is the one mistake that cannot be undone quietly.
-  const homePath = useWorkbench(
-    (state) => state.workspaces.find((entry) => entry.id === team.workspaceId)?.path ?? "",
+  const activeWorkspace = useWorkbench((state) =>
+    state.workspaces.find((entry) => entry.id === state.activeWorkspaceId),
   );
-  const folderPath = team.settings.workingDirectory ?? homePath;
+  const runsIn = team.settings.workingDirectory ?? activeWorkspace?.path ?? null;
   const [goal, setGoal] = useState("");
   const [starting, setStarting] = useState(false);
 
@@ -136,14 +134,26 @@ function TeamEntry({
         </span>
       </div>
 
+      {editing ? <TeamForm team={team} onDone={() => setEditing(false)} /> : null}
+
       <dl className="detail-list">
         <div className="detail">
           <dt className="detail__label">Works in</dt>
-          <dd className="detail__value detail__value--path">
-            {folderPath || "No folder set"}
+          <dd className="detail__value">
             {team.settings.workingDirectory ? (
-              <span className="detail__note">outside the workspace, on purpose</span>
-            ) : null}
+              <>
+                <span className="detail__value--path">{team.settings.workingDirectory}</span>
+                <span className="detail__note">always this folder</span>
+              </>
+            ) : (
+              <>
+                The workspace a run is started from
+                <span className="detail__note">
+                  From a session, the session&apos;s workspace
+                  {activeWorkspace ? `; from here, ${activeWorkspace.name}` : ""}.
+                </span>
+              </>
+            )}
           </dd>
         </div>
         {team.agents.map((agent) => (
@@ -154,6 +164,7 @@ function TeamEntry({
             </dt>
             <dd className="detail__value">
               <AgentProvider providerId={agent.providerId} providers={providers} />
+              {agent.modelId ? ` · ${agent.modelId}` : ""}
               {agent.role ? ` — ${agent.role}` : ""}
             </dd>
           </div>
@@ -161,76 +172,6 @@ function TeamEntry({
       </dl>
 
       <div className="provider-entry__config">
-        <SettingDisclosure label="Where this team works">
-          <div className="form-grid">
-            <label className="stacked-field form-grid__full">
-              <span className="field__description">
-                Folder. Leave empty to use the workspace folder ({homePath || "not set"}).
-              </span>
-              <input
-                className="text-input"
-                value={folder ?? ""}
-                placeholder={homePath}
-                spellCheck={false}
-                onChange={(event) => setFolder(event.target.value)}
-              />
-            </label>
-          </div>
-          <label className="stacked-field">
-            <span className="field__description">
-              Allow working outside the workspace. Off means a folder inside it;
-              on lets the team write anywhere you name here.
-            </span>
-            <Switch
-              label="Allow working outside the workspace"
-              checked={outside || team.settings.allowOutsideWorkspace}
-              onChange={(value) => {
-                setOutside(value);
-                if (!value) {
-                  // Turning it off also gives the team its workspace folder back.
-                  setFolder(null);
-                  void setWorkingDirectory({
-                    teamId: team.id,
-                    workingDirectory: null,
-                    allowOutsideWorkspace: false,
-                  });
-                }
-              }}
-            />
-          </label>
-          <div className="scope-toggles">
-            <button
-              type="button"
-              className="quiet-button"
-              onClick={() =>
-                void setWorkingDirectory({
-                  teamId: team.id,
-                  workingDirectory: folder?.trim() ? folder.trim() : null,
-                  allowOutsideWorkspace: outside || team.settings.allowOutsideWorkspace,
-                })
-              }
-            >
-              Save folder
-            </button>
-            {team.settings.workingDirectory ? (
-              <button
-                type="button"
-                className="quiet-button"
-                onClick={() => {
-                  setFolder(null);
-                  setOutside(false);
-                  void setWorkingDirectory({
-                    teamId: team.id,
-                    workingDirectory: null,
-                    allowOutsideWorkspace: team.settings.allowOutsideWorkspace,
-                  });
-                }}
-              >
-                Back to the workspace folder
-              </button>
-            ) : null}
-          </div>
-        </SettingDisclosure>
         <label className="stacked-field">
           <span className="field__description">Goal</span>
           <input
@@ -274,12 +215,26 @@ function TeamEntry({
           <button
             type="button"
             className="quiet-button"
+            aria-expanded={editing}
+            onClick={() => setEditing((value) => !value)}
+          >
+            <Pencil size={13} strokeWidth={1.75} aria-hidden="true" />
+            {editing ? "Close editor" : "Edit"}
+          </button>
+          <button
+            type="button"
+            className="quiet-button"
             onClick={() => void deleteTeam(team.id)}
           >
             <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
             Remove
           </button>
         </div>
+        <p className="field__description">
+          {runsIn
+            ? `A run started here works in ${runsIn}.`
+            : "Open a workspace to start a run here; from a session, it runs in the session's workspace."}
+        </p>
       </div>
 
       {runs.length > 0 ? (
@@ -660,22 +615,59 @@ function AgentProvider({
 
 interface AgentDraft {
   readonly key: number;
+  /** The agent's id when it is already on the team. */
+  readonly id?: string;
   name: string;
   role: string;
   providerId: string;
   modelId: string;
 }
 
-function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
+const NEW_TEAM: readonly Omit<AgentDraft, "key">[] = [
+  { name: "Lead", role: "plans and reviews", providerId: "", modelId: "" },
+  { name: "Builder", role: "implements", providerId: "", modelId: "" },
+  { name: "Reviewer", role: "checks the work", providerId: "", modelId: "" },
+];
+
+/**
+ * Creates a team, or edits one: its name, who is on it, what each member
+ * runs on, who leads, and where it works. A team has no folder of its own
+ * unless the person gives it one; a run works in the workspace it is started
+ * from, which is the session's when it is started from a session.
+ */
+function TeamForm({
+  team,
+  onDone,
+}: {
+  readonly team?: TeamDefinition;
+  readonly onDone: () => void;
+}): JSX.Element {
   const providers = useWorkbench((state) => state.providers);
   const createTeam = useWorkbench((state) => state.createTeam);
-  const [name, setName] = useState("");
-  const [agents, setAgents] = useState<AgentDraft[]>([
-    { key: 1, name: "Lead", role: "plans and reviews", providerId: "", modelId: "" },
-    { key: 2, name: "Builder", role: "implements", providerId: "", modelId: "" },
-    { key: 3, name: "Reviewer", role: "checks the work", providerId: "", modelId: "" },
-  ]);
-  const keyRef = useRef(4);
+  const updateTeam = useWorkbench((state) => state.updateTeam);
+  const setWorkingDirectory = useWorkbench((state) => state.setTeamWorkingDirectory);
+  const [name, setName] = useState(team?.name ?? "");
+  const [instructions, setInstructions] = useState(team?.settings.instructions ?? "");
+  const [agents, setAgents] = useState<AgentDraft[]>(() =>
+    team
+      ? team.agents.map((agent, index) => ({
+          key: index + 1,
+          id: agent.id,
+          name: agent.displayName,
+          role: agent.role,
+          providerId: agent.providerId,
+          modelId: agent.modelId ?? "",
+        }))
+      : NEW_TEAM.map((agent, index) => ({ ...agent, key: index + 1 })),
+  );
+  const [leadKey, setLeadKey] = useState<number>(() => {
+    const index = team ? team.agents.findIndex((agent) => agent.id === team.leadAgentId) : 0;
+    return (index >= 0 ? index : 0) + 1;
+  });
+  const [fixedFolder, setFixedFolder] = useState(team?.settings.workingDirectory ?? "");
+  const [useFixed, setUseFixed] = useState(Boolean(team?.settings.workingDirectory));
+  const [outside, setOutside] = useState(team?.settings.allowOutsideWorkspace ?? false);
+  const keyRef = useRef(agents.length + 1);
   const [saving, setSaving] = useState(false);
 
   // Providers load after the form mounts; agents without a choice inherit the
@@ -724,35 +716,75 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
 
   const removeAgent = (key: number): void => {
     setAgents((current) => (current.length <= 1 ? current : current.filter((agent) => agent.key !== key)));
+    if (leadKey === key) {
+      setLeadKey(agents.find((agent) => agent.key !== key)?.key ?? 1);
+    }
   };
 
   const submit = async (): Promise<void> => {
-    const roster = agents
-      .map((agent) => ({
-        displayName: agent.name.trim(),
-        role: agent.role.trim(),
-        providerId: agent.providerId || firstProviderId,
-        modelId: agent.modelId,
-      }))
-      .filter((agent) => agent.displayName.length > 0 && agent.providerId.length > 0);
-
+    const roster = agents.filter(
+      (agent) => agent.name.trim().length > 0 && (agent.providerId || firstProviderId).length > 0,
+    );
     if (name.trim().length === 0 || roster.length === 0) {
       return;
     }
+    const leadIndex = Math.max(
+      0,
+      roster.findIndex((agent) => agent.key === leadKey),
+    );
     setSaving(true);
     try {
-      await createTeam({ name: name.trim(), agents: roster });
-      onDone();
+      if (!team) {
+        // The lead goes first: a new team's first member leads it.
+        const ordered = [roster[leadIndex]!, ...roster.filter((_, index) => index !== leadIndex)];
+        await createTeam({
+          name: name.trim(),
+          agents: ordered.map((agent) => ({
+            displayName: agent.name.trim(),
+            role: agent.role.trim(),
+            providerId: agent.providerId || firstProviderId,
+            modelId: agent.modelId,
+          })),
+        });
+        onDone();
+        return;
+      }
+      const updated = await updateTeam({
+        teamId: team.id,
+        name: name.trim(),
+        instructions,
+        leadAgentIndex: leadIndex,
+        agents: roster.map((agent) => ({
+          ...(agent.id ? { id: agent.id } : {}),
+          displayName: agent.name.trim(),
+          role: agent.role.trim(),
+          providerId: agent.providerId || firstProviderId,
+          ...(agent.modelId ? { modelId: agent.modelId } : {}),
+        })),
+      });
+      const folder = useFixed && fixedFolder.trim().length > 0 ? fixedFolder.trim() : null;
+      const folderChanged =
+        folder !== (team.settings.workingDirectory ?? null) ||
+        outside !== team.settings.allowOutsideWorkspace;
+      const placed = folderChanged
+        ? await setWorkingDirectory({
+            teamId: team.id,
+            workingDirectory: folder,
+            allowOutsideWorkspace: outside,
+          })
+        : true;
+      if (updated && placed) {
+        onDone();
+      }
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <section className="provider-entry">
+    <section className="provider-entry team-form">
       <div className="provider-entry__head">
-        <span className="provider-entry__name">New team</span>
-        <span className="row__meta">First agent is the lead</span>
+        <span className="provider-entry__name">{team ? `Edit ${team.name}` : "New team"}</span>
       </div>
       <div className="provider-entry__config">
         <label className="stacked-field">
@@ -774,9 +806,11 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
             key={agent.key}
             agent={agent}
             index={index}
+            lead={agent.key === leadKey}
             providers={providers}
             removable={agents.length > 1}
             onPatch={(patch) => patchAgent(agent.key, patch)}
+            onLead={() => setLeadKey(agent.key)}
             onRemove={() => removeAgent(agent.key)}
           />
         ))}
@@ -785,13 +819,88 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
             <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
             Add agent
           </button>
+        </div>
+
+        {team ? (
+          <>
+            <label className="stacked-field">
+              <span className="field__description">
+                Instructions every member gets, on top of its role
+              </span>
+              <textarea
+                className="text-input text-input--multiline"
+                rows={2}
+                value={instructions}
+                placeholder="Keep changes small. Write tests first."
+                onChange={(event) => setInstructions(event.target.value)}
+              />
+            </label>
+
+            <fieldset className="agent-draft">
+              <legend className="field__description">Where this team works</legend>
+              <label className="radio-row">
+                <input
+                  type="radio"
+                  name={`folder-${team.id}`}
+                  checked={!useFixed}
+                  onChange={() => setUseFixed(false)}
+                />
+                <span>
+                  In the workspace a run is started from
+                  <span className="field__description">
+                    From a session, that is the session&apos;s workspace.
+                  </span>
+                </span>
+              </label>
+              <label className="radio-row">
+                <input
+                  type="radio"
+                  name={`folder-${team.id}`}
+                  checked={useFixed}
+                  onChange={() => setUseFixed(true)}
+                />
+                <span>Always in one folder</span>
+              </label>
+              {useFixed ? (
+                <>
+                  <input
+                    className="text-input"
+                    value={fixedFolder}
+                    placeholder="Absolute path"
+                    spellCheck={false}
+                    aria-label="Team folder"
+                    onChange={(event) => setFixedFolder(event.target.value)}
+                  />
+                  <div className="setting setting--inline">
+                    <div className="setting__text">
+                      <p className="setting__label">Allow a folder outside the workspace</p>
+                      <p className="setting__description">
+                        Off, the folder must be inside the team&apos;s workspace.
+                      </p>
+                    </div>
+                    <Switch
+                      label="Allow a folder outside the workspace"
+                      checked={outside}
+                      onChange={setOutside}
+                    />
+                  </div>
+                </>
+              ) : null}
+            </fieldset>
+          </>
+        ) : null}
+
+        <div className="scope-toggles">
           <button
             type="button"
             className="ghost-button"
             disabled={saving || name.trim().length === 0}
             onClick={() => void submit()}
           >
-            {saving ? "Creating" : "Create team"}
+            {saving ? "Saving" : team ? "Save team" : "Create team"}
+          </button>
+          <button type="button" className="quiet-button" onClick={onDone}>
+            Cancel
           </button>
         </div>
       </div>
@@ -802,16 +911,20 @@ function NewTeamForm({ onDone }: { readonly onDone: () => void }): JSX.Element {
 function AgentDraftRow({
   agent,
   index,
+  lead,
   providers,
   removable,
   onPatch,
+  onLead,
   onRemove,
 }: {
   readonly agent: AgentDraft;
   readonly index: number;
+  readonly lead: boolean;
   readonly providers: readonly ProviderSummary[];
   readonly removable: boolean;
   readonly onPatch: (patch: Partial<AgentDraft>) => void;
+  readonly onLead: () => void;
   readonly onRemove: () => void;
 }): JSX.Element {
   const provider = providers.find((entry) => entry.metadata.id === agent.providerId);
@@ -823,7 +936,7 @@ function AgentDraftRow({
     <fieldset className="agent-draft">
       <legend className="field__description">
         Agent {index + 1}
-        {index === 0 ? " · lead" : ""}
+        {lead ? " · lead" : ""}
       </legend>
       <div className="agent-draft__row">
         <label className="stacked-field">
@@ -881,6 +994,16 @@ function AgentDraftRow({
             </select>
           </label>
         ) : null}
+        {lead ? null : (
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={onLead}
+            aria-label={`Make agent ${index + 1} the lead`}
+          >
+            Make lead
+          </button>
+        )}
         {removable ? (
           <button
             type="button"
