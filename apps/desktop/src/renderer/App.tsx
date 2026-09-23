@@ -1,5 +1,5 @@
 import { type JSX, useEffect, useState } from "react";
-import type { ChatMessage, MessageUsage } from "@ai-workbench/shared";
+import type { ChatMessage } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
@@ -15,6 +15,7 @@ import { PluginsView } from "./components/PluginsView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
+import { UsageView } from "./components/UsageView.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillsView } from "./components/SkillsView.js";
 import { TeamsView } from "./components/TeamsView.js";
@@ -22,15 +23,23 @@ import { WorkspacePanel } from "./components/WorkspacePanel.js";
 
 type AppInfo = { version: string; platform: string; userDataPath: string; username: string };
 
-/** Usage of the most recent answer that reported any. */
-function latestUsage(messages: readonly ChatMessage[]): MessageUsage | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const usage = messages[index]?.usage;
-    if (usage) {
-      return usage;
-    }
+/**
+ * True when the last request did not get a finished answer: it failed, was
+ * stopped, or never got one. Only then is there something to resume.
+ */
+function needsResume(messages: readonly ChatMessage[]): boolean {
+  const last = messages[messages.length - 1];
+  if (!last) {
+    return false;
   }
-  return null;
+  if (last.role === "user") {
+    return last.content.trim().length > 0;
+  }
+  return (
+    last.role === "assistant" &&
+    (last.status === "failed" || last.status === "cancelled") &&
+    messages.some((entry) => entry.role === "user" && entry.content.trim().length > 0)
+  );
 }
 
 export function App(): JSX.Element {
@@ -101,12 +110,14 @@ export function App(): JSX.Element {
     document.documentElement.dataset["density"] = state.settings.density;
   }, [state.settings.density]);
 
-  const session = state.sessions.find((entry) => entry.id === state.activeSessionId);  const workspace = state.workspaces.find(
+  const session = state.sessions.find((entry) => entry.id === state.activeSessionId);
+  const workspace = state.workspaces.find(
     (entry) => entry.id === state.activeWorkspaceId,
   );
   const provider = state.providers.find(
     (entry) => entry.metadata.id === session?.providerId,
-  );  const messages = session ? (state.messages[session.id] ?? []) : [];
+  );
+  const messages = session ? (state.messages[session.id] ?? []) : [];
   const busy = session ? (state.busy[session.id] ?? false) : false;
 
   // Boot faces belong here, never on the island: a loading screen while the
@@ -237,6 +248,8 @@ export function App(): JSX.Element {
         {state.view === "plugins" ? <PluginsView /> : null}
         {state.view === "mcp" ? <McpView /> : null}
         {state.view === "teams" ? <TeamsView /> : null}
+        {state.view === "usage" ? <UsageView /> : null}
+
         {state.view === "settings" ? (
           <SettingsView settings={state.settings} appInfo={appInfo} />
         ) : null}
@@ -248,11 +261,8 @@ export function App(): JSX.Element {
           workspace={workspace}
           provider={provider}
           status={state.status[session.id]}
-          messageCount={messages.length}
-          usage={latestUsage(messages)}
-          onResume={messages.some(
-            (entry) => entry.role === "user" && entry.content.trim().length > 0,
-          )
+          messages={messages}
+          onResume={needsResume(messages)
             ? () => {
                 const store = useWorkbench.getState();
                 const list = store.messages[session.id] ?? [];

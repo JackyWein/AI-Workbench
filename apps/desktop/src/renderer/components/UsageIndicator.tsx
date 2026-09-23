@@ -1,7 +1,7 @@
-import { type JSX, useMemo } from "react";
+import type { JSX } from "react";
 import type { AggregatedUsage, ProviderSummary } from "@ai-workbench/shared";
-import { formatRelativeTime, headlineUsage, consumedValue, remainingPercent } from "../lib/format.js";
-import { Popover } from "./Popover.js";
+import { useWorkbench } from "../store/workbench.js";
+import { formatIn, meterTone, tightestLimit, useNow } from "../lib/usage.js";
 
 interface UsageIndicatorProps {
   readonly usage: AggregatedUsage | null;
@@ -10,75 +10,43 @@ interface UsageIndicatorProps {
 }
 
 /**
- * The compact indicator from the product target: "Claude Sonnet 68%"
- * (spec §63, §89). It stays visually secondary, and its popover aggregates every
- * provider that actually reports usage — unknown stays unknown (spec §56, §65).
+ * The session's quota at a glance (spec §63, §89): the limit of the active
+ * tool closest to running out, as the tool reported it. It opens the full
+ * picture in Usage. A tool that reported nothing shows nothing here — the
+ * header does not fill space with "unavailable".
  */
 export function UsageIndicator({
   usage,
   providers,
   activeProviderId,
-}: UsageIndicatorProps): JSX.Element {
-  const names = useMemo(
-    () => new Map(providers.map((provider) => [provider.metadata.id, provider.metadata.displayName])),
-    [providers],
-  );
-
-  const active = usage?.snapshots.find(
-    (snapshot) => snapshot.providerId === activeProviderId,
-  );
-  const headline = active ? headlineUsage(active) : null;
-
+}: UsageIndicatorProps): JSX.Element | null {
+  const setView = useWorkbench((state) => state.setView);
+  const now = useNow(30_000);
+  if (!activeProviderId) {
+    return null;
+  }
+  const tightest = tightestLimit(usage, new Set([activeProviderId]), now);
+  if (!tightest) {
+    return null;
+  }
+  const name =
+    providers.find((entry) => entry.metadata.id === activeProviderId)?.metadata.displayName ??
+    activeProviderId;
+  const { limit, percentUsed } = tightest;
   return (
-    <Popover
-      title="Usage"
-      triggerClassName="pill"
-      trigger={<>{headline ? `${headline.percent}% left` : "Usage unavailable"}</>}
+    <button
+      type="button"
+      className="pill usage-pill"
+      data-tone={meterTone(percentUsed)}
+      onClick={() => setView("usage")}
+      title={`${name} · ${limit.label}: ${percentUsed}% used${
+        limit.resetsAt ? `, resets ${formatIn(limit.resetsAt, now)}` : ""
+      }`}
     >
-      {usage && usage.snapshots.length > 0 ? (
-        <>
-          {usage.snapshots.map((snapshot) => (
-            <div className="usage-entry" key={snapshot.providerId}>
-              <div className="usage-entry__head">
-                <span className="usage-entry__name">
-                  {names.get(snapshot.providerId) ?? snapshot.providerId}
-                </span>
-                <span className="usage-entry__state">
-                  {snapshot.state === "estimated" ? "Estimated" : null}
-                  {snapshot.state === "partial" ? "Partial" : null}
-                  {snapshot.state === "unavailable" ? "Unavailable" : null}
-                </span>
-              </div>
-
-              {snapshot.limits.length === 0 ? (
-                <p className="usage-entry__limit">
-                  <span>{snapshot.note ?? "Usage unavailable"}</span>
-                </p>
-              ) : (
-                snapshot.limits.map((limit) => {
-                  const percent = remainingPercent(limit);
-                  const consumed = percent === null ? consumedValue(limit) : null;
-                  return (
-                    <p className="usage-entry__limit" key={limit.id}>
-                      <span>{limit.label}</span>
-                      <span>
-                        {percent !== null ? `${percent}% remaining` : (consumed ?? "Unknown")}
-                      </span>
-                    </p>
-                  );
-                })
-              )}
-            </div>
-          ))}
-          <p className="usage-footnote">
-            Updated {formatRelativeTime(usage.updatedAt)}
-          </p>
-        </>
-      ) : (
-        <p className="usage-entry__limit">
-          <span>Usage unavailable</span>
-        </p>
-      )}
-    </Popover>
+      <span className="usage-pill__meter" aria-hidden="true">
+        <span className="usage-pill__fill" style={{ width: `${percentUsed}%` }} />
+      </span>
+      {percentUsed}%
+    </button>
   );
 }

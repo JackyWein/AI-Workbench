@@ -41,6 +41,7 @@ export type MainView =
   | "plugins"
   | "mcp"
   | "teams"
+  | "usage"
   | "settings";
 export type WorkspaceTab = "terminal" | "files" | "changes";
 /** The clean conversation, or the workspace's agents in their own terminals. */

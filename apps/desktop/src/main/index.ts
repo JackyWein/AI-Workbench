@@ -32,6 +32,10 @@ async function bootstrap(): Promise<void> {
       process.env["AI_WORKBENCH_CHECK_DATA_DIR"] ??
         (await mkdtemp(join(tmpdir(), "ai-workbench-check-"))),
     );
+  } else if (isDevelopment && process.env["AI_WORKBENCH_DATA_DIR"]) {
+    // Development only: a separate profile, so trying something out never
+    // touches the data of the copy someone actually uses.
+    app.setPath("userData", process.env["AI_WORKBENCH_DATA_DIR"]);
   }
 
   const userDataPath = app.getPath("userData");

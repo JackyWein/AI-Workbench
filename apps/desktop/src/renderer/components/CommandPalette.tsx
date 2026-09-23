@@ -117,6 +117,12 @@ export function CommandPalette(): JSX.Element | null {
         run: () => store.getState().setView("providers"),
       },
       {
+        id: "view.usage",
+        label: "Open usage",
+        group: "Go to",
+        run: () => store.getState().setView("usage"),
+      },
+      {
         id: "view.settings",
         label: "Open settings",
         group: "Go to",

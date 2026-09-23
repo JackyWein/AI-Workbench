@@ -1,6 +1,7 @@
-import { type JSX, useState } from "react";
+import { type JSX, useMemo, useState } from "react";
 import {
   FolderPlus,
+  Gauge,
   MessageSquarePlus,
   Settings,
   Boxes,
@@ -12,7 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import type { Session, Workspace } from "@ai-workbench/shared";
-import { headlineUsage } from "../lib/format.js";
+import { meterTone, tightestLimit, usageProviders, useNow } from "../lib/usage.js";
 import { useWorkbench, type MainView } from "../store/workbench.js";
 import { Popover } from "./Popover.js";
 
@@ -52,14 +53,24 @@ export function Sidebar({
   const providers = useWorkbench((state) => state.providers);
   const teams = useWorkbench((state) => state.teams);
   const usage = useWorkbench((state) => state.usage);
+  const developerMode = useWorkbench((state) => state.settings.developerMode);
+  const now = useNow(30_000);
 
-  // Sidebar card: the OS account, how many tools are registered, and the
-  // active session's remaining usage — every value read, never written.
-  const activeSession = sessions.find((entry) => entry.id === activeSessionId);
-  const activeSnapshot = usage?.snapshots.find(
-    (snapshot) => snapshot.providerId === activeSession?.providerId,
+  // Sidebar card: the OS account, the tools that are ready, and the quota
+  // closest to running out across them — every value read, never written.
+  const ready = useMemo(
+    () => usageProviders(providers, developerMode),
+    [providers, developerMode],
   );
-  const headline = activeSnapshot ? headlineUsage(activeSnapshot) : null;
+  const tightest = tightestLimit(
+    usage,
+    new Set(ready.map((provider) => provider.metadata.id)),
+    now,
+  );
+  const tightestName = tightest
+    ? (providers.find((entry) => entry.metadata.id === tightest.providerId)?.metadata
+        .displayName ?? tightest.providerId)
+    : null;
   const displayName = username ?? "local";
   const initials = displayName
     .split(/[\s._-]+/)
@@ -249,6 +260,15 @@ export function Sidebar({
         <button
           type="button"
           className="row"
+          aria-current={view === "usage"}
+          onClick={() => setView("usage")}
+        >
+          <Gauge size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">Usage</span>
+        </button>
+        <button
+          type="button"
+          className="row"
           aria-current={view === "skills"}
           onClick={() => setView("skills")}
         >
@@ -299,22 +319,45 @@ export function Sidebar({
           <Settings size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Settings</span>
         </button>
-        <div className="sidebar__user" title={displayName}>
+        <button
+          type="button"
+          className="sidebar__user"
+          aria-current={view === "usage"}
+          onClick={() => setView("usage")}
+          title={
+            tightest
+              ? `${tightestName} · ${tightest.limit.label}: ${tightest.percentUsed}% used`
+              : "Usage"
+          }
+        >
           <span className="sidebar__avatar" aria-hidden="true">
             {initials}
           </span>
           <span className="sidebar__who">
             <span className="sidebar__who-name">{displayName}</span>
             <span className="sidebar__who-plan">
-              {providers.length === 1
-                ? "1 provider"
-                : `${providers.length} providers`}
+              {tightest
+                ? `${tightestName} · ${tightest.limit.label.toLowerCase()}`
+                : ready.length === 1
+                  ? "1 tool ready"
+                  : `${ready.length} tools ready`}
             </span>
           </span>
-          <span className="sidebar__usage">
-            {headline ? `${headline.percent}%` : "—"}
-          </span>
-        </div>
+          {tightest ? (
+            <span className="sidebar__usage" data-tone={meterTone(tightest.percentUsed)}>
+              <span
+                className="ring"
+                style={{
+                  background: `conic-gradient(currentColor ${tightest.percentUsed * 3.6}deg, var(--surface-active) 0)`,
+                }}
+                aria-hidden="true"
+              />
+              {tightest.percentUsed}%
+            </span>
+          ) : (
+            <Gauge size={14} strokeWidth={1.75} aria-hidden="true" className="sidebar__usage-icon" />
+          )}
+        </button>
       </div>
     </nav>
   );

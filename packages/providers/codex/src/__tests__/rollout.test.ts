@@ -42,7 +42,7 @@ describe("Codex rollouts", () => {
       context: { usedTokens: 32567, windowTokens: 258400 },
     });
     expect(state.limits).toEqual([
-      expect.objectContaining({ id: "codex.primary", label: "5 hour window", used: 71, windowMinutes: 300 }),
+      expect.objectContaining({ id: "codex.primary", label: "5-hour window", used: 71, windowMinutes: 300 }),
       expect.objectContaining({ id: "codex.secondary", label: "Weekly", used: 11, windowMinutes: 10080 }),
     ]);
   });

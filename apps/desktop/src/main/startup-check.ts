@@ -466,14 +466,15 @@ export async function runStartupCheck(
   // for it explicitly rather than depending on whatever had focus before.
   focusWindow(window);
   await check(
-    "usage detail opens on keyboard focus",
+    "usage pill opens the usage view",
     `(() => {
-       const trigger = [...document.querySelectorAll('.header__actions .pill')]
-         .find(node => /%|Usage/.test(node.textContent ?? ''));
+       const trigger = document.querySelector('.header__actions .usage-pill');
        if (!trigger) return false;
-       trigger.blur();
-       trigger.focus();
-       return ${waitFor("document.querySelector('.popover__panel')", 2000)};
+       trigger.click();
+       return ${waitFor(
+         "[...document.querySelectorAll('.view__title')].some(node => node.textContent === 'Usage')",
+         2000,
+       )};
      })()`,
   );
 

@@ -9,6 +9,7 @@ import type {
 } from "@ai-workbench/shared";
 import { formatPath } from "../lib/format.js";
 import { invoke } from "../lib/client.js";
+import { ModeToggle } from "./AgentsView.js";
 import { UsageIndicator } from "./UsageIndicator.js";
 import { useWorkbench } from "../store/workbench.js";
 
@@ -84,6 +85,8 @@ export function SessionHeader({
   return (
     <header className="header">
       <div className="header__main">
+        <ModeToggle />
+        <span className="agents-bar__divider" aria-hidden="true" />
         <span className="header__ws">
           {workspace ? workspace.name : formatPath(session.workingDirectory, 28)}
         </span>

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { Crosshair, MessageSquare, Play, Plus, Square, Terminal, Trash2 } from "lucide-react";
+import { ChevronDown, Crosshair, MessageSquare, Play, Square, Terminal, Trash2 } from "lucide-react";
 import type { AgentTerminal, ProviderSummary } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { ActivityTrace } from "./ActivityTrace.js";
 import { Logo } from "./Logo.js";
+import { TerminalMetricsStrip } from "./TerminalMetrics.js";
 import { XtermPane } from "./XtermPane.js";
 import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
+import { useNow } from "../lib/usage.js";
 
 interface AgentsViewProps {
   readonly workspaceId: string;
@@ -29,6 +31,7 @@ export function AgentsView({ workspaceId, workspaceName }: AgentsViewProps): JSX
   const providers = useWorkbench((state) => state.providers);
   const refreshAgentTerminals = useWorkbench((state) => state.refreshAgentTerminals);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const live = terminals.filter((terminal) => terminal.state === "running").length;
 
   useEffect(() => {
     void refreshAgentTerminals(workspaceId);
@@ -36,16 +39,17 @@ export function AgentsView({ workspaceId, workspaceName }: AgentsViewProps): JSX
 
   return (
     <div className="agents-view">
-      <LaunchBar providers={providers} />
+      <LaunchBar providers={providers} live={live} />
       {terminals.length === 0 ? (
         <div className="agents-empty">
           <p className="agents-empty__title">No agents in {workspaceName} yet</p>
           <p className="agents-empty__hint">
-            Pick a tool above to open its own interface in a terminal tile.
+            Start a tool above. It runs in its own terminal, keeps working while
+            you look elsewhere, and reports its time, tokens and limits here.
           </p>
         </div>
       ) : (
-        <div className="agents-grid">
+        <div className="agents-grid" data-count={Math.min(terminals.length, 4)}>
           {terminals.map((terminal) => (
             <AgentTile
               key={terminal.id}
@@ -103,141 +107,127 @@ function launchableProviders(providers: readonly ProviderSummary[]): ProviderSum
   );
 }
 
-/** Provider, label and start for a new agent tile. Nothing is launched unseen. */
-function LaunchBar({ providers }: { readonly providers: ProviderSummary[] }): JSX.Element {
+/**
+ * One chip per tool that can run here: a click starts it with its default
+ * model, the chevron picks another first. Nothing is launched unseen.
+ */
+function LaunchBar({
+  providers,
+  live,
+}: {
+  readonly providers: ProviderSummary[];
+  readonly live: number;
+}): JSX.Element {
   const launchAgentTerminal = useWorkbench((state) => state.launchAgentTerminal);
   const candidates = useMemo(() => launchableProviders(providers), [providers]);
-  const [providerId, setProviderId] = useState<string>("");
-  const [label, setLabel] = useState("");
-  const [modelId, setModelId] = useState("");
-  const [launching, setLaunching] = useState(false);
+  const [launching, setLaunching] = useState<string | null>(null);
 
-  const activeProviderId = candidates.some((entry) => entry.metadata.id === providerId)
-    ? providerId
-    : (candidates[0]?.metadata.id ?? "");
-  const activeProvider = candidates.find((entry) => entry.metadata.id === activeProviderId);
-  const canSelectModel =
-    (activeProvider?.capabilities.supported.includes("modelSelection") ?? false) &&
-    (activeProvider?.models.length ?? 0) > 0;
-  const activeModelId = canSelectModel
-    ? (activeProvider?.models.some((model) => model.id === modelId) ? modelId : "")
-    : "";
-
-  const launch = async (): Promise<void> => {
-    if (!activeProviderId || launching) {
-      return;
-    }
-    setLaunching(true);
-    try {
-      const terminal = await launchAgentTerminal({
-        purpose: "agent",
-        providerId: activeProviderId,
-        ...(label.trim().length > 0 ? { label: label.trim() } : {}),
-        ...(activeModelId.length > 0 ? { modelId: activeModelId } : {}),
-      });
-      if (terminal) {
-        setLabel("");
-        setModelId("");
-      }
-    } finally {
-      setLaunching(false);
-    }
-  };
-
-  const launchShell = async (): Promise<void> => {
+  const launch = async (providerId: string | null, modelId?: string): Promise<void> => {
     if (launching) {
       return;
     }
-    setLaunching(true);
+    setLaunching(providerId ?? "shell");
     try {
-      await launchAgentTerminal({ purpose: "shell" });
+      await launchAgentTerminal(
+        providerId
+          ? { purpose: "agent", providerId, ...(modelId ? { modelId } : {}) }
+          : { purpose: "shell" },
+      );
     } finally {
-      setLaunching(false);
+      setLaunching(null);
     }
   };
 
   return (
     <div className="agents-bar">
       <ModeToggle />
+      <span className="agents-bar__divider" aria-hidden="true" />
       {candidates.length > 0 ? (
-        <>
-          <label>
-            <select
-              className="select"
-              aria-label="Tool"
-              value={activeProviderId}
-              disabled={launching}
-              onChange={(event) => {
-                setProviderId(event.target.value);
-                setModelId("");
-              }}
-            >
-              {candidates.map((entry) => (
-                <option key={entry.metadata.id} value={entry.metadata.id}>
-                  {providerLabel(entry)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {canSelectModel && activeProvider ? (
-            <label>
-              <select
-                className="select"
-                aria-label="Model"
-                value={activeModelId}
-                disabled={launching}
-                onChange={(event) => setModelId(event.target.value)}
-              >
-                <option value="">Default model</option>
-                {activeProvider.models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <input
-            className="text-input agents-bar__label"
-            value={label}
-            placeholder="Label, e.g. Search"
-            maxLength={120}
-            disabled={launching}
-            onChange={(event) => setLabel(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void launch();
-              }
-            }}
-            aria-label="Agent label"
-          />
-          <button
-            type="button"
-            className="primary-button"
-            onClick={() => void launch()}
-            disabled={!activeProviderId || launching}
-          >
-            <Plus size={13} strokeWidth={2} aria-hidden="true" />
-            {launching ? "Starting" : "Start agent"}
-          </button>
-        </>
+        <div className="launch-chips" role="group" aria-label="Start an agent">
+          {candidates.map((entry) => (
+            <LaunchChip
+              key={entry.metadata.id}
+              provider={entry}
+              busy={launching === entry.metadata.id}
+              disabled={launching !== null}
+              onLaunch={(modelId) => void launch(entry.metadata.id, modelId)}
+            />
+          ))}
+        </div>
       ) : (
-        <span className="agents-bar__hint">
-          No installed tool reports an interactive terminal interface.
-        </span>
+        <span className="agents-bar__hint">No installed tool offers a terminal interface.</span>
       )}
       <span className="agents-bar__spacer" />
+      {live > 0 ? (
+        <span className="pill pill--live" aria-label={`${live} running`}>
+          <span className="status-dot" data-state="running" aria-hidden="true" />
+          {live} live
+        </span>
+      ) : null}
       <button
         type="button"
         className="quiet-button"
-        onClick={() => void launchShell()}
-        disabled={launching}
+        onClick={() => void launch(null)}
+        disabled={launching !== null}
         title="Open a plain shell in this workspace"
       >
         <Terminal size={12} strokeWidth={1.75} aria-hidden="true" />
         Shell
       </button>
     </div>
+  );
+}
+
+function LaunchChip({
+  provider,
+  busy,
+  disabled,
+  onLaunch,
+}: {
+  readonly provider: ProviderSummary;
+  readonly busy: boolean;
+  readonly disabled: boolean;
+  readonly onLaunch: (modelId?: string) => void;
+}): JSX.Element {
+  const models = provider.capabilities.supported.includes("modelSelection") ? provider.models : [];
+  const name = providerLabel(provider);
+  return (
+    <span className="launch-chip" data-busy={busy}>
+      <button
+        type="button"
+        className="launch-chip__main"
+        onClick={() => onLaunch()}
+        disabled={disabled}
+        title={`Start ${name}`}
+      >
+        <Logo name={provider.metadata.icon} label={name} size={14} />
+        <span>{busy ? "Starting…" : name}</span>
+      </button>
+      {models.length > 1 ? (
+        <span className="launch-chip__more">
+          <ChevronDown size={12} strokeWidth={1.75} aria-hidden="true" />
+          <select
+            aria-label={`Start ${name} with a model`}
+            value=""
+            disabled={disabled}
+            onChange={(event) => {
+              if (event.target.value) {
+                onLaunch(event.target.value);
+              }
+            }}
+          >
+            <option value="" disabled>
+              Start with…
+            </option>
+            {models.map((model) => (
+              <option key={model.id} value={model.id}>
+                {model.displayName}
+              </option>
+            ))}
+          </select>
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -257,15 +247,18 @@ function AgentTile({
   const stopAgentTerminal = useWorkbench((state) => state.stopAgentTerminal);
   const removeAgentTerminal = useWorkbench((state) => state.removeAgentTerminal);
   const tileRef = useRef<HTMLElement>(null);
+  const now = useNow(1000);
 
   const provider = terminal.providerId
     ? providers.find((entry) => entry.metadata.id === terminal.providerId)
     : undefined;
+  // What the tool says it runs beats what it was asked to run.
   const modelName =
-    terminal.modelId && provider
+    terminal.metrics?.model ??
+    (terminal.modelId && provider
       ? (provider.models.find((model) => model.id === terminal.modelId)?.displayName ??
         terminal.modelId)
-      : (terminal.modelId ?? null);
+      : (terminal.modelId ?? null));
 
   const focusTerminal = (): void => {
     onFocused();
@@ -289,14 +282,16 @@ function AgentTile({
           <span className="agent-tile__label">{terminal.label}</span>
           {modelName ? <span className="agent-tile__model">{modelName}</span> : null}
         </div>
-        <span className="agent-tile__status">
+        {running ? (
+          <ActivityTrace terminalId={terminal.terminalId} width={40} height={10} />
+        ) : null}
+        <span className="agent-tile__status" data-state={dotState(terminal)}>
           <span
             className="status-dot"
             data-state={dotState(terminal)}
             aria-hidden="true"
           />
           {stateLabel(terminal)}
-          <ActivityTrace terminalId={terminal.terminalId} width={48} height={12} />
         </span>
         <div className="agent-tile__actions" onClick={(event) => event.stopPropagation()}>
           <button
@@ -348,6 +343,11 @@ function AgentTile({
       <div className="agent-tile__body">
         <XtermPane terminalId={terminal.terminalId} onFocus={onFocused} />
       </div>
+      {terminal.purpose === "agent" ? (
+        <footer className="agent-tile__foot">
+          <TerminalMetricsStrip terminal={terminal} now={now} />
+        </footer>
+      ) : null}
     </article>
   );
 }

@@ -1,5 +1,7 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
+import { ChevronRight } from "lucide-react";
 import type {
+  ChatMessage,
   EffectiveSkill,
   MessageUsage,
   ProviderSummary,
@@ -7,9 +9,11 @@ import type {
   SessionStatus,
   Workspace,
 } from "@ai-workbench/shared";
-import { formatPath } from "../lib/format.js";
+import { compactNumber, formatPath, formatUsd } from "../lib/format.js";
 import { describeError, invoke } from "../lib/client.js";
+import { formatSpan, meterTone } from "../lib/usage.js";
 import { useWorkbench } from "../store/workbench.js";
+import { Logo } from "./Logo.js";
 import { Popover } from "./Popover.js";
 
 interface ContextPanelProps {
@@ -17,133 +21,245 @@ interface ContextPanelProps {
   readonly workspace: Workspace | undefined;
   readonly provider: ProviderSummary | undefined;
   readonly status: SessionStatus | undefined;
-  readonly messageCount: number;
-  /** Usage of the most recent answer, when the provider reported any. */
-  readonly usage: MessageUsage | null;
-  /** Resends the last user turn; omitted while there is nothing to resume. */
+  readonly messages: readonly ChatMessage[];
+  /** Sends the last request again; null unless the last answer did not finish. */
   readonly onResume: (() => void) | null;
 }
 
-/** Optional right-hand context (spec §80). Compact, read-only, no dashboard. */
+/**
+ * The session at a glance (spec §80): what it runs on, what it has cost so
+ * far and how full its context is. Where it runs and what it may use stay one
+ * click away. Every number is summed from what the tool reported per turn.
+ */
 export function ContextPanel({
   session,
   workspace,
   provider,
   status,
-  messageCount,
-  usage,
+  messages,
   onResume,
 }: ContextPanelProps): JSX.Element {
-  const context = describeContext(usage);
-  const percent = contextPercent(usage);
   const cancel = useWorkbench((state) => state.cancel);
   const busy = useWorkbench((state) => state.busy[session.id] ?? false);
   const model = provider?.models.find((entry) => entry.id === session.modelId);
+  const stats = useMemo(() => sessionStats(messages), [messages]);
+  const context = stats.context;
+  const contextPercent =
+    context && context.window ? Math.min(100, Math.round((context.used / context.window) * 100)) : null;
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   return (
     <aside className="context" aria-label="Session context">
-      <div className="context__group">
-        <p className="context__label">Status</p>
-        <p className="context__value">
-          <span
-            className="pill"
-            data-tone={
-              status === "error" ? "danger" : status === "waiting" ? "warn" : "live"
-            }
-          >
-            {status === "waiting" || (status !== "idle" && status !== undefined) ? (
-              <span
-                className="status-dot"
-                data-state={status === "error" ? "error" : status === "waiting" ? "waiting" : "running"}
-                aria-hidden="true"
-              />
-            ) : null}
-            {status ? labelFor(status) : "Idle"}
+      <div className="context__card">
+        <div className="context__model">
+          <span className="logo-well" aria-hidden="true">
+            <Logo name={provider?.metadata.icon} label={provider?.metadata.displayName ?? "?"} size={15} />
           </span>
-        </p>
-        {busy || onResume ? (
-          <div className="context__actions">
-            {busy ? (
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => void cancel()}
+          <span className="context__model-text">
+            <span className="context__model-name">
+              {model?.displayName ?? (provider ? "Default model" : "No provider")}
+            </span>
+            <span className="context__model-provider">
+              {provider?.metadata.displayName ?? "Choose one with Ctrl+K"}
+            </span>
+          </span>
+        </div>
+        <div className="context__status">
+          <StatusPill status={status} />
+          <span className="context__resumable">
+            {session.providerSessionId ? "Resumable" : "Not started"}
+          </span>
+        </div>
+        {busy ? (
+          <button type="button" className="ghost-button context__action" onClick={() => void cancel()}>
+            Interrupt
+          </button>
+        ) : onResume ? (
+          <button type="button" className="ghost-button context__action" onClick={onResume}>
+            Resume
+          </button>
+        ) : null}
+      </div>
+
+      <div className="context__section">
+        <p className="context__heading">This session</p>
+        <dl className="stat-grid">
+          <Stat label="Turns" value={String(stats.turns)} />
+          <Stat
+            label="Working time"
+            value={stats.durationMs > 0 ? formatSpan(stats.durationMs) : "—"}
+            title="Time the tool spent answering, as it measured it"
+          />
+          <Stat
+            label="Tokens"
+            value={stats.tokens > 0 ? compactNumber(stats.tokens) : "—"}
+            title={
+              stats.tokens > 0
+                ? `${stats.input.toLocaleString()} in · ${stats.output.toLocaleString()} out${
+                    stats.cached > 0 ? ` · ${stats.cached.toLocaleString()} from cache` : ""
+                  }`
+                : "Not reported"
+            }
+          />
+          <Stat
+            label="Cost"
+            value={stats.costUsd !== null ? `≈${formatUsd(stats.costUsd)}` : "—"}
+            title={
+              stats.costUsd !== null
+                ? "Computed by the tool at list prices; your bill may differ"
+                : "Not reported"
+            }
+          />
+        </dl>
+        {context ? (
+          <div className="context__meter-block" data-tone={contextPercent === null ? "calm" : meterTone(contextPercent)}>
+            <div className="context__meter-row">
+              <span>Context</span>
+              <span className="context__meter-value">
+                {compactNumber(context.used)}
+                {context.window ? ` / ${compactNumber(context.window)}` : ""}
+              </span>
+            </div>
+            {contextPercent !== null ? (
+              <div
+                className="meter"
+                role="meter"
+                aria-valuenow={contextPercent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Context used, ${contextPercent} percent`}
               >
-                Interrupt
-              </button>
-            ) : null}
-            {!busy && onResume ? (
-              <button type="button" className="btn-ghost" onClick={onResume}>
-                Resume
-              </button>
+                <span className="meter__fill" style={{ width: `${contextPercent}%` }} />
+              </div>
             ) : null}
           </div>
         ) : null}
       </div>
 
-      <div className="context__group">
-        <p className="context__label">Workspace</p>
-        <p className="context__value">{workspace?.name ?? "Unknown"}</p>
-      </div>
-
-      <div className="context__group">
-        <p className="context__label">Working directory</p>
-        <Popover
-          title="Working directory"
-          triggerClassName="context__value"
-          trigger={<>{formatPath(session.workingDirectory, 34)}</>}
-        >
-          <p className="popover__detail">{session.workingDirectory}</p>
-        </Popover>
-      </div>
-
-      <div className="context__group">
-        <p className="context__label">Provider</p>
-        <p className="context__value">
-          {provider?.metadata.displayName ?? "None selected"}
-        </p>
-      </div>
-
-      <div className="context__group">
-        <p className="context__label">Model</p>
-        <p className="context__value">{model?.displayName ?? "Default"}</p>
-      </div>
-
-      <div className="context__group">
-        <p className="context__label">Session</p>
-        <p className="context__value">
-          {session.providerSessionId ? "Resumable" : "Not started yet"}
-        </p>
-      </div>
-
-      <div className="context__group">
-        <p className="context__label">Messages</p>
-        <p className="context__value">{messageCount}</p>
-      </div>
-
-      {context ? (
-        <div className="context__group">
-          <p className="context__label">Context</p>
-          <p className="context__value">{context}</p>
-          {percent !== null ? (
-            <div
-              className="context__meter"
-              role="progressbar"
-              aria-valuenow={percent}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`Context used, ${percent} percent`}
-            >
-              <i style={{ width: `${percent}%` }} />
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
       <SessionSkills sessionId={session.id} />
       <SessionTools sessionId={session.id} />
+
+      <div className="context__section context__section--foot">
+        <button
+          type="button"
+          className="context__disclosure"
+          aria-expanded={detailsOpen}
+          onClick={() => setDetailsOpen((open) => !open)}
+        >
+          <ChevronRight size={12} strokeWidth={2} aria-hidden="true" />
+          Where it runs
+        </button>
+        {detailsOpen ? (
+          <dl className="context__details">
+            <div>
+              <dt>Workspace</dt>
+              <dd>{workspace?.name ?? "Unknown"}</dd>
+            </div>
+            <div>
+              <dt>Directory</dt>
+              <dd>
+                <Popover
+                  title="Working directory"
+                  triggerClassName="context__path"
+                  trigger={<>{formatPath(session.workingDirectory, 30)}</>}
+                >
+                  <p className="popover__detail">{session.workingDirectory}</p>
+                </Popover>
+              </dd>
+            </div>
+          </dl>
+        ) : null}
+      </div>
     </aside>
   );
+}
+
+function StatusPill({ status }: { readonly status: SessionStatus | undefined }): JSX.Element {
+  const current = status ?? "idle";
+  const tone = current === "error" ? "danger" : current === "waiting" ? "warn" : current === "idle" ? undefined : "live";
+  return (
+    <span className="pill" data-tone={tone}>
+      <span
+        className="status-dot"
+        data-state={
+          current === "error" ? "error" : current === "waiting" ? "waiting" : current === "idle" ? "idle" : "running"
+        }
+        aria-hidden="true"
+      />
+      {current.charAt(0).toUpperCase() + current.slice(1)}
+    </span>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  title,
+}: {
+  readonly label: string;
+  readonly value: string;
+  readonly title?: string;
+}): JSX.Element {
+  return (
+    <div className="stat" title={title}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+interface SessionStats {
+  readonly turns: number;
+  readonly durationMs: number;
+  readonly input: number;
+  readonly output: number;
+  readonly cached: number;
+  readonly tokens: number;
+  readonly costUsd: number | null;
+  readonly context: { used: number; window: number | undefined } | null;
+}
+
+/** Sums what the tool reported for each answer of the session. */
+export function sessionStats(messages: readonly ChatMessage[]): SessionStats {
+  let turns = 0;
+  let durationMs = 0;
+  let input = 0;
+  let output = 0;
+  let cached = 0;
+  let costUsd: number | null = null;
+  let latest: MessageUsage | null = null;
+  for (const message of messages) {
+    if (message.role !== "assistant") {
+      continue;
+    }
+    turns += 1;
+    const usage = message.usage;
+    if (!usage) {
+      continue;
+    }
+    latest = usage;
+    durationMs += usage.durationMs ?? 0;
+    input += (usage.inputTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+    cached += usage.cacheReadTokens ?? 0;
+    output += usage.outputTokens ?? 0;
+    if (usage.costUsd !== undefined) {
+      costUsd = (costUsd ?? 0) + usage.costUsd;
+    }
+  }
+  const context =
+    latest?.contextTokens !== undefined
+      ? { used: latest.contextTokens, window: latest.contextWindow }
+      : null;
+  return {
+    turns,
+    durationMs,
+    input,
+    output,
+    cached,
+    tokens: input + output + cached,
+    costUsd,
+    context,
+  };
 }
 
 /** What this session actually composes into its instructions (spec §30). */
@@ -170,8 +286,8 @@ function SessionSkills({ sessionId }: { readonly sessionId: string }): JSX.Eleme
   }
 
   return (
-    <div className="context__group">
-      <p className="context__label">Skills</p>
+    <div className="context__section">
+      <p className="context__heading">Skills</p>
       <div className="chip-row">
         {skills.map((entry) => (
           <span className="chip" key={entry.skill.id}>
@@ -209,8 +325,8 @@ function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Elemen
   }
 
   return (
-    <div className="context__group">
-      <p className="context__label">MCP servers</p>
+    <div className="context__section">
+      <p className="context__heading">MCP servers</p>
       {servers.map((server) => {
         const status = statuses.find((entry) => entry.id === server.id);
         const enabled = enabledIds.includes(server.id);
@@ -238,41 +354,4 @@ function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Elemen
       })}
     </div>
   );
-}
-
-function labelFor(status: SessionStatus): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-/** Percent width for the thin context meter; null when no window is known. */
-function contextPercent(usage: MessageUsage | null): number | null {
-  if (!usage || usage.contextTokens === undefined) {
-    return null;
-  }
-  if (usage.contextWindow === undefined || usage.contextWindow <= 0) {
-    return null;
-  }
-  return Math.round((usage.contextTokens / usage.contextWindow) * 100);
-}
-
-/** Context is shown only when a provider actually reports it (spec §56). */
-function describeContext(usage: MessageUsage | null): string | null {  if (!usage || usage.contextTokens === undefined) {
-    return null;
-  }
-  const used = formatTokens(usage.contextTokens);
-  if (usage.contextWindow === undefined || usage.contextWindow <= 0) {
-    return `${used} used`;
-  }
-  const percent = Math.round((usage.contextTokens / usage.contextWindow) * 100);
-  return `${used} of ${formatTokens(usage.contextWindow)} · ${percent}%`;
-}
-
-function formatTokens(value: number): string {
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(1)}M`;
-  }
-  if (value >= 1000) {
-    return `${Math.round(value / 1000)}k`;
-  }
-  return String(value);
 }
