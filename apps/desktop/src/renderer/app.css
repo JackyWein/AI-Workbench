@@ -1752,59 +1752,6 @@ span.pill {
   margin: 0;
 }
 
-.field {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-5);
-  padding: var(--space-4) 0;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.field:first-of-type {
-  border-top: none;
-}
-
-/*
- * On a full screen, a run of settings rows is one grouped panel rather than
- * separators drawn across the page. Rows carry the sides themselves, so the
- * group needs no wrapper element: the first and last round off, and the
- * borders between them become the separators.
- */
-.view__inner .field {
-  padding: var(--space-4) var(--space-5);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-top-color: var(--border-subtle);
-  border-bottom: none;
-}
-
-.view__inner .field:first-of-type {
-  border-top: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-}
-
-.view__inner .field:last-of-type {
-  border-bottom: 1px solid var(--border-subtle);
-  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-}
-
-/* A group of one is a single rounded panel, not a half-open one. */
-.view__inner .field:first-of-type:last-of-type {
-  border-radius: var(--radius-lg);
-}
-
-.view__inner .field > div:first-child {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.field__label {
-  font-size: var(--text-md);
-}
-
 .field__description {
   font-size: var(--text-sm);
   color: var(--text-muted);
@@ -3149,4 +3096,216 @@ button.sidebar__user[aria-current="true"] {
 
 .header__main .mode-toggle {
   margin-right: 2px;
+}
+
+/* ------------------------------------------------------------- settings -- */
+
+/* Preferences read as one calm column, not a page-wide form. */
+.view__inner--narrow {
+  max-width: 700px;
+}
+
+.setting-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.setting-group__header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 var(--space-2);
+}
+
+.setting-group__title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.setting-group__lede {
+  margin: 0;
+  max-width: 62ch;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.setting-group__panel {
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-5);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.setting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  min-height: 52px;
+  padding: 10px 0;
+}
+
+.setting + .setting,
+.setting-disclosure__body > .setting:first-child,
+.setting-disclosure__body > .shortcut-list:first-child {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.setting--stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.setting__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.setting__label {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+}
+
+.setting__description {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.setting__control {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.setting[data-muted] .setting__text,
+.setting[data-muted] .setting__control,
+.setting[data-muted] .chip-toggles {
+  opacity: 0.45;
+}
+
+.setting__path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.setting__error {
+  margin: 0;
+  padding: 0 0 10px;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.setting-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--easing-standard);
+}
+
+.setting-disclosure:hover {
+  color: var(--text-primary);
+}
+
+.setting-disclosure svg {
+  transition: transform var(--duration-normal) var(--easing-standard);
+}
+
+.setting-disclosure[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+
+.setting-disclosure__body {
+  display: flex;
+  flex-direction: column;
+}
+
+.chip-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-toggle {
+  padding: 3px 10px;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--easing-standard),
+    background-color var(--duration-fast) var(--easing-standard),
+    border-color var(--duration-fast) var(--easing-standard);
+}
+
+.chip-toggle:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.chip-toggle[aria-pressed="true"] {
+  color: var(--text-primary);
+  background: var(--accent-quiet);
+  border-color: transparent;
+}
+
+.shortcut-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+}
+
+.shortcut-list__title {
+  margin: 4px 0 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.shortcut {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 30px;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.shortcut__action {
+  flex: 1;
+  min-width: 0;
+}
+
+.keys {
+  display: inline-flex;
+  gap: 3px;
 }

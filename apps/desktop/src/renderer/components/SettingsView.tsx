@@ -5,6 +5,15 @@ import type {
   IslandWidgetId,
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import {
+  Choice,
+  Segmented,
+  SettingDisclosure,
+  SettingGroup,
+  SettingRow,
+  Switch,
+  type SegmentOption,
+} from "./Controls.js";
 import { KeyboardShortcuts } from "./KeyboardShortcuts.js";
 import { UpdateSection } from "./UpdateSection.js";
 
@@ -13,307 +22,304 @@ interface SettingsViewProps {
   readonly appInfo: { version: string; platform: string; userDataPath: string } | null;
 }
 
+const THEMES: ReadonlyArray<SegmentOption<AppSettings["theme"]>> = [
+  { value: "system", label: "System" },
+  { value: "dark", label: "Dark" },
+  { value: "light", label: "Light" },
+];
+
+const DENSITIES: ReadonlyArray<SegmentOption<AppSettings["density"]>> = [
+  { value: "comfortable", label: "Comfortable" },
+  { value: "compact", label: "Compact" },
+];
+
+const CLOSE_BEHAVIOUR: ReadonlyArray<SegmentOption<"quit" | "keep">> = [
+  { value: "quit", label: "Quit" },
+  { value: "keep", label: "Keep running" },
+];
+
+/** App preferences only: anything provider-shaped lives in Providers. */
 export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Element {
   const updateSettings = useWorkbench((state) => state.updateSettings);
+  const setIslandPreferences = useWorkbench((state) => state.setIslandPreferences);
 
   return (
     <div className="view">
-      <div className="view__inner">
+      <div className="view__inner view__inner--narrow">
         <h1 className="view__title">Settings</h1>
 
-        <section>
-          <p className="section__label">Status Island</p>
-          <p className="field__description">
-            A floating companion that keeps showing what is happening while the
-            main window is hidden. Switch chat and agents with the header toggle
-            or Ctrl+Shift+A.
-          </p>
-          <IslandSettings settings={settings} />
-        </section>
+        <IslandSettings settings={settings} />
 
-        <section>
-          <p className="section__label">Appearance</p>
-          <div className="field">
-            <div>
-              <p className="field__label">Theme</p>
-              <p className="field__description">Dark is the default surface.</p>
-            </div>
-            <select
-              className="select"
+        <SettingGroup title="Appearance">
+          <SettingRow label="Theme" description="Dark is the default surface.">
+            <Segmented
+              label="Theme"
               value={settings.theme}
-              aria-label="Theme"
-              onChange={(event) =>
-                void updateSettings({ theme: event.target.value as AppSettings["theme"] })
-              }
-            >
-              <option value="system">System</option>
-              <option value="dark">Dark</option>
-              <option value="light">Light</option>
-            </select>
-          </div>
-
-          <div className="field">
-            <div>
-              <p className="field__label">Density</p>
-              <p className="field__description">Compact tightens spacing.</p>
-            </div>
-            <select
-              className="select"
-              value={settings.density}
-              aria-label="Density"
-              onChange={(event) =>
-                void updateSettings({
-                  density: event.target.value as AppSettings["density"],
-                })
-              }
-            >
-              <option value="comfortable">Comfortable</option>
-              <option value="compact">Compact</option>
-            </select>
-          </div>
-        </section>
-
-        <section>
-          <p className="section__label">Advanced</p>
-          <div className="field">
-            <div>
-              <p className="field__label">Developer mode</p>
-              <p className="field__description">
-                Shows raw normalized provider events and internal state.
-              </p>
-            </div>
-            <input
-              type="checkbox"
-              checked={settings.developerMode}
-              aria-label="Developer mode"
-              onChange={(event) =>
-                void updateSettings({ developerMode: event.target.checked })
-              }
+              options={THEMES}
+              onChange={(theme) => void updateSettings({ theme })}
             />
-          </div>
-        </section>
+          </SettingRow>
+          <SettingRow label="Density" description="Compact tightens spacing.">
+            <Segmented
+              label="Density"
+              value={settings.density}
+              options={DENSITIES}
+              onChange={(density) => void updateSettings({ density })}
+            />
+          </SettingRow>
+        </SettingGroup>
 
-        <UpdateSection currentVersion={appInfo?.version ?? null} />
+        <SettingGroup title="Window">
+          <SettingRow
+            label="Closing the main window"
+            description={
+              settings.statusIsland.closeToTray
+                ? "Agents keep running; the island and the tray bring it back."
+                : "Quits AI Workbench and stops what is running."
+            }
+          >
+            <Segmented
+              label="Closing the main window"
+              value={settings.statusIsland.closeToTray ? "keep" : "quit"}
+              options={CLOSE_BEHAVIOUR}
+              onChange={(choice) => void setIslandPreferences({ closeToTray: choice === "keep" })}
+            />
+          </SettingRow>
+        </SettingGroup>
 
-        <section>
-          <p className="section__label">Keyboard shortcuts</p>
+        <SettingGroup title="Shortcuts">
           <KeyboardShortcuts />
-        </section>
+        </SettingGroup>
 
-        {appInfo ? (
-          <section>
-            <p className="section__label">About</p>
-            <dl className="detail-list">
-              <div className="detail">
-                <dt className="detail__label">Version</dt>
-                <dd className="detail__value">{appInfo.version}</dd>
-              </div>
-              <div className="detail">
-                <dt className="detail__label">Platform</dt>
-                <dd className="detail__value">{appInfo.platform}</dd>
-              </div>
-              <div className="detail">
-                <dt className="detail__label">Data</dt>
-                <dd className="detail__value">{appInfo.userDataPath}</dd>
-              </div>
-            </dl>
-          </section>
-        ) : null}
+        <SettingGroup title="About">
+          <UpdateSection currentVersion={appInfo?.version ?? null} />
+          <SettingDisclosure label="Advanced">
+            <SettingRow
+              label="Developer mode"
+              description="Shows raw provider events, internal state and in-process test tools."
+            >
+              <Switch
+                label="Developer mode"
+                checked={settings.developerMode}
+                onChange={(developerMode) => void updateSettings({ developerMode })}
+              />
+            </SettingRow>
+            {appInfo ? (
+              <SettingRow
+                label="Data folder"
+                description={<span className="setting__path">{appInfo.userDataPath}</span>}
+              />
+            ) : null}
+          </SettingDisclosure>
+        </SettingGroup>
       </div>
     </div>
   );
 }
 
-
-const ISLAND_WIDGETS: Array<{ id: IslandWidgetId; label: string }> = [
-  { id: "needsAttention", label: "Needs attention" },
-  { id: "activeAgents", label: "Active agents" },
-  { id: "teamProgress", label: "Team progress" },
-  { id: "providerUsage", label: "Provider usage" },
-  { id: "completedWork", label: "Completed work" },
-  { id: "errors", label: "Errors" },
-  { id: "connectionHealth", label: "Connection health" },
+const ISLAND_WIDGETS: ReadonlyArray<SegmentOption<IslandWidgetId>> = [
+  { value: "needsAttention", label: "Needs attention" },
+  { value: "activeAgents", label: "Active agents" },
+  { value: "teamProgress", label: "Team progress" },
+  { value: "providerUsage", label: "Provider usage" },
+  { value: "completedWork", label: "Completed work" },
+  { value: "errors", label: "Errors" },
+  { value: "connectionHealth", label: "Connection health" },
 ];
 
-/** Island preferences (spec §101), all of them persisted with the settings. */
+const PINNED: ReadonlyArray<SegmentOption<IslandWidgetId | "automatic">> = [
+  { value: "automatic", label: "Automatic" },
+  ...ISLAND_WIDGETS,
+];
+
+const ROTATE: ReadonlyArray<SegmentOption<"0" | "5" | "10" | "30">> = [
+  { value: "0", label: "Off" },
+  { value: "5", label: "5s" },
+  { value: "10", label: "10s" },
+  { value: "30", label: "30s" },
+];
+
+type Placement = IslandPosition | "docked";
+
+function rotateValue(seconds: number): "0" | "5" | "10" | "30" {
+  return seconds >= 30 ? "30" : seconds >= 10 ? "10" : seconds >= 5 ? "5" : "0";
+}
+
+/**
+ * Island preferences (spec §101), all persisted with the settings. The few
+ * that shape everyday use are rows; the rest wait behind a disclosure.
+ */
 function IslandSettings({ settings }: { readonly settings: AppSettings }): JSX.Element {
   const island = settings.statusIsland;
   const setIslandPreferences = useWorkbench((state) => state.setIslandPreferences);
+  const off = !island.enabled;
 
-  const toggle = (
-    key: "enabled" | "startWithApp" | "stayVisibleWhenHidden" | "alwaysOnTop" | "autoExpand" | "closeToTray",
-    label: string,
-    description: string,
-  ): JSX.Element => (
-    <div className="field">
-      <div>
-        <p className="field__label">{label}</p>
-        <p className="field__description">{description}</p>
-      </div>
-      <label className="scope-toggle">
-        <input
-          type="checkbox"
-          checked={island[key]}
-          onChange={(event) => void setIslandPreferences({ [key]: event.target.checked })}
-        />
-        <span className="visually-hidden" hidden>
-          {label}
-        </span>
-      </label>
-    </div>
-  );
+  const docked: Array<SegmentOption<Placement>> = island.dockedEdge
+    ? [{ value: "docked", label: `Docked, ${island.dockedEdge} edge` }]
+    : [];
+  const placements: ReadonlyArray<SegmentOption<Placement>> = [
+    ...docked,
+    { value: "topCenter", label: "Top center" },
+    { value: "topLeft", label: "Top left" },
+    { value: "topRight", label: "Top right" },
+    { value: "custom", label: "Where I left it" },
+  ];
 
   return (
-    <>
-      {toggle("enabled", "Enabled", "Show the island when the app is in the background.")}
-      {toggle("startWithApp", "Start with AI Workbench", "There from launch; hidden while the main window is focused.")}
-      {toggle(
-        "stayVisibleWhenHidden",
-        "Stay visible when the main window is hidden",
-        "The runtime keeps going either way.",
-      )}
-      {toggle("alwaysOnTop", "Always on top", "Keep it above other windows.")}
-      {toggle(
-        "autoExpand",
-        "Expand for important events",
-        "Grow for a moment when something needs you, then settle back.",
-      )}
-      {toggle(
-        "closeToTray",
-        "Closing the main window leaves it running",
-        "Otherwise closing the window quits the application.",
-      )}
-
-      <div className="field">
-        <div>
-          <p className="field__label">Position</p>
-          <p className="field__description">Dragging the island sets a custom one.</p>
-        </div>
-        <select
-          className="select"
-          value={island.position}
-          aria-label="Island position"
-          onChange={(event) =>
-            void setIslandPreferences({ position: event.target.value as IslandPosition })
-          }
-        >
-          <option value="topCenter">Top center</option>
-          <option value="topLeft">Top left</option>
-          <option value="topRight">Top right</option>
-          <option value="custom">Where I left it</option>
-        </select>
-      </div>
-
-      <div className="field">
-        <div>
-          <p className="field__label">Display</p>
-          <p className="field__description">
-            {island.displayId === null
-              ? "Follows the active monitor."
-              : `Pinned to display ${island.displayId} by dragging. Resetting follows the active one again.`}
-          </p>
-        </div>
-        <button
-          type="button"
-          className="ghost-button"
-          disabled={island.displayId === null}
-          onClick={() => void setIslandPreferences({ displayId: null })}
-        >
-          Use active monitor
-        </button>
-      </div>
-
-      <div className="field">
-        <div>
-          <p className="field__label">Default widget</p>
-          <p className="field__description">Shown when nothing more important is happening.</p>
-        </div>
-        <select
-          className="select"
+    <SettingGroup
+      title="Status Island"
+      lede="A small companion that keeps showing what is happening while the main window is in the background."
+    >
+      <SettingRow label="Show the island" description="Only while the main window is not in front.">
+        <Switch
+          label="Show the island"
+          checked={island.enabled}
+          onChange={(enabled) => void setIslandPreferences({ enabled })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Expand for important events"
+        description="Grows for a moment when something needs you, then settles back."
+        muted={off}
+      >
+        <Switch
+          label="Expand for important events"
+          checked={island.autoExpand}
+          onChange={(autoExpand) => void setIslandPreferences({ autoExpand })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Resting widget"
+        description="Shown when nothing more important is happening."
+        muted={off}
+      >
+        <Choice
+          label="Resting island widget"
           value={island.defaultWidget}
-          aria-label="Default island widget"
-          onChange={(event) =>
-            void setIslandPreferences({ defaultWidget: event.target.value as IslandWidgetId })
-          }
-        >
-          {ISLAND_WIDGETS.map((widget) => (
-            <option key={widget.id} value={widget.id}>
-              {widget.label}
-            </option>
-          ))}
-        </select>
-      </div>
+          options={ISLAND_WIDGETS}
+          onChange={(defaultWidget) => void setIslandPreferences({ defaultWidget })}
+        />
+      </SettingRow>
+      <SettingRow
+        label="Position"
+        description={
+          island.dockedEdge
+            ? "Drag it off the edge, or pick a spot here, to free it."
+            : "Drag it to an edge of the screen to dock it there."
+        }
+        muted={off}
+      >
+        <Choice
+          label="Island position"
+          value={island.dockedEdge ? "docked" : island.position}
+          options={placements}
+          onChange={(placement) => {
+            if (placement !== "docked") {
+              void setIslandPreferences({ position: placement, dockedEdge: null, railT: null });
+            }
+          }}
+        />
+      </SettingRow>
 
-      <div className="field">
-        <div>
-          <p className="field__label">Pinned widget</p>
-          <p className="field__description">
-            Automatic lets priority decide what is shown.
-          </p>
-        </div>
-        <select
-          className="select"
-          value={island.pinnedWidget ?? ""}
-          aria-label="Pinned island widget"
-          onChange={(event) =>
-            void setIslandPreferences({
-              pinnedWidget: event.target.value === "" ? null : (event.target.value as IslandWidgetId),
-            })
-          }
+      <SettingDisclosure label="More island options">
+        <SettingRow
+          label="Start with AI Workbench"
+          description="There from launch; hidden while the main window is focused."
+          muted={off}
         >
-          <option value="">Automatic</option>
-          {ISLAND_WIDGETS.map((widget) => (
-            <option key={widget.id} value={widget.id}>
-              {widget.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="field">
-        <div>
-          <p className="field__label">Auto rotate</p>
-          <p className="field__description">Step through the widgets on a timer.</p>
-        </div>
-        <select
-          className="select"
-          value={String(island.autoRotateSeconds)}
-          aria-label="Island auto rotate"
-          onChange={(event) =>
-            void setIslandPreferences({ autoRotateSeconds: Number(event.target.value) })
-          }
+          <Switch
+            label="Start with AI Workbench"
+            checked={island.startWithApp}
+            onChange={(startWithApp) => void setIslandPreferences({ startWithApp })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Stay visible when the window is hidden"
+          description="The agents keep running either way."
+          muted={off}
         >
-          <option value="0">Off</option>
-          <option value="5">5s</option>
-          <option value="10">10s</option>
-          <option value="30">30s</option>
-        </select>
-      </div>
-
-      <div className="field">
-        <div>
-          <p className="field__label">Enabled widgets</p>
-          <p className="field__description">Only these are ever shown.</p>
+          <Switch
+            label="Stay visible when the window is hidden"
+            checked={island.stayVisibleWhenHidden}
+            onChange={(stayVisibleWhenHidden) => void setIslandPreferences({ stayVisibleWhenHidden })}
+          />
+        </SettingRow>
+        <SettingRow label="Always on top" description="Keep it above other windows." muted={off}>
+          <Switch
+            label="Always on top"
+            checked={island.alwaysOnTop}
+            onChange={(alwaysOnTop) => void setIslandPreferences({ alwaysOnTop })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Keep one widget"
+          description="Automatic lets priority decide what is shown."
+          muted={off}
+        >
+          <Choice
+            label="Pinned island widget"
+            value={island.pinnedWidget ?? "automatic"}
+            options={PINNED}
+            onChange={(pinned) =>
+              void setIslandPreferences({ pinnedWidget: pinned === "automatic" ? null : pinned })
+            }
+          />
+        </SettingRow>
+        <SettingRow label="Rotate widgets" description="Step through them on a timer." muted={off}>
+          <Segmented
+            label="Island auto rotate"
+            value={rotateValue(island.autoRotateSeconds)}
+            options={ROTATE}
+            onChange={(seconds) => void setIslandPreferences({ autoRotateSeconds: Number(seconds) })}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Display"
+          description={
+            island.displayId === null
+              ? "Follows the active monitor."
+              : "Kept on the monitor it was dragged to."
+          }
+          muted={off}
+        >
+          <button
+            type="button"
+            className="ghost-button"
+            disabled={island.displayId === null}
+            onClick={() => void setIslandPreferences({ displayId: null })}
+          >
+            Follow active monitor
+          </button>
+        </SettingRow>
+        <div className="setting setting--stacked" data-muted={off || undefined}>
+          <div className="setting__text">
+            <p className="setting__label">Widgets</p>
+            <p className="setting__description">Only these are ever shown.</p>
+          </div>
+          <div className="chip-toggles" role="group" aria-label="Island widgets">
+            {ISLAND_WIDGETS.map((widget) => {
+              const on = island.enabledWidgets.includes(widget.value);
+              return (
+                <button
+                  key={widget.value}
+                  type="button"
+                  className="chip-toggle"
+                  aria-pressed={on}
+                  onClick={() =>
+                    void setIslandPreferences({
+                      enabledWidgets: on
+                        ? island.enabledWidgets.filter((entry) => entry !== widget.value)
+                        : [...island.enabledWidgets, widget.value],
+                    })
+                  }
+                >
+                  {widget.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
-        <div className="scope-toggles">
-          {ISLAND_WIDGETS.map((widget) => (
-            <label className="scope-toggle" key={widget.id}>
-              <input
-                type="checkbox"
-                checked={island.enabledWidgets.includes(widget.id)}
-                onChange={(event) =>
-                  void setIslandPreferences({
-                    enabledWidgets: event.target.checked
-                      ? [...island.enabledWidgets, widget.id]
-                      : island.enabledWidgets.filter((entry) => entry !== widget.id),
-                  })
-                }
-              />
-              <span>{widget.label}</span>
-            </label>
-          ))}
-        </div>
-      </div>
-    </>
+      </SettingDisclosure>
+    </SettingGroup>
   );
 }

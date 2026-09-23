@@ -1,27 +1,24 @@
 import type { JSX } from "react";
+import { Keys, SettingDisclosure } from "./Controls.js";
+
+type Shortcut = readonly [keys: string, action: string];
 
 /**
  * Every keyboard shortcut the application offers, in one place (spec §81).
  * Each entry here must match an implemented handler — no aspirational keys.
+ * Keys are space-separated keycaps.
  */
+const ESSENTIALS: ReadonlyArray<Shortcut> = [
+  ["Ctrl K", "Command palette"],
+  ["Ctrl `", "Workspace panel"],
+  ["Ctrl Shift A", "Chat ⇄ Agents"],
+  ["Esc", "Close palette, popover or panel"],
+];
+
 const SECTIONS: ReadonlyArray<{
   readonly title: string;
-  readonly rows: ReadonlyArray<readonly [keys: string, action: string]>;
+  readonly rows: ReadonlyArray<Shortcut>;
 }> = [
-  {
-    title: "Everywhere",
-    rows: [
-      ["Ctrl/⌘ K", "Command palette"],
-      ["Ctrl/⌘ `", "Workspace panel (terminal, files, changes)"],
-      ["Esc", "Close palette, popover or panel"],
-    ],
-  },
-  {
-    title: "Conversation vs agents",
-    rows: [
-      ["Ctrl/⌘ Shift A", "Flip between clean conversation and agents"],
-    ],
-  },
   {
     title: "Conversation",
     rows: [
@@ -38,10 +35,10 @@ const SECTIONS: ReadonlyArray<{
     ],
   },
   {
-    title: "Tabs (workspace tools, run detail)",
+    title: "Tabs",
     rows: [
       ["← →", "Previous / next tab"],
-      ["Home / End", "First / last tab"],
+      ["Home End", "First / last tab"],
     ],
   },
   {
@@ -55,28 +52,40 @@ const SECTIONS: ReadonlyArray<{
   {
     title: "Terminal",
     rows: [
-      ["Ctrl/⌘ C with selection", "Copy selection"],
-      ["Ctrl/⌘ C without selection", "Interrupt (reaches the program)"],
+      ["Ctrl C", "Copy, when text is selected"],
+      ["Ctrl C", "Interrupt the program, when nothing is selected"],
     ],
   },
 ];
 
+function ShortcutRow({ shortcut }: { readonly shortcut: Shortcut }): JSX.Element {
+  const [keys, action] = shortcut;
+  return (
+    <div className="shortcut">
+      <span className="shortcut__action">{action}</span>
+      <Keys combo={keys} />
+    </div>
+  );
+}
+
 export function KeyboardShortcuts(): JSX.Element {
   return (
-    <section aria-label="Keyboard shortcuts">
-      {SECTIONS.map((section) => (
-        <div key={section.title}>
-          <p className="section__label">{section.title}</p>
-          <dl className="detail-list">
-            {section.rows.map(([keys, action]) => (
-              <div className="detail" key={keys}>
-                <dt className="detail__label">{keys}</dt>
-                <dd className="detail__value">{action}</dd>
-              </div>
+    <>
+      <div className="shortcut-list">
+        {ESSENTIALS.map((shortcut) => (
+          <ShortcutRow key={shortcut[1]} shortcut={shortcut} />
+        ))}
+      </div>
+      <SettingDisclosure label="All shortcuts">
+        {SECTIONS.map((section) => (
+          <div className="shortcut-list" key={section.title}>
+            <p className="shortcut-list__title">{section.title}</p>
+            {section.rows.map((shortcut) => (
+              <ShortcutRow key={shortcut[1]} shortcut={shortcut} />
             ))}
-          </dl>
-        </div>
-      ))}
-    </section>
+          </div>
+        ))}
+      </SettingDisclosure>
+    </>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type JSX } from "react";
 import type { UpdateState } from "@ai-workbench/shared";
 import { describeError, invoke, onAppEvent } from "../lib/client.js";
+import { SettingRow } from "./Controls.js";
 
 interface UpdateSectionProps {
   readonly currentVersion: string | null;
@@ -44,7 +45,8 @@ const DEFAULT_STATUS: UpdateState = {
 };
 
 /**
- * Updates over GitHub Releases. The app only ever checks on its own; the
+ * Updates over GitHub Releases, as rows of the About group. The app only
+ * ever checks on its own; the
  * download and the install each wait for an explicit confirmation here, so
  * there is no silent fetch and no silent restart.
  */
@@ -159,71 +161,53 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Eleme
   };
 
   return (
-    <section>
-      <p className="section__label">Updates</p>
-      <p className="field__description">
-        New versions come from GitHub Releases. The app checks on startup, but
-        nothing is downloaded or installed without your confirmation here.
-      </p>
-
-      <div className="field">
-        <div>
-          <p className="field__label">Current version</p>
-          <p className="field__description">
-            {currentVersion ?? (status.currentVersion || "Unknown")}
-          </p>
-        </div>
+    <>
+      <SettingRow
+        label={`AI Workbench ${currentVersion ?? (status.currentVersion || "")}`.trim()}
+        description={statusText(status)}
+      >
         <button
           type="button"
           className="ghost-button"
-          disabled={busy === true}
+          disabled={busy}
           onClick={handleCheck}
         >
           {status.status === "checking" ? "Checking…" : "Check for updates"}
         </button>
-      </div>
-
-      <div className="field">
-        <div>
-          <p className="field__label">Status</p>
-          <p className="field__description">{statusText(status)}</p>
-        </div>
-      </div>
+      </SettingRow>
 
       {status.status === "available" && status.availableVersion ? (
-        <div className="field">
-          <div>
-            <p className="field__label">Version {status.availableVersion} available</p>
-            {status.releaseNotes ? (
-              <p className="field__description">{status.releaseNotes}</p>
-            ) : null}
-          </div>
+        <SettingRow
+          label={`Version ${status.availableVersion} is available`}
+          description={status.releaseNotes ?? "Nothing is downloaded until you say so."}
+        >
           <button
             type="button"
             className="ghost-button"
-            disabled={busy === true}
+            disabled={busy}
             onClick={handleDownload}
           >
-            Download update
+            Download
           </button>
-        </div>
+        </SettingRow>
       ) : null}
 
       {status.status === "downloaded" ? (
-        <div className="field">
-          <div>
-            <p className="field__label">Ready to install</p>
-            <p className="field__description">
-              The update is downloaded. Installing restarts the app.
-            </p>
-          </div>
-          <button type="button" className="ghost-button" onClick={handleInstall}>
-            Install now &amp; restart
+        <SettingRow
+          label="Ready to install"
+          description="Installing restarts the app."
+        >
+          <button type="button" className="primary-button" onClick={handleInstall}>
+            Install &amp; restart
           </button>
-        </div>
+        </SettingRow>
       ) : null}
 
-      {actionError ? <p className="field__description">{actionError}</p> : null}
-    </section>
+      {actionError ? (
+        <p className="setting__error" role="alert">
+          {actionError}
+        </p>
+      ) : null}
+    </>
   );
 }

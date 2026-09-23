@@ -129,7 +129,7 @@ export function Sidebar({
           title="Search or command (Ctrl+K)"
         >
           <span className="sidebar__search-text">Search or command…</span>
-          <kbd className="kbd">⌘K</kbd>
+          <kbd className="kbd">Ctrl K</kbd>
         </button>
       </div>
 

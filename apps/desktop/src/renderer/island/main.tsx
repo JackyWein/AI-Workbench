@@ -828,7 +828,7 @@ function QuestionCard({
               >
                 <span className="isl__optionlabel">{option.label}</span>
                 {option.hint ? <span className="isl__optionhint">{option.hint}</span> : null}
-                <kbd className="isl__kbd">⌘{index + 1}</kbd>
+                <kbd className="isl__kbd">Ctrl {index + 1}</kbd>
               </button>
             ))}
             {entry.action ? (
