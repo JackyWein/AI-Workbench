@@ -193,6 +193,11 @@ export const ipcContract = {
     input: updateSshConnectionInputSchema,
     output: sshConnectionSchema,
   },
+  /** A private key file, picked in the system's dialog; only its path returns. */
+  "connection.chooseKeyFile": {
+    input: z.void(),
+    output: z.object({ path: z.string().nullable() }),
+  },
   "connection.delete": {
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ deleted: z.boolean() }),

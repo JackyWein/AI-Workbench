@@ -26,6 +26,12 @@ export interface SshTestServerOptions {
    * still recognise it. Omitted, a fresh one is generated.
    */
   readonly hostKey?: string;
+  /**
+   * Public keys (OpenSSH format, as in authorized_keys) that may sign in as
+   * the user, the way sshd checks them: the key must be listed and the
+   * signature over the session must verify.
+   */
+  readonly authorizedKeys?: readonly string[];
 }
 
 export interface SshTestServer {
@@ -60,6 +66,15 @@ export async function startSshTestServer(
   const password = options.password ?? "s3cret";
 
   const hostKey = options.hostKey ?? utils.generateKeyPairSync("ed25519", {}).private;
+  const authorized = (options.authorizedKeys ?? []).map((text) => {
+    const key = utils.parseKey(text);
+    if (key instanceof Error) {
+      throw key;
+    }
+    return key;
+  });
+  const methods: ssh2.AuthenticationType[] =
+    authorized.length > 0 ? ["publickey", "password"] : ["password"];
   let connections = 0;
   const clients = new Set<{ end(): unknown }>();
 
@@ -72,11 +87,27 @@ export async function startSshTestServer(
         ctx.accept();
         return;
       }
+      if (ctx.method === "publickey" && ctx.username === username) {
+        const offered = ctx.key;
+        const known = authorized.find(
+          (key) => key.type === offered.algo && key.getPublicSSH().equals(offered.data),
+        );
+        if (known && !ctx.signature) {
+          // Asked whether this key would do, before signing with it.
+          ctx.accept();
+          return;
+        }
+        if (known && ctx.signature && ctx.blob && known.verify(ctx.blob, ctx.signature, ctx.hashAlgo) === true) {
+          connections += 1;
+          ctx.accept();
+          return;
+        }
+      }
       if (ctx.method === "none") {
-        ctx.reject(["password"], true);
+        ctx.reject(methods, true);
         return;
       }
-      ctx.reject(["password"], false);
+      ctx.reject(methods, false);
     });
 
     client.on("ready", () => {

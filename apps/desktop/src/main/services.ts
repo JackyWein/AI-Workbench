@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { prepareKey } from "@ai-workbench/workspace-ssh";
 import {
   AgentTerminalService,
   EventBus,
@@ -256,6 +257,7 @@ async function createServicesInner(
   connections.useProbe({
     homeDirectory: (connectionId) => access.homeDirectory(connectionId),
     disconnect: (connectionId) => access.disconnect(connectionId),
+    checkKey: (text, passphrase) => prepareKey(text, passphrase),
   });
 
   const workspaces = new WorkspaceManager({

@@ -44,7 +44,7 @@ export function onAppEvent(listener: (event: AppEvent) => void): () => void {
 export function describeError(error: unknown): string {
   if (error instanceof Error) {
     // Electron prefixes IPC rejections with the handler location.
-    return error.message.replace(/^Error invoking remote method '[^']+': /, "");
+    return error.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
   }
   return String(error);
 }

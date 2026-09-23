@@ -51,6 +51,13 @@ export const createSshConnectionInputSchema = z.object({
    * out to the renderer afterwards.
    */
   secret: z.string().max(64 * 1024).optional(),
+  /** Opens an encrypted private key; kept with it in the credential store. */
+  passphrase: z.string().max(1024).optional(),
+  /**
+   * A private key file picked in the system's dialog. The main process reads
+   * it, so the key itself never passes through the window.
+   */
+  keyFile: z.string().min(1).max(4096).optional(),
 });
 export type CreateSshConnectionInput = z.infer<typeof createSshConnectionInputSchema>;
 
@@ -63,6 +70,10 @@ export const updateSshConnectionInputSchema = z.object({
   auth: sshAuthMethodSchema.optional(),
   /** Omitted leaves the stored secret alone; a new one replaces it. */
   secret: z.string().max(64 * 1024).optional(),
+  /** A new passphrase for the stored key, or for a new one given with it. */
+  passphrase: z.string().max(1024).optional(),
+  /** A private key file to read instead of a pasted key. */
+  keyFile: z.string().min(1).max(4096).optional(),
   /**
    * Clears the remembered host key, so the next connection trusts and records
    * whatever the machine offers. This is how a genuinely rebuilt host is

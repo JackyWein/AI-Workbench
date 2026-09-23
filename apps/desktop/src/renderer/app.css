@@ -4098,3 +4098,23 @@ button.sidebar__user[aria-current="true"] {
   outline-offset: 2px;
   border-radius: var(--radius-sm);
 }
+
+/* ------------------------------------------------------- ssh sign-in -- */
+
+.key-file {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.key-file__name {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.setting__description[data-tone="error"] {
+  color: var(--danger, #e5484d);
+}

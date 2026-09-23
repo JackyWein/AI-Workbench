@@ -116,7 +116,7 @@ export class WorkspaceAccess {
     // The secret is resolved here, in the main process, at the moment it is
     // needed. It is never held on the connection record and never travels to
     // the renderer.
-    const secret = await this.#connections.secretFor(connectionId);
+    const { secret, passphrase } = await this.#connections.credentialsFor(connectionId);
     return {
       id: connection.id,
       host: connection.host,
@@ -124,6 +124,7 @@ export class WorkspaceAccess {
       username: connection.username,
       auth: connection.auth,
       secret,
+      passphrase,
       hostKeyFingerprint: connection.hostKeyFingerprint,
     };
   }

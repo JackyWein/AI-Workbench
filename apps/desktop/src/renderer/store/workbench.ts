@@ -310,6 +310,7 @@ interface WorkbenchState {
   saveMcpServer(config: McpServerConfig): Promise<void>;
 
   refreshConnections(): Promise<void>;
+  /** Adds a machine; a refusal (a key that cannot work) comes back as its reason. */
   createConnection(input: {
     name: string;
     host: string;
@@ -317,7 +318,19 @@ interface WorkbenchState {
     username: string;
     auth: "password" | "key" | "agent";
     secret?: string;
-  }): Promise<SshConnection | null>;
+    passphrase?: string;
+    keyFile?: string;
+  }): Promise<{ connection: SshConnection } | { error: string }>;
+  /** Changes how a machine is signed in to; the reason when it is refused. */
+  updateConnectionSignIn(input: {
+    id: string;
+    auth: "password" | "key" | "agent";
+    secret?: string;
+    passphrase?: string;
+    keyFile?: string;
+  }): Promise<{ connection: SshConnection } | { error: string }>;
+  /** A private key file picked in the system's dialog; its path only. */
+  chooseKeyFile(): Promise<string | null>;
   deleteConnection(id: string): Promise<void>;
   testConnection(id: string): Promise<SshConnectionTest | null>;
   forgetConnectionHostKey(id: string): Promise<void>;
@@ -1302,7 +1315,26 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     try {
       const connection = await invoke("connection.create", input);
       await get().refreshConnections();
-      return connection;
+      return { connection };
+    } catch (error) {
+      // Shown in the form it came from, where it can be fixed.
+      return { error: describeError(error) };
+    }
+  },
+
+  async updateConnectionSignIn(input) {
+    try {
+      const connection = await invoke("connection.update", input);
+      await get().refreshConnections();
+      return { connection };
+    } catch (error) {
+      return { error: describeError(error) };
+    }
+  },
+
+  async chooseKeyFile() {
+    try {
+      return (await invoke("connection.chooseKeyFile", undefined)).path;
     } catch (error) {
       set({ error: describeError(error) });
       return null;

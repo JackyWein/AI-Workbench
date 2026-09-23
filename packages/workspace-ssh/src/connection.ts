@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import ssh2 from "ssh2";
 import type { Logger, SshAuthMethod } from "@ai-workbench/shared";
+import { prepareKey } from "./keys.js";
 
 // ssh2 is CommonJS, so its exports are reached through the default import
 // rather than named ones, which an ESM build would not find.
@@ -17,6 +18,8 @@ export interface SshTarget {
   readonly auth: SshAuthMethod;
   /** The password, or the private key, or null for agent authentication. */
   readonly secret: string | null;
+  /** What opens an encrypted private key; null or absent when it has none. */
+  readonly passphrase?: string | null;
   /**
    * The host key this connection is known by, as a SHA-256 fingerprint. Null
    * means nothing is known yet and whatever the machine offers is learned.
@@ -173,6 +176,9 @@ export class SshConnectionPool {
   }
 
   async #open(target: SshTarget): Promise<PooledConnection> {
+    // Settled before anything opens: a key that cannot be read is the
+    // person's to fix, and says so, rather than failing inside the handshake.
+    const auth = authOf(target);
     const client = new Client();
     let offered: string | null = null;
 
@@ -196,7 +202,7 @@ export class SshConnectionPool {
         host: target.host,
         port: target.port,
         username: target.username,
-        ...authOf(target),
+        ...auth,
         readyTimeout: this.#connectTimeoutMs,
         // A workspace is browsed in bursts with long pauses between them, so
         // the connection is kept alive rather than silently dying mid-session.
@@ -299,9 +305,24 @@ export class SshConnectionPool {
   }
 }
 
+/**
+ * Where the SSH agent listens: the socket the environment names, or on
+ * Windows the pipe of the OpenSSH agent that ships with it.
+ */
+export function agentPath(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const socket = env["SSH_AUTH_SOCK"];
+  if (socket) {
+    return socket;
+  }
+  return platform === "win32" ? "\\\\.\\pipe\\openssh-ssh-agent" : null;
+}
+
 function authOf(target: SshTarget): Record<string, unknown> {
   if (target.auth === "agent") {
-    const agent = process.env["SSH_AUTH_SOCK"];
+    const agent = agentPath();
     if (!agent) {
       throw new SshConnectionError(
         "No SSH agent is running, so there is nothing to authenticate with.",
@@ -316,9 +337,17 @@ function authOf(target: SshTarget): Record<string, unknown> {
         : "No private key is stored for this connection.",
     );
   }
-  return target.auth === "password"
-    ? { password: target.secret }
-    : { privateKey: target.secret };
+  if (target.auth === "password") {
+    return { password: target.secret };
+  }
+  const key = prepareKey(target.secret, target.passphrase ?? null);
+  if (!key.ok) {
+    throw new SshConnectionError(key.error);
+  }
+  return {
+    privateKey: key.privateKey,
+    ...(key.encrypted && target.passphrase ? { passphrase: target.passphrase } : {}),
+  };
 }
 
 /** Turns ssh2's terse failures into something a person can act on. */
@@ -327,6 +356,11 @@ function describe(error: Error, target: SshTarget): SshConnectionError {
   if (/All configured authentication methods failed/i.test(message)) {
     return new SshConnectionError(
       `${target.username}@${target.host} rejected the credentials for this connection.`,
+    );
+  }
+  if (/connect ENOENT|agent/i.test(message) && target.auth === "agent") {
+    return new SshConnectionError(
+      "The SSH agent could not be reached. Start it (on Windows: the \"OpenSSH Authentication Agent\" service) and add your key with ssh-add.",
     );
   }
   if (/ECONNREFUSED/i.test(message)) {

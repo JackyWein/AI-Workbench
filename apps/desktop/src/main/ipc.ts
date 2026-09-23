@@ -1,5 +1,6 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
-import { userInfo } from "node:os";
+import { homedir, userInfo } from "node:os";
+import { join } from "node:path";
 import {
   APP_EVENT_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
@@ -207,6 +208,19 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "connection.list": () => services.connections.list(),
     "connection.create": (input) => services.connections.create(input),
     "connection.update": (input) => services.connections.update(input),
+    "connection.chooseKeyFile": async () => {
+      const window = findMainWindow();
+      // Keys live in ~/.ssh on every system that has OpenSSH, Windows too.
+      const options = {
+        title: "Choose a private key",
+        defaultPath: join(homedir(), ".ssh"),
+        properties: ["openFile", "showHiddenFiles"] as ("openFile" | "showHiddenFiles")[],
+      };
+      const result = await (window
+        ? dialog.showOpenDialog(window, options)
+        : dialog.showOpenDialog(options));
+      return { path: result.canceled ? null : (result.filePaths[0] ?? null) };
+    },
     "connection.delete": async (input) => ({
       deleted: await services.connections.delete(input.id),
     }),

@@ -6,6 +6,9 @@ import type { Logger } from "@ai-workbench/shared";
 import type { startSshTestServer as StartSshTestServer } from "@ai-workbench/test-support";
 import type { IslandController } from "./island-controller.js";
 
+/** Opens the stand-in machine's key in the SSH check; nothing real. */
+const CHECK_KEY_PASSPHRASE = "check passphrase";
+
 export interface CheckOutcome {
   readonly name: string;
   readonly passed: boolean;
@@ -2016,6 +2019,7 @@ export async function runStartupCheck(
   // workspace uses. Nothing here is mocked; only the machine is nearby.
   const remoteDirectory = join(dirname(workspaceDirectory), "remote");
   const hostKeyFile = join(dirname(workspaceDirectory), "remote-host-key");
+  const checkKeyFile = join(dirname(workspaceDirectory), "id_check");
   let sshServer: Awaited<ReturnType<typeof StartSshTestServer>> | null = null;
 
   await checkMain("a machine is reachable over SSH", async () => {
@@ -2032,8 +2036,18 @@ export async function runStartupCheck(
     // Loaded only here, so the shipped application does not carry a server
     // it never runs.
     const { startSshTestServer } = await import("@ai-workbench/test-support");
+    // A passphrase-protected key, the way most people's keys are, as a file
+    // on this computer; the machine knows its public half.
+    const { default: ssh2 } = await import("ssh2");
+    const key = ssh2.utils.generateKeyPairSync("ed25519", {
+      passphrase: CHECK_KEY_PASSPHRASE,
+      cipher: "aes256-ctr",
+      rounds: 16,
+    });
+    await writeFile(checkKeyFile, key.private, { mode: 0o600 });
     sshServer = await startSshTestServer({
       directory: remoteDirectory,
+      authorizedKeys: [key.public],
       ...(stored === null ? {} : { hostKey: stored }),
     });
     if (stored === null) {
@@ -2090,6 +2104,34 @@ export async function runStartupCheck(
          return failed.ok === false
            && /rejected the credentials/.test(failed.error ?? '')
            && recovered.ok === true;
+       })()`,
+      30_000,
+    );
+
+    await check(
+      "a key file with a passphrase signs in, and a missing passphrase is named",
+      `(async () => {
+         const api = window.workbench;
+         const input = {
+           name: 'Check key machine',
+           host: ${JSON.stringify(server.host)},
+           port: ${server.port},
+           username: ${JSON.stringify(server.username)},
+           auth: 'key',
+           keyFile: ${JSON.stringify(checkKeyFile)},
+         };
+         const refused = await api.invoke('connection.create', input).then(
+           () => 'created without its passphrase',
+           error => String(error.message ?? error),
+         );
+         if (!/protected by a passphrase/.test(refused)) return 'without passphrase: ' + refused;
+         const connection = await api.invoke('connection.create', {
+           ...input,
+           passphrase: ${JSON.stringify(CHECK_KEY_PASSPHRASE)},
+         });
+         const result = await api.invoke('connection.test', { id: connection.id });
+         await api.invoke('connection.delete', { id: connection.id });
+         return result.ok ? true : 'test failed: ' + result.error;
        })()`,
       30_000,
     );

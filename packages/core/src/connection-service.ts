@@ -1,3 +1,4 @@
+import { readFile, stat } from "node:fs/promises";
 import { eq } from "drizzle-orm";
 import type { Database } from "@ai-workbench/database";
 import { sshConnections, workspaces, type SshConnectionRow } from "@ai-workbench/database";
@@ -32,13 +33,40 @@ export class SshConnectionInUseError extends Error {
   }
 }
 
+export class SshKeyError extends Error {
+  /** The key is fine but locked; the passphrase is what is missing. */
+  readonly needsPassphrase: boolean;
+
+  constructor(message: string, needsPassphrase = false) {
+    super(message);
+    this.name = "SshKeyError";
+    this.needsPassphrase = needsPassphrase;
+  }
+}
+
+/** A key the SSH side can use, or why it cannot. */
+export type SshKeyCheck =
+  | { readonly ok: true; readonly privateKey: string; readonly encrypted: boolean }
+  | { readonly ok: false; readonly error: string; readonly needsPassphrase: boolean };
+
 /** What the service needs from the SSH side, without depending on it. */
 export interface SshProbe {
   /** Opens a connection and answers with the home directory the host resolved. */
   homeDirectory(connectionId: string): Promise<string>;
   /** Closes a connection, so changed settings are picked up next time. */
   disconnect(connectionId: string): void;
+  /** Reads a private key the way the connection will, before it is stored. */
+  checkKey?(text: string, passphrase: string | null): SshKeyCheck;
 }
+
+/** What a connection signs in with, resolved in the main process only. */
+export interface SshCredentials {
+  readonly secret: string | null;
+  readonly passphrase: string | null;
+}
+
+/** The largest private key file read; real ones are a few kilobytes. */
+const MAX_KEY_FILE_BYTES = 64 * 1024;
 
 export interface ConnectionServiceOptions {
   readonly db: Database;
@@ -101,14 +129,15 @@ export class ConnectionService {
 
   async create(input: CreateSshConnectionInput): Promise<SshConnection> {
     const id = createId("conn");
+    const secret = await this.#secretToStore(input.auth, input, null);
     const credentialReference =
-      input.auth === "agent" || !input.secret
+      input.auth === "agent" || secret === null
         ? null
         : (
             await this.#credentials.store({
               label: `${input.username}@${input.host}`,
               kind: input.auth === "password" ? "ssh-password" : "ssh-key",
-              secret: input.secret,
+              secret,
             })
           ).reference;
 
@@ -138,13 +167,25 @@ export class ConnectionService {
     const existing = await this.require(input.id);
 
     let credentialReference = existing.credentialReference;
-    if (input.secret !== undefined && input.secret !== "") {
-      const auth = input.auth ?? existing.auth;
+    const auth = input.auth ?? existing.auth;
+    const stored =
+      existing.credentialReference && auth === existing.auth
+        ? await this.#credentials.resolve(existing.credentialReference)
+        : null;
+    const secret = await this.#secretToStore(auth, input, stored);
+    if (secret === null && auth !== existing.auth && auth !== "agent") {
+      throw new SshKeyError(
+        auth === "password"
+          ? "Give the password to sign in with it."
+          : "Give the private key to sign in with it.",
+      );
+    }
+    if (secret !== null) {
       credentialReference = (
         await this.#credentials.store({
           label: `${input.username ?? existing.username}@${input.host ?? existing.host}`,
           kind: auth === "password" ? "ssh-password" : "ssh-key",
-          secret: input.secret,
+          secret,
           ...(existing.credentialReference
             ? { reference: existing.credentialReference }
             : {}),
@@ -231,13 +272,58 @@ export class ConnectionService {
     return true;
   }
 
-  /** Resolves the secret for the transport. Main process only. */
-  async secretFor(id: string): Promise<string | null> {
+  /** Resolves what the connection signs in with. Main process only. */
+  async credentialsFor(id: string): Promise<SshCredentials> {
     const connection = await this.require(id);
     if (!connection.credentialReference) {
+      return { secret: null, passphrase: null };
+    }
+    const stored = await this.#credentials.resolve(connection.credentialReference);
+    if (stored === null) {
+      return { secret: null, passphrase: null };
+    }
+    return connection.auth === "key" ? decodeKey(stored) : { secret: stored, passphrase: null };
+  }
+
+  /**
+   * What goes into the credential store for a create or an update, or null
+   * when nothing new was given. A private key is read the way the connection
+   * will read it, so a key that cannot work is refused with the reason now —
+   * not discovered as a failed sign-in later.
+   */
+  async #secretToStore(
+    auth: CreateSshConnectionInput["auth"],
+    input: Pick<CreateSshConnectionInput, "secret" | "passphrase" | "keyFile">,
+    stored: string | null,
+  ): Promise<string | null> {
+    if (auth === "agent") {
       return null;
     }
-    return this.#credentials.resolve(connection.credentialReference);
+    if (auth === "password") {
+      return input.secret ? input.secret : null;
+    }
+    const given = input.keyFile ? await readKeyFile(input.keyFile) : input.secret || null;
+    const previous = stored === null ? null : decodeKey(stored);
+    const key = given ?? (input.passphrase !== undefined ? previous?.secret ?? null : null);
+    if (key === null) {
+      return null;
+    }
+    const passphrase =
+      input.passphrase !== undefined && input.passphrase !== ""
+        ? input.passphrase
+        : given === null
+          ? (previous?.passphrase ?? null)
+          : null;
+    const checked = this.#probe?.checkKey?.(key, passphrase);
+    if (checked && !checked.ok) {
+      throw new SshKeyError(checked.error, checked.needsPassphrase);
+    }
+    const privateKey = checked?.ok ? checked.privateKey : key;
+    const keepPassphrase = checked?.ok ? checked.encrypted : passphrase !== null;
+    return JSON.stringify({
+      privateKey,
+      ...(keepPassphrase && passphrase ? { passphrase } : {}),
+    });
   }
 
   /**
@@ -295,4 +381,36 @@ function toConnection(row: SshConnectionRow): SshConnection {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/**
+ * A stored private key, with its passphrase when it has one. Keys stored
+ * before passphrases existed are the bare key text, and still read.
+ */
+function decodeKey(stored: string): SshCredentials {
+  if (stored.trimStart().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(stored) as { privateKey?: unknown; passphrase?: unknown };
+      if (typeof parsed.privateKey === "string") {
+        return {
+          secret: parsed.privateKey,
+          passphrase: typeof parsed.passphrase === "string" ? parsed.passphrase : null,
+        };
+      }
+    } catch {
+      // Not the stored shape: the text itself is the key.
+    }
+  }
+  return { secret: stored, passphrase: null };
+}
+
+async function readKeyFile(path: string): Promise<string> {
+  const info = await stat(path).catch(() => null);
+  if (!info?.isFile()) {
+    throw new SshKeyError("The key file is no longer there.");
+  }
+  if (info.size > MAX_KEY_FILE_BYTES) {
+    throw new SshKeyError("That file is too large to be a private key.");
+  }
+  return readFile(path, "utf8");
 }
