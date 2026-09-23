@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Workbench — Design Proposals v3</title>
+<style>
+/* ============ tokens (project's own) ============ */
+:root {
+  --surface-base: #111215;
+  --surface-raised: #16171b;
+  --surface-overlay: #1c1e23;
+  --surface-sunken: #0c0d0f;
+  --surface-message: #1a1c20;
+  --surface-hover: rgba(255, 255, 255, 0.045);
+  --surface-active: rgba(255, 255, 255, 0.07);
+  --surface-selected: rgba(255, 255, 255, 0.085);
+  --text-primary: #ecedf0;
+  --text-secondary: #a3a7b0;
+  --text-muted: #6b707a;
+  --text-inverted: #121317;
+  --border-subtle: rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --border-focus: #8c9dff;
+  --accent: #8c9dff;
+  --accent-quiet: rgba(140, 157, 255, 0.16);
+  --success: #5fcf95;
+  --warning: #e5b65c;
+  --danger: #ef7b72;
+  --running: #5bc8a7;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 11px;
+  --radius-pill: 999px;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI Variable Text", "Segoe UI", "Roboto", sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--surface-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.55;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv01", "ss03";
+}
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+svg { display: block; }
+
+/* ============ page frame ============ */
+.shell { display: flex; flex-direction: column; height: 100vh; }
+.pagehead {
+  display: flex; align-items: center; gap: 14px;
+  padding: 10px 18px; border-bottom: 1px solid var(--border-subtle);
+  background: var(--surface-sunken);
+}
+.pagehead h1 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.pagehead .meta { font-size: 11px; color: var(--text-muted); }
+.tabbar { display: flex; gap: 2px; background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 2px; }
+.tabbar button {
+  padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 500;
+  color: var(--text-secondary); white-space: nowrap;
+}
+.tabbar button:hover { color: var(--text-primary); }
+.tabbar button[aria-selected="true"] { color: var(--text-primary); background: var(--surface-selected); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.view { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px 56px; }
+.desc { max-width: 1080px; margin: 0 auto 14px; display: flex; gap: 16px; align-items: baseline; }
+.desc h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin: 0; white-space: nowrap; }
+.desc p { color: var(--text-secondary); margin: 0; font-size: 12.5px; max-width: 70ch; }
+.desc p b { color: var(--text-primary); font-weight: 600; }
+kbd {
+  font-family: var(--font-mono); font-size: 10px; padding: 1px 5px;
+  background: var(--surface-active); border: 1px solid var(--border-subtle);
+  border-radius: 4px; color: var(--text-secondary); white-space: nowrap;
+}
+.mock {
+  max-width: 1080px; margin: 0 auto; border: 1px solid var(--border-subtle);
+  border-radius: 12px; overflow: hidden; background: var(--surface-base);
+  box-shadow: 0 24px 64px rgba(0,0,0,.45);
+  height: 600px;
+}
+.notes { max-width: 1080px; margin: 14px auto 0; display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.note { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 13px; background: var(--surface-raised); }
+.note h3 { font-size: 11.5px; font-weight: 600; margin: 0 0 4px; }
+.note p { font-size: 11.5px; color: var(--text-secondary); margin: 0; line-height: 1.55; }
+
+/* ============ shared atoms ============ */
+.ic { display: inline-flex; align-items: center; justify-content: center; flex: none; color: var(--text-muted); }
+.row {
+  display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px;
+  border-radius: 6px; color: var(--text-secondary); font-size: 12.5px; font-weight: 500;
+  white-space: nowrap; width: 100%; text-align: left;
+}
+.row:hover { background: var(--surface-hover); color: var(--text-primary); }
+.row[data-current="true"] { background: var(--surface-selected); color: var(--text-primary); }
+.row .t { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.row .n { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.seclbl {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+  color: var(--text-muted); padding: 12px 8px 4px; display: flex; align-items: center;
+}
+.seclbl .more { margin-left: auto; font-size: 11px; letter-spacing: 0; text-transform: none; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
+.dot.live { background: var(--running); }
+.dot.warn { background: var(--warning); }
+.dot.err { background: var(--danger); }
+.dot.idle { background: var(--text-muted); opacity: .5; }
+.pulse { animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.avatar {
+  width: 20px; height: 20px; border-radius: 50%; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 600; background: var(--surface-active); color: var(--text-secondary);
+}
+.pill {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 500;
+  padding: 2px 8px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle); color: var(--text-secondary); white-space: nowrap;
+}
+.pill.live { color: var(--running); border-color: rgba(91,200,167,.3); background: rgba(91,200,167,.08); }
+.pill.warn { color: var(--warning); border-color: rgba(229,182,92,.3); background: rgba(229,182,92,.08); }
+.pill.acc { color: var(--accent); border-color: rgba(140,157,255,.3); background: var(--accent-quiet); }
+
+/* ================================================================ A */
+.a .mock { display: grid; grid-template-columns: 232px minmax(0,1fr) 248px; }
+/* --- sidebar --- */
+.a .sb { background: var(--surface-sunken); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; }
+.a .appSw { display: flex; align-items: center; gap: 8px; padding: 10px 10px 6px; }
+.a .appSw .mark {
+  width: 22px; height: 22px; border-radius: 6px; flex: none;
+  background: var(--surface-active); border: 1px solid var(--border-subtle);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: var(--text-primary);
+}
+.a .appSw .nm { font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; }
+.a .appSw .ver { font-size: 10px; color: var(--text-muted); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 0 4px; }
+.a .search {
+  margin: 4px 10px 2px; display: flex; align-items: center; gap: 7px;
+  border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-raised);
+  padding: 0 8px; height: 28px; font-size: 12px; color: var(--text-muted);
+}
+.a .search kbd { margin-left: auto; }
+.a .sbnav { flex: 1; overflow: hidden; padding: 0 6px 8px; }
+.a .sbfoot { border-top: 1px solid var(--border-subtle); padding: 8px 10px; display: flex; align-items: center; gap: 8px; }
+.a .sbfoot .who { font-size: 12px; font-weight: 500; }
+.a .sbfoot .plan { font-size: 10.5px; color: var(--text-muted); }
+.a .usage { margin-left: auto; font-size: 10.5px; color: var(--running); font-variant-numeric: tabular-nums; }
+/* --- main --- */
+.a .mn { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.a .crumbs {
+  height: 46px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  border-bottom: 1px solid var(--border-subtle); font-size: 12.5px;
+}
+.a .crumbs .ws { color: var(--text-muted); }
+.a .crumbs .sl { color: var(--border-strong); }
+.a .crumbs .sess { font-weight: 600; letter-spacing: -0.01em; }
+.a .crumbs .right { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+.a .feed { flex: 1; min-height: 0; overflow: hidden; padding: 16px 0 8px; }
+.a .feedin { max-width: 620px; margin: 0 auto; padding: 0 20px; display: flex; flex-direction: column; gap: 16px; }
+.a .day { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: 10.5px; font-weight: 500; }
+.a .day::before, .a .day::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle); }
+.a .msg .meta { display: flex; align-items: baseline; gap: 7px; margin-bottom: 4px; }
+.a .msg .meta .who { font-size: 12px; font-weight: 600; }
+.a .msg .meta time { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.a .msg .body { font-size: 12.5px; color: var(--text-primary); line-height: 1.6; }
+.a .msg .body + .body { margin-top: 6px; }
+.a .usr .bubble {
+  background: var(--surface-message); border: 1px solid var(--border-subtle);
+  border-radius: 4px 12px 12px 12px; padding: 8px 12px; font-size: 12.5px; display: inline-block;
+}
+.a .tool {
+  margin-top: 7px; display: flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px;
+  border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-raised);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); width: 100%; text-align: left;
+}
+.a .tool:hover { border-color: var(--border-strong); }
+.a .tool .ok { margin-left: auto; font-family: var(--font-sans); font-size: 10.5px; color: var(--success); }
+.a .tool .tm { font-family: var(--font-sans); font-size: 10.5px; color: var(--text-muted); }
+.a .code { margin-top: 7px; border: 1px solid var(--border-subtle); border-radius: 8px; overflow: hidden; background: #0d0e11; }
+.a .code .ch { display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-bottom: 1px solid var(--border-subtle); font-family: var(--font-mono); font-size: 10.5px; color: var(--text-secondary); }
+.a .code .ch .cp { margin-left: auto; display: flex; gap: 6px; align-items: center; color: var(--text-muted); font-size: 10.5px; }
+.a .code pre { margin: 0; padding: 9px 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.65; color: #c9d1d9; overflow: hidden; }
+.a .code .k { color: #8c9dff; } .a .code .s { color: #9ece8f; } .a .code .f { color: #7cc7e0; } .a .code .c { color: #6b707a; }
+.a .stream { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-secondary); }
+.a .caret { width: 7px; height: 13px; background: var(--accent); border-radius: 1px; animation: pulse 1s infinite; }
+.a .composer { padding: 10px 14px 12px; }
+.a .cin { max-width: 620px; margin: 0 auto; border: 1px solid var(--border-strong); border-radius: 12px; background: var(--surface-raised); box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+.a .cin .ta { padding: 9px 12px 2px; font-size: 12.5px; color: var(--text-primary); }
+.a .cin .ta .ph { color: var(--text-muted); }
+.a .cin .bar { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px 10px; }
+.a .cin .iconbtn { width: 26px; height: 26px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); border: 1px solid transparent; }
+.a .cin .iconbtn:hover { background: var(--surface-hover); color: var(--text-primary); }
+.a .cin .send {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  background: var(--accent); color: var(--text-inverted); font-size: 12px; font-weight: 600;
+  border-radius: 7px; padding: 5px 12px;
+}
+.a .cin .hint { text-align: center; font-size: 10px; color: var(--text-muted); padding: 0 0 7px; }
+/* --- context panel --- */
+.a .cx { border-left: 1px solid var(--border-subtle); background: var(--surface-sunken); overflow: hidden; padding: 12px 12px; display: flex; flex-direction: column; gap: 2px; }
+.a .cx h4 { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); margin: 10px 0 6px; }
+.a .cx h4:first-child { margin-top: 0; }
+.a .prop { display: flex; align-items: center; gap: 8px; min-height: 26px; font-size: 12px; }
+.a .prop .k { color: var(--text-muted); width: 86px; flex: none; }
+.a .prop .v { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.a .ctxbar { height: 4px; border-radius: var(--radius-pill); background: var(--surface-active); overflow: hidden; margin-top: 6px; }
+.a .ctxbar i { display: block; height: 100%; width: 34%; background: var(--accent); border-radius: inherit; }
+.a .chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-raised); border: 1px solid var(--border-subtle); color: var(--text-secondary); margin: 0 4px 4px 0; }
+.a .mcp { display: flex; align-items: center; gap: 7px; font-size: 12px; padding: 3px 0; color: var(--text-secondary); }
+.a .mcp .st { margin-left: auto; font-size: 10px; color: var(--success); }
+.a .cx .actions { margin-top: auto; display: flex; gap: 6px; padding-top: 10px; }
+.a .btn-ghost { flex: 1; border: 1px solid var(--border-subtle); border-radius: 7px; padding: 5px 0; font-size: 11.5px; font-weight: 500; color: var(--text-secondary); background: var(--surface-raised); }
+.a .btn-ghost:hover { color: var(--text-primary); border-color: var(--border-strong); }
+/* --- v3 polish: line numbers, message actions, attach chip, switches --- */
+.a .code pre { counter-reset: ln; }
+.a .code .l { display: block; padding-left: 30px; position: relative; }
+.a .code .l::before { counter-increment: ln; content: counter(ln); position: absolute; left: 0; width: 20px; text-align: right; color: #4b505a; user-select: none; }
+.a .msgactions { display: flex; align-items: center; gap: 2px; margin-top: 5px; opacity: .55; }
+.a .msgactions:hover { opacity: 1; }
+.a .msgactions button { width: 24px; height: 24px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-muted); }
+.a .msgactions button:hover { background: var(--surface-hover); color: var(--text-primary); }
+.a .attach { display: flex; align-items: center; gap: 6px; padding: 8px 12px 0; }
+.a .attchip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 10.5px; color: var(--accent); background: var(--accent-quiet); border: 1px solid rgba(140,157,255,.3); border-radius: 6px; padding: 2px 4px 2px 8px; }
+.a .attchip button { color: var(--accent); font-size: 12px; line-height: 1; padding: 0 4px; border-radius: 4px; }
+.a .attchip button:hover { background: rgba(140,157,255,.2); }
+.a .attachint { font-size: 10.5px; color: var(--text-muted); }
+.row .n.hot { color: var(--warning); background: rgba(229,182,92,.12); border-radius: 4px; padding: 0 5px; }
+.a .sw { margin-left: auto; width: 24px; height: 14px; border-radius: 99px; background: var(--surface-active); position: relative; flex: none; }
+.a .sw i { position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--text-muted); }
+.a .sw.on { background: rgba(91,200,167,.28); }
+.a .sw.on i { left: 12px; background: var(--running); }
+.a .stopchip { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 500; color: var(--text-secondary); border: 1px solid var(--border-subtle); border-radius: 6px; padding: 2px 9px; background: var(--surface-raised); }
+.a .stopchip:hover { color: var(--danger); border-color: rgba(239,123,114,.4); }
+
+/* ================================================================ B */
+.b .mock { display: grid; grid-template-columns: 232px minmax(0,1fr); }
+.b .sb { background: var(--surface-sunken); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; }
+.b .sbhead { padding: 12px 12px 2px; font-size: 13px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; }
+.b .sbhead .cnt { margin-left: auto; font-size: 10.5px; color: var(--text-muted); background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: var(--radius-pill); padding: 0 7px; font-variant-numeric: tabular-nums; }
+.b .filter { margin: 8px 10px 2px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-raised); padding: 0 8px; height: 28px; font-size: 12px; color: var(--text-muted); }
+.b .filter kbd { margin-left: auto; }
+.b .sbnav { flex: 1; overflow: hidden; padding: 0 6px 6px; }
+.b .runrow { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; width: 100%; text-align: left; }
+.b .runrow:hover { background: var(--surface-hover); }
+.b .runrow[data-current="true"] { background: var(--surface-selected); }
+.b .av { width: 22px; height: 22px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; background: var(--surface-active); border: 1px solid var(--border-subtle); color: var(--text-secondary); letter-spacing: .02em; }
+.b .av svg { width: 13px; height: 13px; display: block; }
+.b .runrow .nm { font-size: 12.5px; font-weight: 500; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b .runrow .sub { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b .runrow .txt { min-width: 0; flex: 1; }
+.b .badge { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--radius-pill); background: var(--surface-active); color: var(--text-secondary); font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; font-variant-numeric: tabular-nums; }
+.b .badge.hot { background: rgba(229,182,92,.16); color: var(--warning); }
+.b .spawn { margin: 8px 10px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; padding: 7px 0; font-size: 12px; font-weight: 500; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; gap: 6px; }
+.b .spawn:hover { color: var(--text-primary); border-color: var(--accent); }
+.b .mn { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.b .topbar { height: 46px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-bottom: 1px solid var(--border-subtle); }
+.b .topbar .title { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; }
+.b .topbar .sub { font-size: 11.5px; color: var(--text-muted); }
+.b .seg { margin-left: auto; display: inline-flex; padding: 2px; gap: 2px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: 8px; }
+.b .seg button { padding: 3px 12px; font-size: 11.5px; font-weight: 500; color: var(--text-secondary); border-radius: 6px; }
+.b .seg button[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-raised); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.b .newbtn { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--text-inverted); font-size: 12px; font-weight: 600; border-radius: 7px; padding: 5px 12px; }
+.b .grid { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; padding: 12px 14px; }
+.b .tile { border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; min-height: 0; overflow: hidden; transition: border-color .12s ease; }
+.b .tile:hover { border-color: var(--border-strong); }
+.b .tile[data-current="true"] { border-color: rgba(140,157,255,.45); box-shadow: 0 0 0 1px rgba(140,157,255,.12), 0 10px 28px rgba(0,0,0,.35); }
+.b .tile.feat { border-color: rgba(229,182,92,.5); box-shadow: 0 0 0 1px rgba(229,182,92,.14), 0 10px 28px rgba(0,0,0,.35); }
+.b .tile .th { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-bottom: 1px solid var(--border-subtle); }
+.b .tile .th .nm { font-size: 12px; font-weight: 600; }
+.b .tile .th .el { margin-left: auto; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.b .tile .tb { position: relative; flex: 1; min-height: 0; overflow: hidden; margin: 8px 10px 0; padding: 8px 11px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.7; color: var(--text-secondary); background: #0d0e11; border: 1px solid var(--border-subtle); border-radius: 8px; -webkit-mask-image: linear-gradient(180deg,#000 62%,transparent 98%); mask-image: linear-gradient(180deg,#000 62%,transparent 98%); }
+.b .tile .tb .ln { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b .tile .tb .ok { color: var(--success); } .b .tile .tb .wr { color: var(--warning); } .b .tile .tb .ac { color: var(--accent); }
+.b .tile .tasks { margin: 8px 10px 0; padding: 9px 11px; display: flex; flex-direction: column; gap: 6px; background: #0d0e11; border: 1px solid var(--border-subtle); border-radius: 8px; flex: 1; min-height: 0; overflow: hidden; }
+.b .tile .tk { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary); }
+.b .tile .tk .box { width: 13px; height: 13px; border-radius: 4px; border: 1px solid var(--border-strong); flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; line-height: 1; }
+.b .tile .tk.done { color: var(--text-muted); text-decoration: line-through; }
+.b .tile .tk.done .box { background: rgba(91,200,167,.16); border-color: rgba(91,200,167,.5); color: var(--running); }
+.b .tile .tk.run .box { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(140,157,255,.25); }
+.b .tile .tk.blocked .box { border-color: var(--warning); color: var(--warning); }
+.b .tile .tk .who2 { margin-left: auto; font-size: 10px; color: var(--text-muted); text-decoration: none; }
+.b .tile .tf { padding: 8px 11px; border-top: 1px solid var(--border-subtle); }
+.b .tile .tf .task { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; }
+.b .tile .tf .segbar { display: flex; gap: 2px; height: 3px; }
+.b .tile .tf .segbar i { display: block; height: 100%; border-radius: 2px; background: var(--surface-active); }
+.b .tile .tf .segbar i.d { background: var(--running); }
+.b .tile .tf .segbar i.b { background: var(--warning); }
+.b .tile .decide { display: flex; align-items: center; gap: 7px; }
+.b .tile .decide .q { font-size: 11px; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b .btn-approve { background: var(--warning); color: #221a08; font-size: 11px; font-weight: 600; border-radius: 6px; padding: 4px 11px; }
+.b .btn-approve:hover { filter: brightness(1.07); }
+.b .btn-dismiss { border: 1px solid var(--border-subtle); color: var(--text-secondary); font-size: 11px; font-weight: 500; border-radius: 6px; padding: 4px 11px; background: var(--surface-raised); }
+.b .btn-dismiss:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.b .stack { display: flex; align-items: center; flex: none; }
+.b .stack .avatar { width: 20px; height: 20px; font-size: 8px; background: var(--surface-active); color: var(--text-secondary); border: 2px solid var(--surface-raised); margin-left: -7px; }
+.b .stack .avatar:first-child { margin-left: 0; }
+
+/* ================================================================ C */
+.c .mock { position: relative; display: block; overflow: hidden; }
+.c .bg { position: absolute; inset: 0; display: grid; grid-template-columns: 200px minmax(0,1fr) 200px; filter: blur(8px) brightness(.5) saturate(.85); pointer-events: none; }
+.c .bsb { background: var(--surface-sunken); border-right: 1px solid var(--border-subtle); padding: 12px 10px; }
+.c .bapp { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; margin-bottom: 8px; white-space: nowrap; }
+.c .bmark { width: 20px; height: 20px; border-radius: 6px; background: var(--surface-active); border: 1px solid var(--border-subtle); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: var(--text-primary); flex: none; }
+.c .blbl { font-size: 9px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); padding: 10px 6px 3px; }
+.c .brow { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; }
+.c .brow.on { background: var(--surface-selected); color: var(--text-primary); }
+.c .bdot { width: 6px; height: 6px; border-radius: 50%; background: var(--running); flex: none; }
+.c .bdot.w { background: var(--warning); }
+.c .bmn { padding: 14px 26px 12px; display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.c .bcrumb { font-size: 11.5px; color: var(--text-secondary); margin: 0 -26px; padding: 0 26px 12px; border-bottom: 1px solid var(--border-subtle); white-space: nowrap; }
+.c .bmsg { height: 11px; border-radius: 6px; background: var(--surface-active); }
+.c .bmsg.usr { align-self: flex-end; background: var(--surface-message); border: 1px solid var(--border-subtle); height: 30px; border-radius: 4px 10px 10px 10px; }
+.c .bcode { border: 1px solid var(--border-subtle); border-radius: 8px; overflow: hidden; }
+.c .bcode .bh { height: 22px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-raised); }
+.c .bcomp { margin-top: auto; height: 62px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--surface-raised); }
+.c .bcx { background: var(--surface-sunken); border-left: 1px solid var(--border-subtle); padding: 14px 12px; display: flex; flex-direction: column; gap: 8px; }
+.c .bprop { height: 11px; border-radius: 5px; background: var(--surface-active); }
+.c .scrim { position: absolute; inset: 0; background: rgba(8,9,11,.5); }
+.c .pal {
+  position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
+  width: 600px; border: 1px solid var(--border-strong); border-radius: 14px; overflow: hidden;
+  background: rgba(26,28,33,.94); backdrop-filter: blur(24px);
+  box-shadow: 0 40px 96px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.06);
+}
+.c .in { display: flex; align-items: center; gap: 10px; padding: 13px 15px; border-bottom: 1px solid var(--border-subtle); }
+.c .in .q { flex: 1; font-size: 14.5px; color: var(--text-primary); }
+.c .caret2 { display: inline-block; width: 8px; height: 15px; background: var(--accent); border-radius: 1px; vertical-align: -2px; animation: pulse 1s infinite; }
+.c .grp { padding: 8px 14px 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); display: flex; }
+.c .grp .c2 { margin-left: auto; letter-spacing: 0; }
+.c .res { display: flex; align-items: center; gap: 10px; padding: 0 8px; margin: 0 6px; height: 38px; border-radius: 8px; font-size: 12.5px; color: var(--text-secondary); }
+.c .res .ric { width: 26px; height: 26px; border-radius: 7px; background: var(--surface-active); display: inline-flex; align-items: center; justify-content: center; color: var(--text-secondary); flex: none; font-size: 9px; font-weight: 700; }
+.c .res .ric svg { width: 14px; height: 14px; display: block; }
+.c .res .rm svg { display: block; }
+.c .res .rt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c .res .rt .sub2 { color: var(--text-muted); font-size: 11.5px; }
+.c .res .rm { font-size: 10.5px; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.c .res.sel { background: var(--accent-quiet); color: var(--text-primary); }
+.c .res.sel .ric { background: rgba(140,157,255,.22); color: var(--accent); }
+.c mark { background: none; color: var(--accent); font-weight: 600; }
+.c .res.sel mark { color: #c3cbff; }
+.c .ft { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--border-subtle); font-size: 10.5px; color: var(--text-muted); }
+.c .ft .sp { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.c .ft .lg { width: 16px; height: 16px; border-radius: 4px; background: var(--surface-active); border: 1px solid var(--border-subtle); display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="pagehead">
+    <h1>AI Workbench — Design Proposals v3</h1>
+    <span class="meta">A approved · B + C redesigned · A polished</span>
+    <a href="views.html" style="font-size:12px;color:var(--text-secondary);text-decoration:none;border:1px solid var(--border-subtle);border-radius:7px;padding:3px 10px;background:var(--surface-raised)">All views in A's language →</a>
+    <nav class="tabbar" aria-label="proposals">
+      <button data-view="a" aria-selected="true">A · Quiet Console</button>
+      <button data-view="b" aria-selected="false">B · Agent Deck</button>
+      <button data-view="c" aria-selected="false">C · Command-First</button>
+    </nav>
+  </header>
+
+  <!-- ================= A · QUIET CONSOLE ================= -->
+  <section class="view a" data-view="a">
+    <div class="desc">
+      <h2>A — Quiet Console</h2>
+      <p><b>Linear-grade refinement of today's shell.</b> 232px sidebar with app switcher + <kbd>⌘K</kbd> search,
+      48px breadcrumb header, document chat with code block + collapsed tool rows, floating composer,
+      248px property panel (context meter, skills, MCP). One accent, hairlines, tabular numbers.</p>
+    </div>
+    <div class="mock">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row" data-current="true"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">Home Assistant</span></button>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">Minecraft</span></button>
+          <div class="seclbl">Sessions<span class="more">+</span></div>
+          <button class="row" data-current="true"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <button class="row"><span class="dot live"></span><span class="t">Team · auth refactor</span><span class="n hot">3</span></button>
+          <button class="row"><span class="dot warn"></span><span class="t">Opencode · review</span><span class="n hot">1</span></button>
+          <button class="row"><span class="dot idle"></span><span class="t">Codex · changelog</span></button>
+          <div class="seclbl">Library</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn">
+        <div class="crumbs">
+          <span class="ws">AI-Workbench</span><span class="sl">/</span><span class="sess">Claude Code · Arbeit</span>
+          <span class="right">
+            <span class="pill"><span class="dot live"></span>main · clean</span>
+            <span class="pill acc">Sonnet 4.5 ▾</span>
+            <span class="pill">68% left</span>
+          </span>
+        </div>
+        <div class="feed"><div class="feedin">
+          <div class="day">Today</div>
+          <div class="msg usr"><div class="meta"><span class="who">You</span><time>09:41</time></div><span class="bubble">Refactor the provider registry to capability-based discovery — no provider branches in core.</span></div>
+          <div class="msg">
+            <div class="meta"><span class="who">Claude</span><time>09:42</time></div>
+            <div class="body">Done. Discovery queries the capability index; identity stays in profile metadata. Registry tests updated — 287 pass, no <span style="font-family:var(--font-mono);font-size:11.5px">providerId</span> branches remain in core.</div>
+            <button class="tool"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg>edit&nbsp;&nbsp;registry.ts&nbsp;+42&nbsp;−18<span class="ok">✓ done</span><span class="tm">1.2s</span></button>
+            <div class="code"><div class="ch"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m8 8-4 4 4 4M16 8l4 4-4 4"/></svg>registry.ts<span class="cp"><span>diff</span><span>copy</span></span></div><pre><span class="l"><span class="c">// before</span></span>
+<span class="l"><span class="k">if</span> (providerId === <span class="s">'claude'</span>) { … }</span>
+<span class="l"> </span>
+<span class="l"><span class="c">// after</span></span>
+<span class="l"><span class="k">const</span> <span class="f">caps</span> = registry.<span class="f">capabilities</span>(id);</span>
+<span class="l"><span class="k">if</span> (caps.<span class="f">has</span>(<span class="s">'sessionResume'</span>)) { … }</span></pre></div>
+            <div class="msgactions">
+              <button title="Copy" aria-label="Copy"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
+              <button title="Retry" aria-label="Retry"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg></button>
+              <button title="Branch off" aria-label="Branch off"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M18 10.5c0 4-6 3-9 5"/></svg></button>
+            </div>
+          </div>
+          <div class="msg"><div class="meta"><span class="who">Claude</span><time>09:43</time></div><div class="stream"><span class="caret"></span>Running typecheck on the touched packages…<button class="stopchip">■ Stop</button></div></div>
+        </div></div>
+        <div class="composer"><div class="cin">
+          <div class="attach"><span class="attchip">registry.ts<button aria-label="Remove attachment">×</button></span><span class="attachint">@ to attach · / for commands</span></div>
+          <div class="ta"><span class="ph">Reply…</span></div>
+          <div class="bar">
+            <span class="iconbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 5v14M5 12h14"/></svg></span>
+            <span class="iconbtn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 12h8M8 8h8M8 16h5"/></svg></span>
+            <span class="pill">Sonnet 4.5 ▾</span>
+            <button class="send">Send <kbd style="background:rgba(0,0,0,.2);border:none;color:inherit">↵</kbd></button>
+          </div>
+          <div class="hint">Enter to send · Shift+Enter newline · Esc stops the run</div>
+        </div></div>
+      </section>
+      <aside class="cx">
+        <h4>Session</h4>
+        <div class="prop"><span class="k">Status</span><span class="v"><span class="pill live"><span class="dot live"></span>Working</span></span></div>
+        <div class="prop"><span class="k">Provider</span><span class="v">Claude Code</span></div>
+        <div class="prop"><span class="k">Model</span><span class="v">Sonnet 4.5</span></div>
+        <div class="prop"><span class="k">Branch</span><span class="v">main · clean</span></div>
+        <h4>Context</h4>
+        <div class="prop"><span class="k">Used</span><span class="v">68k of 200k · 34%</span></div>
+        <div class="ctxbar"><i></i></div>
+        <h4>Skills</h4>
+        <div><span class="chip">typescript-strict</span><span class="chip">code-review</span></div>
+        <h4>MCP</h4>
+        <div class="mcp"><span class="dot live"></span>team-bridge<span class="sw on"><i></i></span></div>
+        <div class="mcp"><span class="dot live"></span>filesystem<span class="sw on"><i></i></span></div>
+        <div class="mcp"><span class="dot idle"></span>github<span class="sw"><i></i></span></div>
+        <div class="actions"><button class="btn-ghost">Interrupt</button><button class="btn-ghost">Resume</button></div>
+      </aside>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Why it feels premium</h3><p>28px rows, icon-label alignment, app switcher + ⌘K search, unread counts, tabular numbers, user card with usage — the Linear sidebar grammar.</p></div>
+      <div class="note"><h3>Chat as document</h3><p>Assistant = prose with timestamps; code block has line numbers + copy; tool calls collapse to one mono row. Hover actions (copy/retry/branch) stay faint until needed. Streaming = caret + Stop chip.</p></div>
+      <div class="note"><h3>Property panel</h3><p>Label/value rows, thin context meter, skill chips, MCP mini-switches instead of dots. Amber badges in the sidebar mark what needs you — muted counts stay quiet.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= B · AGENT DECK ================= -->
+  <section class="view b" data-view="b" hidden>
+    <div class="desc">
+      <h2>B — Agent Deck</h2>
+      <p><b>Cursor 3 / Claude Code desktop grammar, differentiated:</b> filterable agent rail with provider
+      avatars + badges, solo tiles with fade-masked terminal previews, a team tile with a real task list,
+      and an approval tile with inline Approve/Dismiss. Tiles are enter-only — chat opens on click.</p>
+    </div>
+    <div class="mock">
+      <aside class="sb">
+        <div class="sbhead">Agents<span class="cnt">4 live</span></div>
+        <div class="filter"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Filter agents…<kbd>⌘F</kbd></div>
+        <div class="sbnav">
+          <button class="runrow" data-current="true"><span class="av"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="txt"><div class="nm">Claude Code · Arbeit</div><div class="sub">editing registry.ts · 04:12</div></span><span class="badge">12</span></button>
+          <button class="runrow"><span class="av">TM</span><span class="txt"><div class="nm">Auth refactor · team</div><div class="sub">2 running · 1 blocked</div></span><span class="badge">3</span></button>
+          <button class="runrow"><span class="av"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span><span class="txt"><div class="nm">Opencode · review</div><div class="sub">needs approval · 00:58</div></span><span class="badge hot">1</span></button>
+          <button class="runrow"><span class="av"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="txt"><div class="nm">Codex · changelog</div><div class="sub">writing · 01:03</div></span></button>
+          <div class="seclbl">Idle workspaces</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">Home Assistant</span></button>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">Minecraft</span></button>
+        </div>
+        <button class="spawn">+ Spawn agent</button>
+      </aside>
+      <section class="mn">
+        <div class="topbar"><span class="title">Agent Deck</span><span class="sub">AI-Workbench · 1 needs you</span>
+          <span class="seg"><button aria-pressed="true">Grid</button><button aria-pressed="false">Focus</button></span>
+          <button class="newbtn">+ Spawn</button>
+        </div>
+        <div class="grid">
+          <div class="tile" data-current="true">
+            <div class="th"><span class="av"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="pill live"><span class="dot live"></span>LIVE</span><span class="el">04:12</span></div>
+            <div class="tb"><div class="ln">$ claude --model sonnet</div><div class="ln">registry.ts edited · +42 −18</div><div class="ln"><span class="ok">✓ 287 passed</span> in 1.2s</div><div class="ln">$ pnpm typecheck…</div></div>
+            <div class="tf"><div class="task">Capability-based discovery · no provider branches</div><div class="segbar"><i class="d" style="flex:7"></i><i style="flex:2"></i><i style="flex:1"></i></div></div>
+          </div>
+          <div class="tile">
+            <div class="th"><span class="stack"><span class="avatar">C</span><span class="avatar">G</span><span class="avatar">X</span></span><span class="nm">Auth refactor</span><span class="pill acc">TEAM · 3</span><span class="el">11:47</span></div>
+            <div class="tasks">
+              <div class="tk done"><span class="box">✓</span>Token audit<span class="who2">gemini</span></div>
+              <div class="tk done"><span class="box">✓</span>Credential plumbing<span class="who2">claude</span></div>
+              <div class="tk run"><span class="box"></span>UI polish pass<span class="who2">codex</span></div>
+              <div class="tk blocked"><span class="box">!</span>Secret-service round trip<span class="who2">needs desktop</span></div>
+            </div>
+            <div class="tf"><div class="task">6/9 tasks · 1 blocked · lead: claude</div><div class="segbar"><i class="d" style="flex:6"></i><i class="b" style="flex:1"></i><i style="flex:2"></i></div></div>
+          </div>
+          <div class="tile feat">
+            <div class="th"><span class="av"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span><span class="nm">Opencode</span><span class="pill warn">NEEDS YOU</span><span class="el">00:58</span></div>
+            <div class="tb"><div class="ln">$ opencode review</div><div class="ln"><span class="wr">!</span> permission: write · 2 files</div><div class="ln">waiting 00:58…</div></div>
+            <div class="tf"><div class="decide"><span class="q">Allow write to 2 files?</span><button class="btn-dismiss">Dismiss</button><button class="btn-approve">Approve</button></div></div>
+          </div>
+          <div class="tile">
+            <div class="th"><span class="av"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex</span><span class="pill live"><span class="dot live"></span>LIVE</span><span class="el">01:03</span></div>
+            <div class="tb"><div class="ln">$ codex exec "release notes"</div><div class="ln">reading CHANGELOG · 14 commits</div><div class="ln">drafting v0.0.2…</div></div>
+            <div class="tf"><div class="task">changelog · drafting</div><div class="segbar"><i class="d" style="flex:3.5"></i><i style="flex:6.5"></i></div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Identity, not boxes</h3><p>Provider avatar chips in rail + tiles, unread badges (amber when action is needed), filter with ⌘F. You can tell the four agents apart at a glance.</p></div>
+      <div class="note"><h3>Tiles carry their kind</h3><p>Solos show fade-masked terminal output; the team shows a task checklist with owners + blocked state; approval shows a diffstat with inline Approve/Dismiss. Segmented bars encode done/blocked/rest.</p></div>
+      <div class="note"><h3>Same model as Island</h3><p>Running list, dots, pills mirror the Status Island exactly — one mental model, two surfaces.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= C · COMMAND-FIRST ================= -->
+  <section class="view c" data-view="c" hidden>
+    <div class="desc">
+      <h2>C — Command-First</h2>
+      <p><b>Raycast grammar, grounded:</b> the actual console (design A) sits dimmed + blurred behind the scrim,
+      one 600px omnibar with a live caret, match-highlighted results, and a key-hint footer. Boot-optional, always one <kbd>⌘K</kbd> away.</p>
+    </div>
+    <div class="mock">
+      <div class="bg">
+        <div class="bsb">
+          <div class="bapp"><span class="bmark">W</span>AI Workbench</div>
+          <div class="blbl">Workspace</div>
+          <div class="brow on">AI-Workbench</div>
+          <div class="brow">Home Assistant</div>
+          <div class="blbl">Sessions</div>
+          <div class="brow on"><span class="bdot"></span>Claude Code · Arbeit</div>
+          <div class="brow"><span class="bdot"></span>Team · auth refactor</div>
+          <div class="brow"><span class="bdot w"></span>Opencode · review</div>
+        </div>
+        <div class="bmn">
+          <div class="bcrumb">AI-Workbench&ensp;/&ensp;Claude Code · Arbeit</div>
+          <div class="bmsg usr" style="width:58%"></div>
+          <div class="bmsg" style="width:92%"></div>
+          <div class="bmsg" style="width:78%"></div>
+          <div class="bcode"><div class="bh"></div><div class="bmsg" style="width:64%;margin:9px 12px 5px"></div><div class="bmsg" style="width:48%;margin:0 12px 9px"></div></div>
+          <div class="bcomp"></div>
+        </div>
+        <div class="bcx">
+          <div class="bprop" style="width:70%"></div>
+          <div class="bprop" style="width:90%"></div>
+          <div class="bprop" style="width:55%"></div>
+          <div class="bprop" style="width:80%"></div>
+          <div class="bprop" style="width:62%"></div>
+        </div>
+      </div>
+      <div class="scrim"></div>
+      <div class="pal">
+        <div class="in"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-muted)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="q">code<span class="caret2"></span></span><kbd>esc</kbd></div>
+        <div class="grp">Sessions<span class="c2">2</span></div>
+        <div class="res sel"><span class="ric" style="background:rgba(140,157,255,.22);color:var(--accent)">CC</span><span class="rt">Claude <mark>Code</mark> · Arbeit <span class="sub2">— editing registry.ts</span></span><span class="dot live"></span><span class="rm"><kbd>↵</kbd></span></div>
+        <div class="res"><span class="ric"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="rt"><mark>Code</mark>x · changelog <span class="sub2">— drafting release notes</span></span><span class="dot live"></span><span class="rm"><kbd>↵</kbd></span></div>
+        <div class="grp">Providers<span class="c2">1</span></div>
+        <div class="res"><span class="ric"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span><span class="rt">Open<mark>code</mark> <span class="sub2">— 42 models · connected</span></span><span class="dot live"></span><span class="rm"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></div>
+        <div class="grp">Commands</div>
+        <div class="res"><span class="ric"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 5v14M5 12h14"/></svg></span><span class="rt">New session <span class="sub2">— in AI-Workbench</span></span><span class="rm"><kbd>⌘N</kbd></span></div>
+        <div class="res"><span class="ric"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7 7 0 0 0-2-1.2L14 3h-4l-.5 2.6a7 7 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6A7 7 0 0 0 5 12c0 .4 0 .8.1 1.2l-2 1.6 2 3.4 2.4-1a7 7 0 0 0 2 1.2L10 21h4l.5-2.6a7 7 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z"/></svg></span><span class="rt">Connect provider…</span><span class="rm">settings</span></div>
+        <div class="ft"><span><kbd>↑↓</kbd> navigate</span><span><kbd>↵</kbd> open</span><span><kbd>esc</kbd> dismiss</span><span class="sp"><span class="lg">W</span>AI Workbench</span></div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Grounded, not floating</h3><p>The backdrop is design A itself — real rows, real chat rhythm, code block, composer — dimmed and blurred. The palette reads as a layer over the app, not a dialog from nowhere.</p></div>
+      <div class="note"><h3>Typing state</h3><p>Live caret, query "code" with match highlighting in accent, group counts, per-row ⌘/→ hints. Ranking is still the real work: session &gt; provider &gt; command.</p></div>
+      <div class="note"><h3>Contained risk</h3><p>Blur + 14px radius exist only on this overlay (§71-legal). Nothing else in the app changes; boot-to-palette stays a toggle.</p></div>
+    </div>
+  </section>
+</div>
+<script>
+for (const btn of document.querySelectorAll('.tabbar button')) {
+  btn.addEventListener('click', () => {
+    const view = btn.dataset.view;
+    document.querySelectorAll('.tabbar button').forEach((b) => b.setAttribute('aria-selected', b === btn ? 'true' : 'false'));
+    document.querySelectorAll('section.view').forEach((s) => { s.hidden = s.dataset.view !== view; });
+  });
+}
+</script>
+</body>
+</html>

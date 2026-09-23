@@ -4,6 +4,7 @@ import type {
   PermissionMode,
   ProviderCapabilities,
   ProviderConfig,
+  TerminalMetrics,
 } from "@ai-workbench/shared";
 
 /** Runtime services an adapter is given at initialization. */
@@ -113,6 +114,25 @@ export interface InteractiveLaunchRequest {
   readonly permissionMode?: PermissionMode;
   readonly systemInstructions?: string;
   readonly toolAccess?: ProviderToolAccess;
+  /**
+   * Identifies this one run, so a tool's own session record can be told
+   * apart from other runs in the same directory. Stable for the run only.
+   */
+  readonly runId?: string;
+  /** When the run starts; records older than this belong to other runs. */
+  readonly startedAt?: Date;
+}
+
+/**
+ * Follows what the tool reports about one interactive run: session time,
+ * tokens, cost, context and account limits (spec §55). Watching must never
+ * throw and never block; a tool that says nothing simply never calls back.
+ */
+export interface InteractiveTelemetry {
+  /** Where the numbers come from, e.g. "Claude Code status line". */
+  readonly source: string;
+  /** Starts watching; the returned function stops it and frees everything. */
+  watch(onMetrics: (metrics: TerminalMetrics) => void): () => void;
 }
 
 export interface InteractiveLaunch {
@@ -122,6 +142,8 @@ export interface InteractiveLaunch {
   /** Merged over the application's environment by whoever starts it. */
   readonly env: Record<string, string>;
   readonly cwd: string;
+  /** Present when the tool can report on the run while it is going. */
+  readonly telemetry?: InteractiveTelemetry;
 }
 
 /** A skill the tool's own configuration already has (spec §31). */

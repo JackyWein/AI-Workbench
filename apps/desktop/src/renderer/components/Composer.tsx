@@ -1,10 +1,12 @@
 import { type JSX, useEffect, useRef, useState } from "react";
-import { CornerDownLeft, Square } from "lucide-react";
+import { ListOrdered, Plus, Square } from "lucide-react";
 import { layout } from "@ai-workbench/ui";
+import { useWorkbench } from "../store/workbench.js";
 
 interface ComposerProps {
   readonly busy: boolean;
   readonly disabled: boolean;
+  readonly modelName: string | null;
   readonly onSend: (text: string) => void;
   readonly onCancel: () => void;
 }
@@ -12,11 +14,13 @@ interface ComposerProps {
 export function Composer({
   busy,
   disabled,
+  modelName,
   onSend,
   onCancel,
 }: ComposerProps): JSX.Element {
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const setPaletteOpen = useWorkbench((state) => state.setPaletteOpen);
 
   // Grow with the content up to the max height defined by the tokens.
   useEffect(() => {
@@ -48,7 +52,7 @@ export function Composer({
           rows={1}
           value={text}
           disabled={disabled}
-          placeholder={disabled ? "Select a session to start" : "Send a message"}
+          placeholder={disabled ? "Select a session to start" : "Reply…"}
           aria-label="Message"
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
@@ -63,9 +67,32 @@ export function Composer({
           }}
         />
         <div className="composer__actions">
-          <span className="composer__hint">
-            Enter to send · Shift+Enter for a new line
-          </span>
+          <button
+            type="button"
+            className="composer__iconbtn"
+            disabled
+            title="Attachments aren't supported yet"
+            aria-label="Attach (not supported yet)"
+          >
+            <Plus size={14} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="composer__iconbtn"
+            onClick={() => setPaletteOpen(true)}
+            title="Commands (Ctrl+K)"
+            aria-label="Open commands"
+          >
+            <ListOrdered size={14} strokeWidth={1.75} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="pill pill--acc"
+            onClick={() => setPaletteOpen(true)}
+            title="Change model (Ctrl+K, then a model)"
+          >
+            {modelName ?? "No model"} ▾
+          </button>
           {busy ? (
             <button type="button" className="ghost-button" onClick={onCancel}>
               <Square size={12} strokeWidth={2} aria-hidden="true" />
@@ -74,14 +101,16 @@ export function Composer({
           ) : (
             <button
               type="button"
-              className="primary-button"
+              className="composer__send"
               onClick={submit}
               disabled={disabled || text.trim().length === 0}
             >
-              <CornerDownLeft size={13} strokeWidth={2} aria-hidden="true" />
-              Send
+              Send <kbd className="kbd kbd--on-accent">↵</kbd>
             </button>
           )}
+        </div>
+        <div className="composer__hint">
+          Enter to send · Shift+Enter newline · Esc stops the run
         </div>
       </div>
     </div>

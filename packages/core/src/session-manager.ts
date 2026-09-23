@@ -457,7 +457,9 @@ export class SessionManager {
             break;
           }
           case "usage": {
-            usage = event.usage;
+            // A turn may report limits and token counts in separate events;
+            // each adds what it knows instead of erasing the other.
+            usage = mergeUsage(usage, event.usage);
             break;
           }
           case "warning": {
@@ -845,5 +847,17 @@ function toChatMessage(row: ChatMessageRow): ChatMessage {
     error: row.error,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+/** Combines what several usage events of one turn reported. */
+function mergeUsage(previous: MessageUsage | null, next: MessageUsage): MessageUsage {
+  if (!previous) {
+    return next;
+  }
+  return {
+    ...previous,
+    ...next,
+    limits: next.limits.length > 0 ? next.limits : previous.limits,
   };
 }

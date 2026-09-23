@@ -1,11 +1,26 @@
 import { join } from "node:path";
 import { BrowserWindow, screen, type Display } from "electron";
 import {
+  ISLAND_DRAG_CHANNEL,
   ISLAND_STATE_CHANNEL,
+  type IslandDrag,
+  type IslandEdge,
   type IslandPreferences,
   type IslandState,
   type Logger,
 } from "@ai-workbench/shared";
+import {
+  anchorResize,
+  dockPoint,
+  dragFrame,
+  edgeDistances,
+  px,
+  railOf,
+  settleEase,
+  type Point,
+  type Rect,
+  type Size,
+} from "./island-helpers.js";
 
 /**
  * The floating companion window (spec §95).
@@ -17,16 +32,50 @@ import {
  */
 
 const COMPACT = { width: 320, height: 44 } as const;
-const EXPANDED = { width: 380, height: 132 } as const;
 const MARGIN = 12;
+/** Drag and settle frames; the pointer is sampled on this beat. */
+const FRAME_MS = 8;
+/** How long a released unit takes to settle onto its rail. */
+const SETTLE_MS = 320;
+/** A drag the page never ended (it crashed, lost the pointer) ends here. */
+const DRAG_LIMIT_MS = 120_000;
+
+/** Where the island came to rest after a drag, for persisting. */
+export interface IslandSettle {
+  readonly dockedEdge: IslandEdge | null;
+  /** Along-rail center when docked, else null. */
+  readonly railT: number | null;
+  readonly x: number;
+  readonly y: number;
+  readonly displayId: number;
+}
 
 export interface StatusIslandOptions {
   readonly logger: Logger;
   readonly islandFile: string;
   readonly devServerUrl?: string | undefined;
   readonly preloadFile: string;
-  /** Persists a position the user dragged the island to. */
-  readonly onMoved: (position: { x: number; y: number; displayId: number }) => void;
+  /**
+   * Persists where a drag left the island: docked on a rail at a spot, or a
+   * free blob at a position.
+   */
+  readonly onSettle: (settle: IslandSettle) => void;
+}
+
+interface DragSession {
+  /** Where the unit is held, as a fraction of the window. */
+  grab: Point;
+  edge: IslandEdge | null;
+  snap: IslandEdge | null;
+  depth: number;
+  readonly startedAt: number;
+}
+
+interface Settling {
+  readonly from: Point;
+  readonly startedAt: number;
+  /** Recomputed every frame, so a size change mid-flight still lands true. */
+  readonly target: (size: Size) => Point;
 }
 
 export class StatusIslandWindow {
@@ -35,9 +84,10 @@ export class StatusIslandWindow {
   #window: BrowserWindow | null = null;
   #preferences: IslandPreferences | null = null;
   #lastState: IslandState | null = null;
-  #expanded = false;
-  /** True while the position is set programmatically, not dragged. */
-  #placing = false;
+  #drag: DragSession | null = null;
+  #dragTimer: NodeJS.Timeout | null = null;
+  #settling: Settling | null = null;
+  #settleTimer: NodeJS.Timeout | null = null;
 
   constructor(options: StatusIslandOptions) {
     this.#options = options;
@@ -83,6 +133,9 @@ export class StatusIslandWindow {
   }
 
   hide(): void {
+    if (this.#drag) {
+      this.endDrag();
+    }
     if (this.#window && !this.#window.isDestroyed()) {
       this.#window.hide();
     }
@@ -97,7 +150,7 @@ export class StatusIslandWindow {
     return this.visible;
   }
 
-  /** Pushes new state and resizes when an entry needs the room (spec §97). */
+  /** Pushes new state; sizing belongs to the page, which reports it back. */
   render(state: IslandState): void {
     this.#lastState = state;
     // Self-heal: an enabled island without a live window comes back instead
@@ -122,27 +175,144 @@ export class StatusIslandWindow {
       });
       return;
     }
+  }
 
-    const wantsExpanded = state.expanded && Boolean(state.current.action);
-    if (wantsExpanded !== this.#expanded) {
-      this.#expanded = wantsExpanded;
-      const size = wantsExpanded ? EXPANDED : COMPACT;
-      window.setBounds({ ...window.getBounds(), ...size }, false);
-      if (this.#preferences) {
-        this.#place(window, this.#preferences);
-      }
+  /**
+   * Applies the size the island page measured for its current face. A docked
+   * unit stays on its rail at its spot, growing away from the edge, so the
+   * pill opens in place; a free blob keeps its left side and vertical center.
+   * Mid-drag or mid-settle the frame loop owns the position.
+   */
+  setContentSize(width: number, height: number): void {
+    const window = this.#window;
+    if (!window || window.isDestroyed()) {
+      return;
     }
+    const bounds = window.getBounds();
+    if (bounds.width === width && bounds.height === height) {
+      return;
+    }
+    const size = { width, height };
+    // Mid-drag or mid-settle the new size and its position land together,
+    // so the unit never sits off its rail inside a window of the old size.
+    if (this.#drag) {
+      this.#dragTick(size);
+      return;
+    }
+    if (this.#settling) {
+      this.#settleTick(size);
+      return;
+    }
+    const display = displayUnder(bounds);
+    const edge = this.#preferences?.dockedEdge ?? null;
+    if (edge) {
+      const point = dockPoint(edge, this.#preferences?.railT ?? null, size, display.workArea);
+      window.setBounds({ ...point, ...size }, false);
+      return;
+    }
+    const anchored = anchorResize(bounds, size, null);
+    const [left, top] = clampToDisplay(anchored, size, display);
+    window.setBounds({ x: left, y: top, width, height }, false);
+  }
+
+  /**
+   * The page grabbed the unit. From here the window follows the pointer on a
+   * short beat until `endDrag`, sampled from the OS cursor, so a fast flick
+   * that outruns the window never drops the unit.
+   */
+  beginDrag(grabX: number, grabY: number): boolean {
+    const window = this.#window;
+    if (!window || window.isDestroyed()) {
+      return false;
+    }
+    this.#stopSettling();
+    this.#stopDragTimer();
+    const bounds = window.getBounds();
+    const edge = this.#preferences?.dockedEdge ?? null;
+    const pointer = screen.getCursorScreenPoint();
+    const area = screen.getDisplayNearestPoint(pointer).workArea;
+    this.#drag = {
+      grab: {
+        x: bounds.width > 0 ? Math.min(Math.max(grabX / bounds.width, 0), 1) : 0.5,
+        y: bounds.height > 0 ? Math.min(Math.max(grabY / bounds.height, 0), 1) : 0.5,
+      },
+      edge,
+      snap: null,
+      depth: edge ? Math.max(0, edgeDistances(pointer, area)[edge]) : 0,
+      startedAt: Date.now(),
+    };
+    this.#sendDrag({ active: true, edge, snap: null });
+    this.#dragTimer = setInterval(() => this.#dragTick(), FRAME_MS);
+    return true;
+  }
+
+  /**
+   * The pointer let go. A pill settles onto its rail, springing back from any
+   * pull; a blob released near an edge flies there and docks; anywhere else
+   * the blob stays where it was put. The outcome is persisted either way.
+   */
+  endDrag(): boolean {
+    if (!this.#drag) {
+      return false;
+    }
+    this.#dragTick();
+    const drag = this.#drag;
+    this.#stopDragTimer();
+    this.#drag = null;
+    const window = this.#window;
+    if (!drag || !window || window.isDestroyed()) {
+      return false;
+    }
+    const bounds = window.getBounds();
+    const display = displayUnder(bounds);
+    const area = display.workArea;
+    const edge = drag.edge ?? drag.snap;
+    if (!edge) {
+      this.#adopt({
+        dockedEdge: null,
+        railT: null,
+        position: "custom",
+        customX: bounds.x,
+        customY: bounds.y,
+        displayId: display.id,
+      });
+      this.#sendDrag({ active: false, edge: null, snap: null });
+      this.#options.onSettle({
+        dockedEdge: null,
+        railT: null,
+        x: bounds.x,
+        y: bounds.y,
+        displayId: display.id,
+      });
+      return false;
+    }
+    const railT = railOf(edge, bounds, area);
+    this.#adopt({ dockedEdge: edge, railT, displayId: display.id });
+    this.#sendDrag({ active: false, edge, snap: null });
+    this.#settleTo((size) => dockPoint(edge, railT, size, area));
+    this.#options.onSettle({
+      dockedEdge: edge,
+      railT,
+      x: bounds.x,
+      y: bounds.y,
+      displayId: display.id,
+    });
+    return false;
   }
 
   destroy(): void {
+    this.#stopDragTimer();
+    this.#stopSettling();
+    this.#drag = null;
     const window = this.#window;
     this.#window = null;
     if (!window || window.isDestroyed()) {
       return;
     }
-    window.removeAllListeners("moved");
     try {
       window.webContents.removeAllListeners("did-finish-load");
+      window.webContents.removeAllListeners("did-fail-load");
+      window.webContents.removeAllListeners("console-message");
     } catch {
       // The web contents may already be gone; destroying the window is what
       // matters.
@@ -181,16 +351,26 @@ export class StatusIslandWindow {
 
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
-    // A dragged island remembers where it was put (spec §95). Positions set
-    // programmatically must not echo back, or placing the window would
-    // persist itself in a loop.
-    window.on("moved", () => {
-      if (this.#placing) {
-        return;
+    // A blank companion is undebuggable: page load failures and page console
+    // output (including uncaught renderer exceptions) are forwarded to the
+    // main log, so the terminal names the cause instead of silence.
+    window.webContents.on(
+      "did-fail-load",
+      (_event, errorCode, errorDescription, validatedURL) => {
+        this.#logger.warn("Island page failed to load", {
+          errorCode,
+          errorDescription,
+          validatedURL,
+        });
+      },
+    );
+    window.webContents.on("console-message", (details) => {
+      const where = `${details.sourceId}:${details.lineNumber}`;
+      if (details.level === "error" || details.level === "warning") {
+        this.#logger.warn("Island console error", { message: details.message, where });
+      } else {
+        this.#logger.info("Island console", { message: details.message, where });
       }
-      const bounds = window.getBounds();
-      const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
-      this.#options.onMoved({ x: bounds.x, y: bounds.y, displayId: display.id });
     });
 
     window.webContents.on("did-finish-load", () => {
@@ -206,8 +386,11 @@ export class StatusIslandWindow {
     });
 
     if (this.#options.devServerUrl) {
+      // The dev server URL may or may not end in a slash; either way the
+      // island page must resolve under it, not beside it.
+      const base = this.#options.devServerUrl.replace(/\/+$/, "");
       window
-        .loadURL(`${this.#options.devServerUrl}island/index.html`)
+        .loadURL(`${base}/island/index.html`)
         .catch((error: unknown) =>
           this.#logger.warn("Could not load the island page", {
             error: error instanceof Error ? error.message : String(error),
@@ -228,14 +411,132 @@ export class StatusIslandWindow {
     return window;
   }
 
+  #dragTick(resized?: Size): void {
+    const window = this.#window;
+    const drag = this.#drag;
+    if (!window || window.isDestroyed() || !drag) {
+      this.#stopDragTimer();
+      return;
+    }
+    if (Date.now() - drag.startedAt > DRAG_LIMIT_MS) {
+      this.endDrag();
+      return;
+    }
+    const pointer = screen.getCursorScreenPoint();
+    const area = screen.getDisplayNearestPoint(pointer).workArea;
+    const bounds = window.getBounds();
+    const size = resized ?? { width: bounds.width, height: bounds.height };
+    const frame = dragFrame({
+      pointer,
+      grab: drag.grab,
+      size,
+      area,
+      edge: drag.edge,
+      depth: drag.depth,
+      snap: drag.snap,
+    });
+    if (frame.regrab) {
+      drag.grab = { x: 0.5, y: 0.5 };
+    }
+    drag.depth = frame.depth;
+    moveWindow(window, bounds, { x: frame.x, y: frame.y, ...size });
+    if (frame.edge !== drag.edge || frame.snap !== drag.snap) {
+      drag.edge = frame.edge;
+      drag.snap = frame.snap;
+      this.#sendDrag({ active: true, edge: frame.edge, snap: frame.snap });
+    }
+  }
+
+  #settleTo(target: (size: Size) => Point): void {
+    const window = this.#window;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+    this.#stopSettling();
+    const bounds = window.getBounds();
+    this.#settling = { from: { x: bounds.x, y: bounds.y }, startedAt: Date.now(), target };
+    this.#settleTimer = setInterval(() => this.#settleTick(), FRAME_MS);
+  }
+
+  #settleTick(resized?: Size): void {
+    const window = this.#window;
+    const settling = this.#settling;
+    if (!window || window.isDestroyed() || !settling) {
+      this.#stopSettling();
+      return;
+    }
+    const t = Math.min(1, (Date.now() - settling.startedAt) / SETTLE_MS);
+    const eased = settleEase(t);
+    const bounds = window.getBounds();
+    const size = resized ?? { width: bounds.width, height: bounds.height };
+    const to = settling.target(size);
+    const x = px(settling.from.x + (to.x - settling.from.x) * eased);
+    const y = px(settling.from.y + (to.y - settling.from.y) * eased);
+    moveWindow(window, bounds, { x, y, ...size });
+    if (t >= 1) {
+      this.#stopSettling();
+    }
+  }
+
+  #stopDragTimer(): void {
+    if (this.#dragTimer) {
+      clearInterval(this.#dragTimer);
+      this.#dragTimer = null;
+    }
+  }
+
+  #stopSettling(): void {
+    if (this.#settleTimer) {
+      clearInterval(this.#settleTimer);
+      this.#settleTimer = null;
+    }
+    this.#settling = null;
+  }
+
+  /**
+   * Takes a drag's outcome on at once, ahead of the persisted preferences
+   * coming back, so sizing in between already anchors to the new rail.
+   */
+  #adopt(patch: Partial<IslandPreferences>): void {
+    if (this.#preferences) {
+      this.#preferences = { ...this.#preferences, ...patch };
+    }
+  }
+
+  #sendDrag(drag: IslandDrag): void {
+    const window = this.#window;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+    try {
+      window.webContents.send(ISLAND_DRAG_CHANNEL, drag);
+    } catch (error) {
+      this.#logger.warn("Could not push island drag state", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   /** Multi-monitor aware placement, clamped into the chosen display. */
   #place(window: BrowserWindow, preferences: IslandPreferences | null): void {
     if (!preferences) {
       return;
     }
+    // A drag or a settle in flight owns the position; it lands on the same
+    // spot the preferences describe.
+    if (this.#drag || this.#settling) {
+      return;
+    }
     const display = resolveDisplay(preferences.displayId);
-    const { x, y, width } = display.workArea;
     const bounds = window.getBounds();
+
+    if (preferences.dockedEdge) {
+      const point = dockPoint(preferences.dockedEdge, preferences.railT, bounds, display.workArea);
+      window.setPosition(point.x, point.y);
+      return;
+    }
+
+    const { x, y, width } = display.workArea;
 
     const position = ((): { x: number; y: number } => {
       switch (preferences.position) {
@@ -265,13 +566,29 @@ export class StatusIslandWindow {
     })();
 
     const [left, top] = clampToDisplay(position, bounds, display);
-    this.#placing = true;
-    try {
-      window.setPosition(left, top);
-    } finally {
-      this.#placing = false;
-    }
+    window.setPosition(left, top);
   }
+}
+
+/** Moves (and resizes) the window in one step, only when something changed. */
+function moveWindow(window: BrowserWindow, bounds: Rect, next: Rect): void {
+  if (
+    next.x === bounds.x &&
+    next.y === bounds.y &&
+    next.width === bounds.width &&
+    next.height === bounds.height
+  ) {
+    return;
+  }
+  window.setBounds(next, false);
+}
+
+/** The display a window mostly sits on, judged by its center. */
+function displayUnder(bounds: Rect): Display {
+  return screen.getDisplayNearestPoint({
+    x: bounds.x + Math.round(bounds.width / 2),
+    y: bounds.y + Math.round(bounds.height / 2),
+  });
 }
 
 /** The configured display when it still exists, otherwise the active one. */
@@ -308,7 +625,7 @@ export function clampToDisplay(
   const rawY = Number.isFinite(position.y) ? position.y : area.y;
   const x = Math.min(Math.max(rawX, area.x), area.x + area.width - width);
   const y = Math.min(Math.max(rawY, area.y), area.y + area.height - height);
-  return [Math.round(x), Math.round(y)];
+  return [px(x), px(y)];
 }
 
 export function resolveIslandFile(appDirectory: string): string {

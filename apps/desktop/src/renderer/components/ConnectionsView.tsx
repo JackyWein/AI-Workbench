@@ -1,16 +1,25 @@
 import { useEffect, useState, type JSX } from "react";
-import { ChevronRight, FolderOpen, Trash2, Wifi } from "lucide-react";
+import { FolderOpen } from "lucide-react";
 import type { DirectoryEntry, SshAuthMethod, SshConnection } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import {
+  Choice,
+  SettingDisclosure,
+  SettingGroup,
+  SettingRow,
+  type SegmentOption,
+} from "./Controls.js";
 
 /**
- * The machines a workspace can live on (spec §25).
+ * The machines a workspace can live on (spec §25), as one group of the
+ * Settings screen.
  *
- * A connection is defined once here and used by any number of workspaces. The
- * secret is typed in once and goes straight to the credential store; it is
- * never read back, which is why there is no field showing it.
+ * It is built only from the settings grammar the rest of the screen uses —
+ * rows, a disclosure, the shared form fields and buttons — so adding it did
+ * not add a new look. The secret is typed in once and goes straight to the
+ * credential store; it is never read back, which is why no field shows it.
  */
-export function ConnectionsView(): JSX.Element {
+export function ConnectionSettings(): JSX.Element {
   const connections = useWorkbench((state) => state.connections);
   const refreshConnections = useWorkbench((state) => state.refreshConnections);
 
@@ -19,48 +28,42 @@ export function ConnectionsView(): JSX.Element {
   }, [refreshConnections]);
 
   return (
-    <div className="view">
-      <div className="view__inner">
-        <div className="view__header">
-          <h1 className="view__title">Connections</h1>
-        </div>
-
-        {connections.length === 0 ? (
-          <p className="field__description">
-            No connections yet. Add a machine below, then create a workspace on
-            it to work in a folder that is not on this computer.
-          </p>
-        ) : (
-          <section>
-            {connections.map((connection) => (
-              <ConnectionEntry key={connection.id} connection={connection} />
-            ))}
-          </section>
-        )}
-
-        <AddConnectionForm />
-      </div>
-    </div>
+    <SettingGroup
+      title="Connections"
+      lede="Machines reached over SSH. A workspace can live on one of them instead of on this computer."
+    >
+      {connections.length === 0 ? (
+        <SettingRow
+          label="No connections yet"
+          description="Add a machine, then create a workspace on it."
+        />
+      ) : (
+        connections.map((connection) => (
+          <ConnectionRow key={connection.id} connection={connection} />
+        ))
+      )}
+      <SettingDisclosure label="Add a connection">
+        <AddConnection />
+      </SettingDisclosure>
+    </SettingGroup>
   );
 }
 
-function ConnectionEntry({
-  connection,
-}: {
-  readonly connection: SshConnection;
-}): JSX.Element {
+function ConnectionRow({ connection }: { readonly connection: SshConnection }): JSX.Element {
   const test = useWorkbench((state) => state.connectionTests[connection.id]);
   const testConnection = useWorkbench((state) => state.testConnection);
   const deleteConnection = useWorkbench((state) => state.deleteConnection);
   const forgetHostKey = useWorkbench((state) => state.forgetConnectionHostKey);
   const createWorkspace = useWorkbench((state) => state.createWorkspace);
   const setView = useWorkbench((state) => state.setView);
-  const [open, setOpen] = useState(false);
   const [testing, setTesting] = useState(false);
   const [picking, setPicking] = useState(false);
   const [picked, setPicked] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const detailsId = `connection-${connection.id}-details`;
+
+  const address = `${connection.username}@${connection.host}${
+    connection.port === 22 ? "" : `:${connection.port}`
+  }`;
 
   const addWorkspaceHere = async (): Promise<void> => {
     if (!picked) {
@@ -83,98 +86,77 @@ function ConnectionEntry({
   };
 
   return (
-    <article className="provider-entry">
-      <div className="sidebar__row">
-        <button
-          type="button"
-          className="provider-entry__head provider-entry__toggle"
-          aria-expanded={open}
-          aria-controls={detailsId}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <ChevronRight
-            size={13}
-            strokeWidth={1.75}
-            aria-hidden="true"
-            className="provider-entry__chevron"
-            data-open={open}
-          />
-          <span className="provider-entry__name">{connection.name}</span>
-          <span className="row__meta">
-            {connection.username}@{connection.host}
-            {connection.port === 22 ? "" : `:${connection.port}`}
-          </span>
-        </button>
-        <button
-          type="button"
-          className="sidebar__delete"
-          aria-label={`Remove ${connection.name}`}
-          onClick={() => void deleteConnection(connection.id)}
-        >
-          <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
-        </button>
-      </div>
-
-      <div id={detailsId} hidden={!open}>
-        <dl className="detail-list">
-          <div className="detail-list__row">
-            <dt>Sign-in</dt>
-            <dd>{authWording(connection.auth)}</dd>
-          </div>
-          <div className="detail-list__row">
-            <dt>Host key</dt>
-            <dd>
-              {connection.hostKeyFingerprint ?? "Not known yet — learned on first connection"}
-            </dd>
-          </div>
-          {test ? (
-            <div className="detail-list__row">
-              <dt>Last test</dt>
-              <dd>
+    <>
+      <SettingRow
+        label={connection.name}
+        description={
+          <>
+            {address} · {authWording(connection.auth)}
+            <br />
+            <span className="setting__path">
+              {connection.hostKeyFingerprint ?? "Host key not known yet — learned on first connection"}
+            </span>
+            {test ? (
+              <>
+                <br />
                 {test.ok
                   ? `Connected. Home directory ${test.homeDirectory ?? "unknown"}.` +
                     (test.learnedHostKey ? " The host key was recorded." : "")
-                  : (test.error ?? "Failed")}
-              </dd>
-            </div>
-          ) : null}
-        </dl>
-
-        <div className="provider-entry__config">
+                  : (test.error ?? "The connection failed.")}
+              </>
+            ) : null}
+          </>
+        }
+      >
+        <button
+          type="button"
+          className="ghost-button"
+          disabled={testing}
+          onClick={() => {
+            setTesting(true);
+            void testConnection(connection.id).finally(() => setTesting(false));
+          }}
+        >
+          {testing ? "Testing…" : "Test"}
+        </button>
+        <button
+          type="button"
+          className="ghost-button"
+          aria-expanded={picking}
+          onClick={() => setPicking((value) => !value)}
+        >
+          {picking ? "Cancel" : "Add workspace"}
+        </button>
+        {connection.hostKeyFingerprint ? (
           <button
             type="button"
-            className="quiet-button"
-            disabled={testing}
-            onClick={() => {
-              setTesting(true);
-              void testConnection(connection.id).finally(() => setTesting(false));
-            }}
+            className="ghost-button"
+            title="Only when the machine was genuinely rebuilt: a changed key is otherwise refused."
+            onClick={() => void forgetHostKey(connection.id)}
           >
-            <Wifi size={13} strokeWidth={1.75} aria-hidden="true" />
-            {testing ? "Testing…" : "Test connection"}
+            Forget key
           </button>
-          <button
-            type="button"
-            className="quiet-button"
-            onClick={() => setPicking((value) => !value)}
-          >
-            <FolderOpen size={13} strokeWidth={1.75} aria-hidden="true" />
-            {picking ? "Cancel" : "Add a workspace here"}
-          </button>
-          {connection.hostKeyFingerprint ? (
-            <button
-              type="button"
-              className="quiet-button"
-              onClick={() => void forgetHostKey(connection.id)}
-            >
-              Forget host key
-            </button>
-          ) : null}
-        </div>
+        ) : null}
+        <button
+          type="button"
+          className="ghost-button"
+          aria-label={`Remove ${connection.name}`}
+          onClick={() => void deleteConnection(connection.id)}
+        >
+          Remove
+        </button>
+      </SettingRow>
 
-        {picking ? (
-          <div className="provider-entry__config">
-            <RemoteDirectoryPicker connectionId={connection.id} onPick={setPicked} />
+      {picking ? (
+        <div className="setting setting--stacked">
+          <div className="setting__text">
+            <p className="setting__label">Folder on {connection.name}</p>
+            <p className="setting__description">
+              Pick the folder the workspace should open.
+            </p>
+          </div>
+          <RemoteDirectoryPicker connectionId={connection.id} onPick={setPicked} />
+          <div className="setting__control">
             <button
               type="button"
               className="primary-button"
@@ -184,28 +166,29 @@ function ConnectionEntry({
               {creating ? "Creating…" : `Use ${picked ?? "this folder"}`}
             </button>
           </div>
-        ) : null}
-        <p className="detail__note">
-          The host key is remembered the first time this machine answers. If it
-          ever changes, connecting is refused rather than trusted — forget the
-          key only when the machine was genuinely rebuilt.
-        </p>
-      </div>
-    </article>
+        </div>
+      ) : null}
+    </>
   );
 }
 
 function authWording(auth: SshAuthMethod): string {
   if (auth === "password") {
-    return "Password, kept in the system credential store";
+    return "password in the system credential store";
   }
   if (auth === "key") {
-    return "Private key, kept in the system credential store";
+    return "private key in the system credential store";
   }
-  return "The SSH agent running on this computer";
+  return "SSH agent on this computer";
 }
 
-function AddConnectionForm(): JSX.Element {
+const AUTH_METHODS: ReadonlyArray<SegmentOption<SshAuthMethod>> = [
+  { value: "password", label: "Password" },
+  { value: "key", label: "Private key" },
+  { value: "agent", label: "SSH agent" },
+];
+
+function AddConnection(): JSX.Element {
   const createConnection = useWorkbench((state) => state.createConnection);
   const [name, setName] = useState("");
   const [host, setHost] = useState("");
@@ -240,8 +223,8 @@ function AddConnectionForm(): JSX.Element {
         setHost("");
         setPort("22");
         setUsername("");
-        // Cleared immediately: it is in the credential store now, and there is
-        // no reason for it to sit in a form field afterwards.
+        // Cleared at once: it is in the credential store now, and there is no
+        // reason for it to sit in a form field afterwards.
         setSecret("");
       }
     } finally {
@@ -250,11 +233,8 @@ function AddConnectionForm(): JSX.Element {
   };
 
   return (
-    <section className="provider-entry">
-      <div className="provider-entry__head">
-        <span className="provider-entry__name">Add a connection</span>
-      </div>
-      <div className="provider-entry__config">
+    <div className="setting setting--stacked">
+      <div className="form-grid">
         <label className="stacked-field">
           <span className="field__description">Name</span>
           <input
@@ -270,7 +250,17 @@ function AddConnectionForm(): JSX.Element {
             className="text-input"
             value={host}
             placeholder="build.example.com"
+            spellCheck={false}
             onChange={(event) => setHost(event.target.value)}
+          />
+        </label>
+        <label className="stacked-field">
+          <span className="field__description">User</span>
+          <input
+            className="text-input"
+            value={username}
+            spellCheck={false}
+            onChange={(event) => setUsername(event.target.value)}
           />
         </label>
         <label className="stacked-field">
@@ -283,25 +273,13 @@ function AddConnectionForm(): JSX.Element {
           />
         </label>
         <label className="stacked-field">
-          <span className="field__description">User</span>
-          <input
-            className="text-input"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
-          />
-        </label>
-        <label className="stacked-field">
           <span className="field__description">Sign-in</span>
-          <select
-            className="select"
-            aria-label="Sign-in method"
+          <Choice
+            label="Sign-in method"
             value={auth}
-            onChange={(event) => setAuth(event.target.value as SshAuthMethod)}
-          >
-            <option value="password">Password</option>
-            <option value="key">Private key</option>
-            <option value="agent">SSH agent</option>
-          </select>
+            options={AUTH_METHODS}
+            onChange={setAuth}
+          />
         </label>
         {auth === "password" ? (
           <label className="stacked-field">
@@ -315,34 +293,34 @@ function AddConnectionForm(): JSX.Element {
           </label>
         ) : null}
         {auth === "key" ? (
-          <label className="stacked-field">
+          <label className="stacked-field form-grid__full">
             <span className="field__description">Private key</span>
             <textarea
-              className="text-input"
+              className="text-input text-input--multiline"
               rows={4}
               value={secret}
+              spellCheck={false}
               placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
               onChange={(event) => setSecret(event.target.value)}
             />
           </label>
         ) : null}
-
-        <div className="provider-entry__config">
-          <button
-            type="button"
-            className="primary-button"
-            disabled={!ready || saving}
-            onClick={() => void submit()}
-          >
-            {saving ? "Adding…" : "Add connection"}
-          </button>
-        </div>
-        <p className="detail__note">
-          The password or key is stored in this computer&rsquo;s credential
-          store and never shown again.
-        </p>
       </div>
-    </section>
+      <p className="setting__description">
+        The password or key goes to this computer&rsquo;s credential store and is never
+        shown again.
+      </p>
+      <div className="setting__control">
+        <button
+          type="button"
+          className="ghost-button"
+          disabled={!ready || saving}
+          onClick={() => void submit()}
+        >
+          {saving ? "Adding…" : "Add connection"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -384,7 +362,9 @@ export function RemoteDirectoryPicker({
   }, [connectionId]);
 
   if (path === null) {
-    return <p className="field__description">{loading ? "Connecting…" : "Not connected"}</p>;
+    return (
+      <p className="setting__description">{loading ? "Connecting…" : "Not connected"}</p>
+    );
   }
 
   return (

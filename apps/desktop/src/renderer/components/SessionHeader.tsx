@@ -1,18 +1,16 @@
-import type { JSX } from "react";
-import { PanelBottom, Square } from "lucide-react";
+import { useEffect, useState, type JSX } from "react";
 import type {
   AggregatedUsage,
+  GitStatus,
   ProviderSummary,
   Session,
   SessionStatus,
   Workspace,
 } from "@ai-workbench/shared";
 import { formatPath } from "../lib/format.js";
-import { providerLabel } from "../lib/provider-label.js";
-import { UsageIndicator } from "./UsageIndicator.js";
-import { Logo } from "./Logo.js";
-import { ModelPicker } from "./ModelPicker.js";
+import { invoke } from "../lib/client.js";
 import { ModeToggle } from "./AgentsView.js";
+import { UsageIndicator } from "./UsageIndicator.js";
 import { useWorkbench } from "../store/workbench.js";
 
 interface SessionHeaderProps {
@@ -21,13 +19,12 @@ interface SessionHeaderProps {
   readonly providers: ProviderSummary[];
   readonly usage: AggregatedUsage | null;
   readonly status: SessionStatus | undefined;
-  readonly busy: boolean;
-  readonly onCancel: () => void;
 }
 
 /**
- * Compact session header (spec §78): name, workspace, provider/model and usage.
- * Everything else lives behind the popover, the context panel or the palette.
+ * Breadcrumb header (mock A): workspace / session on the left, branch, model
+ * and usage pills on the right. Everything else lives behind the palette
+ * (Ctrl+K), shortcuts, or the rows and cards themselves.
  */
 export function SessionHeader({
   session,
@@ -35,71 +32,86 @@ export function SessionHeader({
   providers,
   usage,
   status,
-  busy,
-  onCancel,
 }: SessionHeaderProps): JSX.Element {
-  const toggleWorkspacePanel = useWorkbench((state) => state.toggleWorkspacePanel);
-  const panelOpen = useWorkbench((state) => state.workspacePanelOpen);
+  const setPaletteOpen = useWorkbench((state) => state.setPaletteOpen);
 
   const provider = providers.find(
     (entry) => entry.metadata.id === session.providerId,
   );
   const model = provider?.models.find((entry) => entry.id === session.modelId);
+  const [git, setGit] = useState<GitStatus | null>(null);
+
+  useEffect(() => {
+    let current = true;
+    void invoke("git.status", { sessionId: session.id })
+      .then((next) => {
+        if (current) {
+          setGit(next);
+        }
+      })
+      // A branch pill that cannot be read is omitted, never guessed.
+      .catch(() => {
+        if (current) {
+          setGit(null);
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [session.id]);
+
+  const branchPill =
+    git && git.isRepository ? (
+      <span className="pill" title={git.detached ? "Detached head" : `Branch ${git.branch}`}>
+        <span className="status-dot" data-state={git.clean ? "ready" : "waiting"} aria-hidden="true" />
+        {git.detached ? "detached" : git.branch} ·{" "}
+        {git.clean ? "clean" : `${git.changes.length} changed`}
+      </span>
+    ) : null;
+
+  const statusPill =
+    status && status !== "idle" ? (
+      <span
+        className="pill"
+        data-tone={status === "error" ? "danger" : status === "waiting" ? "warn" : "live"}
+      >
+        {status === "waiting" ? (
+          <span className="status-dot" data-state="waiting" aria-hidden="true" />
+        ) : null}
+        {statusLabel(status)}
+      </span>
+    ) : null;
 
   return (
     <header className="header">
       <div className="header__main">
-        <h1 className="header__title">{session.name}</h1>
-        <span className="header__subtitle">
+        <ModeToggle />
+        <span className="agents-bar__divider" aria-hidden="true" />
+        <span className="header__ws">
           {workspace ? workspace.name : formatPath(session.workingDirectory, 28)}
         </span>
-        {provider ? (
-          <span
-            className="header__subtitle"
-            title={session.providerId ?? undefined}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-          >
-            <Logo
-              name={provider.metadata.icon}
-              label={provider.metadata.displayName}
-              size={14}
-            />
-            {providerLabel(provider)}
-          </span>
-        ) : null}
-        {status && status !== "idle" ? (
-          <span className="header__subtitle">{statusLabel(status)}</span>
-        ) : null}
+        <span className="header__sl" aria-hidden="true">
+          /
+        </span>
+        <h1 className="header__title">{session.name}</h1>
       </div>
 
       <div className="header__actions">
-        <ModeToggle />
-
-        {busy ? (
-          <button type="button" className="quiet-button" onClick={onCancel}>
-            <Square size={12} strokeWidth={2} aria-hidden="true" />
-            Stop
-          </button>
-        ) : null}
-
+        {branchPill}
+        {statusPill}
         <button
           type="button"
-          className="icon-button"
-          onClick={() => toggleWorkspacePanel()}
-          aria-pressed={panelOpen}
-          title="Terminal, files and changes (Ctrl+`)"
-          aria-label="Toggle workspace tools"
+          className="pill pill--acc"
+          onClick={() => setPaletteOpen(true)}
+          title="Change model (Ctrl+K, then a model)"
         >
-          <PanelBottom size={14} strokeWidth={1.75} aria-hidden="true" />
+          {model?.displayName ?? provider?.metadata.displayName ?? "No model"} ▾
         </button>
-
-        <ModelPicker session={session} providers={providers} />
 
         <UsageIndicator
           usage={usage}
           providers={providers}
           activeProviderId={session.providerId}
-          activeModelName={model?.displayName ?? provider?.metadata.displayName ?? null}
         />
       </div>
     </header>

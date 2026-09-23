@@ -44,7 +44,7 @@ export type MainView =
   | "plugins"
   | "mcp"
   | "teams"
-  | "connections"
+  | "usage"
   | "settings";
 export type WorkspaceTab = "terminal" | "files" | "changes";
 /** The clean conversation, or the workspace's agents in their own terminals. */
@@ -83,6 +83,8 @@ const storedUi = typeof window === "undefined" ? {} : readStoredUi();
 interface WorkbenchState {
   ready: boolean;
   error: string | null;
+  /** Startup failure with the exact cause; shown as a full screen, retried. */
+  bootError: string | null;
 
   workspaces: Workspace[];
   sessions: Session[];
@@ -296,6 +298,7 @@ let sessionRequest = 0;
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   ready: false,
   error: null,
+  bootError: null,
 
   workspaces: [],
   sessions: [],
@@ -337,6 +340,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   busy: {},
 
   async initialize() {
+    // A retry starts clean: the boot screen stays until this run settles.
+    set({ bootError: null });
     try {
       const [workspaces, providers, settings, usage, configs] = await Promise.all([
         invoke("workspace.list", undefined),
@@ -353,6 +358,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         usage,
         providerConfigs: byProviderId(configs),
         ready: true,
+        error: null,
+        bootError: null,
       });
 
       const firstWorkspace = workspaces[0];
@@ -360,7 +367,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         await get().selectWorkspace(firstWorkspace.id);
       }
     } catch (error) {
-      set({ ready: true, error: describeError(error) });
+      const message = describeError(error);
+      set({ ready: true, error: message, bootError: message });
     }
   },
 

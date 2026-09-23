@@ -216,6 +216,7 @@ export const geminiProfile: CliProviderProfileInput = {
   promptVia: "arg",
   promptArgs: ["--prompt", "{prompt}"],
   output: { format: "text" },
+  interactive: { args: [] },
   unverified: true,
 };
 
@@ -251,6 +252,8 @@ export const opencodeProfile: CliProviderProfileInput = {
   usageArgs: ["stats", "--json"],
   usageFormat: "opencode-stats",
   args: ["run"],
+  // The terminal interface starts in the working directory it is given.
+  interactive: { args: [] },
   modelArgs: ["--model", "{model}"],
   resumeArgs: ["--session", "{providerSessionId}"],
   promptVia: "arg",

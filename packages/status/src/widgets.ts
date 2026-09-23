@@ -1,6 +1,8 @@
 import {
   ISLAND_PRIORITY,
   type AggregatedUsage,
+  type IslandAgentRow,
+  type IslandUsageRow,
   type IslandTarget,
   type UsageLimit,
   type IslandEntry,
@@ -30,6 +32,27 @@ export interface IslandSources {
      * that belong to no chat point at the chat view instead of a bad id.
      */
     target?: IslandTarget;
+    /** When this work really began; absent when nobody knows. */
+    startedAt?: Date | null;
+    /** The provider's mark, when the work belongs to one. */
+    icon?: string | null;
+    /** What the work reported so far (tokens, context), in one line. */
+    detail?: string;
+    /** Stable identity across refreshes; defaults to `session:<sessionId>`. */
+    key?: string;
+  }>;
+  /**
+   * The providers worth a usage row, in display order, with their names and
+   * marks. Empty means "name rows by provider id", which is all a bare
+   * snapshot knows.
+   */
+  readonly providers: ReadonlyArray<{ id: string; name: string; icon: string | null }>;
+  /** Every session the user has, busy or not, with when it last did anything. */
+  readonly sessions: ReadonlyArray<{
+    name: string;
+    icon: string | null;
+    lastActiveAt: Date;
+    busy: boolean;
   }>;
   /** Things waiting on a person, newest first (spec §99). */
   readonly attention: ReadonlyArray<{
@@ -73,6 +96,15 @@ function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/**
+ * New entry fields default to quiet: no options, no diff, no mark override,
+ * no usage rows. Builders spread this so the schema can grow without every
+ * widget naming every field.
+ */
+function quietDefaults(): Pick<IslandEntry, "options" | "usage" | "icon" | "diff" | "agents"> {
+  return { options: [], usage: [], icon: null, diff: null, agents: [] };
+}
+
 /** How much of a limit is used, or null when the provider did not say. */
 function usedPercent(limit: UsageLimit): number | null {
   if (limit.unit === "percent") {
@@ -105,6 +137,7 @@ export const needsAttentionWidget: IslandWidget = {
     }
     return {
       widget: "needsAttention",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.userActionRequired,
       title: first.title,
       detail:
@@ -136,6 +169,7 @@ export const errorsWidget: IslandWidget = {
     }
     return {
       widget: "errors",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.agentBlocked,
       title: first.title,
       detail: first.detail,
@@ -164,6 +198,7 @@ export const connectionHealthWidget: IslandWidget = {
     }
     return {
       widget: "connectionHealth",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.connectionFailure,
       title: first.title,
       detail: first.detail,
@@ -194,6 +229,7 @@ export const completedWorkWidget: IslandWidget = {
     }
     return {
       widget: "completedWork",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.workCompleted,
       title: first.title,
       detail: first.detail,
@@ -221,6 +257,7 @@ export const teamProgressWidget: IslandWidget = {
 
     return {
       widget: "teamProgress",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.activeProgress,
       title: snapshot.run.goal,
       // Counted, never estimated. With no tasks yet there is no percentage to
@@ -235,6 +272,23 @@ export const teamProgressWidget: IslandWidget = {
       action: { label: "Open", target: { view: "teams", runId: snapshot.run.id } },
       key: `run:${snapshot.run.id}`,
       at: sources.now,
+      // Each running team is one agent row: its goal and its counted tasks.
+      agents: running.slice(0, 24).map((entry): IslandAgentRow => {
+        const tasks = entry.tasks;
+        const done = tasks.filter((task) => task.status === "completed").length;
+        const blocked = tasks.filter((task) => task.status === "blocked").length;
+        return {
+          key: `run:${entry.run.id}`,
+          title: entry.run.goal.slice(0, 120),
+          detail: (tasks.length === 0
+            ? "Planning"
+            : `${done}/${plural(tasks.length, "task")}${blocked > 0 ? ` · ${blocked} blocked` : ""}`
+          ).slice(0, 160),
+          icon: null,
+          startedAt: entry.run.startedAt,
+          target: { view: "teams", runId: entry.run.id },
+        };
+      }),
     };
   },
 };
@@ -260,14 +314,31 @@ export const activeAgentsWidget: IslandWidget = {
         ? (first?.task.title ?? busy[0]?.name ?? "Working")
         : `${plural(working.length + busy.length, "agent")} active`;
 
+    // One row per session or terminal agent, so the island can list them
+    // rather than a count. Team tasks appear as their team's row instead.
+    const agents: IslandAgentRow[] = [
+      ...busy.map((session): IslandAgentRow => ({
+        key: session.key ?? `session:${session.sessionId}`,
+        title: session.name.slice(0, 120),
+        detail: (session.detail ?? session.status).slice(0, 160),
+        icon: session.icon ?? null,
+        startedAt: session.startedAt ?? null,
+        target: session.target ?? { view: "chat", sessionId: session.sessionId },
+      })),
+    ].slice(0, 24);
+    const lead = agents[0];
+
     return {
       widget: "activeAgents",
+      ...quietDefaults(),
+      agents,
+      icon: lead?.icon ?? null,
       priority: ISLAND_PRIORITY.agentActivity,
       title,
       // A solo session has no task graph, so it gets its state, not a number.
       detail: first
         ? `${first.task.assignedTo ?? "unassigned"} · ${first.task.status}`
-        : (busy[0]?.status ?? "working"),
+        : (lead?.detail ?? "working"),
       progress: null,
       action: first
         ? { label: "Open", target: { view: "teams", runId: first.runId } }
@@ -286,27 +357,64 @@ export const providerUsageWidget: IslandWidget = {
   id: "providerUsage",
   displayName: "Provider usage",
   build(sources) {
-    const reported = (sources.usage?.snapshots ?? []).filter(
-      (snapshot) => snapshot.state === "available" && snapshot.limits.length > 0,
-    );
-    if (reported.length === 0) {
-      return null;
-    }
+    const snapshots = sources.usage?.snapshots ?? [];
+    const known = sources.providers.length > 0
+      ? sources.providers
+      : snapshots.map((snapshot) => ({
+          id: snapshot.providerId,
+          name: snapshot.providerId,
+          icon: null,
+        }));
 
     // Only what the providers themselves reported (spec §55). A limit whose
-    // numbers do not add up to a percentage is left out rather than guessed.
-    const parts = reported.flatMap((snapshot) =>
-      snapshot.limits
-        .map((limit) => ({ limit, used: usedPercent(limit) }))
-        .filter((entry): entry is { limit: UsageLimit; used: number } => entry.used !== null)
-        .map((entry) => `${snapshot.providerId} ${entry.used}%`),
-    );
-    if (parts.length === 0) {
+    // numbers do not add up to a percentage is left out rather than guessed,
+    // and a provider without one says so instead of showing a bar.
+    const rows: IslandUsageRow[] = known.flatMap((provider): IslandUsageRow[] => {
+      const snapshot = snapshots.find((entry) => entry.providerId === provider.id);
+      const measured =
+        snapshot && snapshot.state !== "unavailable"
+          ? snapshot.limits.flatMap((limit): IslandUsageRow[] => {
+              const used = usedPercent(limit);
+              return used === null
+                ? []
+                : [
+                    {
+                      providerId: provider.id,
+                      name: provider.name,
+                      icon: provider.icon,
+                      window: limit.label,
+                      percentLeft: Math.min(100, Math.max(0, 100 - used)),
+                      note: "",
+                    },
+                  ];
+            })
+          : [];
+      if (measured.length > 0) {
+        return measured;
+      }
+      return [
+        {
+          providerId: provider.id,
+          name: provider.name,
+          icon: provider.icon,
+          window: "",
+          percentLeft: null,
+          note:
+            snapshot && snapshot.state !== "unavailable"
+              ? "No limit reported"
+              : "Usage unavailable",
+        },
+      ];
+    });
+    const numbered = rows.filter((row) => row.percentLeft !== null);
+    if (numbered.length === 0) {
       return null;
     }
+    const parts = numbered.map((row) => `${row.name} ${100 - (row.percentLeft ?? 0)}%`);
 
     return {
       widget: "providerUsage",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.providerUsage,
       title: parts.slice(0, 2).join("   "),
       detail: parts.length > 2 ? parts.slice(2).join("   ") : "",
@@ -314,6 +422,7 @@ export const providerUsageWidget: IslandWidget = {
       action: { label: "Open", target: { view: "providers" } },
       key: "usage",
       at: sources.now,
+      usage: rows.slice(0, 24),
     };
   },
 };
@@ -324,6 +433,7 @@ export const idleWidget: IslandWidget = {
   build(sources) {
     return {
       widget: "idle",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.idle,
       title: "AI Workbench · Idle",
       detail: "",

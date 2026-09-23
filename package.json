@@ -9,18 +9,18 @@
   },
   "packageManager": "pnpm@10.33.0",
   "scripts": {
-    "dev": "pnpm --filter @ai-workbench/desktop dev",
+    "dev": "bun run --filter \"@ai-workbench/desktop\" dev",
     "postinstall": "node scripts/fix-pty-permissions.mjs",
-    "build": "pnpm --filter @ai-workbench/desktop build",
+    "build": "bun run --filter \"@ai-workbench/desktop\" build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:generate": "pnpm --filter @ai-workbench/database generate",
-    "verify": "pnpm verify:lockfile && pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm verify:app",
+    "db:generate": "bun run --filter \"@ai-workbench/database\" generate",
+    "verify": "bun install --frozen-lockfile && bun run lint && bun run typecheck && bun run test && bun run build && bun run verify:app",
     "lint": "eslint .",
     "verify:app": "bash scripts/verify-app.sh",
-    "package": "pnpm --filter @ai-workbench/desktop package",
-    "verify:lockfile": "pnpm install --lockfile-only --frozen-lockfile"
+    "package": "bun run --filter \"@ai-workbench/desktop\" package",
+    "verify:lockfile": "bun install --frozen-lockfile"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -42,5 +42,16 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/JackyWein/AI-Workbench.git"
-  }
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "packages/providers/*",
+    "packages/providers/transports/*"
+  ],
+  "trustedDependencies": [
+    "electron",
+    "esbuild",
+    "node-pty"
+  ]
 }

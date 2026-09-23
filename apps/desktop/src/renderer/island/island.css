@@ -3,7 +3,9 @@
 
 /*
  * The island is a floating companion, not a window: the page itself is
- * transparent and only the pill is painted (spec §95).
+ * transparent and only the unit is painted (spec §95). Docked it is a pill
+ * that opens in place into its card; free it is a circle whose card opens
+ * beside it. Flat rings carry state; nothing pulses at rest.
  */
 *,
 *::before,
@@ -26,129 +28,1137 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.island {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-5);
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--surface-overlay) 88%, transparent);
-  border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-popover);
-  /* The whole pill is the drag handle (spec §95). */
-  -webkit-app-region: drag;
-  transition: border-radius 140ms ease;
+p {
+  margin: 0;
 }
 
-.island[data-expanded="true"] {
-  border-radius: var(--radius-lg);
-  align-items: stretch;
-  padding: var(--space-4) var(--space-5);
-}
-
-.island:focus-visible {
-  outline: 2px solid var(--border-focus);
-  outline-offset: 2px;
-}
-
-.island__line {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: 20px;
-  /* A real button now, reset to the plain line look. */
+button {
   font: inherit;
   color: inherit;
-  text-align: inherit;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  /* Buttons must stay clickable inside a draggable region. */
-  -webkit-app-region: no-drag;
 }
 
-.island__line:focus-visible {
+/*
+ * The stage fills the window and pins the unit to its edge: top-docked units
+ * hang from the top center, side-docked ones from the middle of their side,
+ * a free blob from its left. The window is anchored the same way when it
+ * resizes, so a pill opening into its card never moves on screen.
+ */
+.isl-stage {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.isl-stage[data-edge="top"] {
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.isl-stage[data-edge="bottom"] {
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.isl-stage[data-edge="right"] {
+  justify-content: flex-end;
+}
+
+/* Room around the unit for its glow and badge; the window is sized to this. */
+.isl {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+}
+
+.isl[data-docked="free"] {
+  flex-direction: row;
+  align-items: center;
+}
+
+.isl:focus-visible .isl__pill,
+.isl:focus-visible .isl__circle {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
-.island__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--text-muted);
+/* --------------------------------------------------------------- marks -- */
+
+.isl__mark {
+  display: inline-flex;
   flex: none;
 }
 
-.island__dot[data-tone="active"] {
-  background: var(--running);
+.isl__mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
-.island__dot[data-tone="attention"] {
-  background: var(--warning);
-}
-
-.island__dot[data-tone="error"] {
-  background: var(--danger);
-}
-
-.island__dot[data-tone="done"] {
-  background: var(--success);
-}
-
-.island__title {
-  font-size: var(--text-sm);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.island__detail {
-  font-size: var(--text-xs);
+.isl__letter {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--surface-active);
+  font-weight: 600;
   color: var(--text-secondary);
+}
+
+.isl__letter[data-team="true"] {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
+.isl__app {
+  display: inline-flex;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.isl__el {
+  margin-left: auto;
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.isl__kbd {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  color: var(--text-muted);
+  background: var(--surface-active);
+  border: 1px solid var(--border-subtle);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* ----------------------------------------------------------- free blob -- */
+
+.isl__circle {
+  position: relative;
+  flex: none;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(28, 30, 35, 0.94);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-normal) var(--easing-standard),
+    box-shadow var(--duration-normal) var(--easing-standard),
+    transform 180ms ease;
+}
+
+.isl__circle:hover {
+  transform: scale(1.06);
+}
+
+.isl[data-dragging="true"][data-face] .isl__circle {
+  cursor: grabbing;
+  transform: scale(1.04);
+}
+
+/*
+ * Near a rail the blob is drawn onto it inside a dashed outline of the pill
+ * it will become; letting go there docks it.
+ */
+.isl__ghost {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 240px;
+  height: 52px;
+  border: 1.5px dashed rgba(140, 157, 255, 0.55);
+  border-radius: 26px;
+  animation: isl-ghost-in 260ms cubic-bezier(0.3, 1.2, 0.45, 1);
+}
+
+.isl__ghost[data-vertical="true"] {
+  width: 52px;
+  height: 132px;
+  animation-name: isl-ghost-in-v;
+}
+
+.isl__ghost .isl__circle {
+  transform: none;
+}
+
+@keyframes isl-ghost-in {
+  from {
+    opacity: 0;
+    clip-path: inset(0 calc(50% - 26px) round 26px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(-2px round 26px);
+  }
+}
+
+@keyframes isl-ghost-in-v {
+  from {
+    opacity: 0;
+    clip-path: inset(calc(50% - 26px) 0 round 26px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(-2px round 26px);
+  }
+}
+
+/* Pulled free of its rail, the pill drops into a blob with a soft pop. */
+.isl[data-arrival="free"] .isl__circle {
+  animation: isl-blob-in 420ms cubic-bezier(0.3, 1.45, 0.45, 1);
+}
+
+@keyframes isl-blob-in {
+  from {
+    transform: scale(0.55);
+    border-radius: 19px;
+    filter: blur(3px);
+  }
+  55% {
+    filter: blur(0);
+  }
+}
+
+.isl__blobin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: #101114;
+}
+
+.isl[data-face="working"] .isl__circle {
+  border-color: rgba(91, 200, 167, 0.6);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(91, 200, 167, 0.13);
+}
+
+.isl[data-face="approval"] .isl__circle {
+  border-color: rgba(229, 182, 92, 0.7);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(229, 182, 92, 0.15);
+}
+
+.isl[data-face="question"] .isl__circle {
+  border-color: rgba(140, 157, 255, 0.7);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(140, 157, 255, 0.15);
+}
+
+.isl[data-face="idle"] .isl__circle .isl__mark,
+.isl[data-face="idle"] .isl__circle .isl__letter {
+  opacity: 0.5;
+}
+
+.isl__badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+  color: #221a08;
+  font-size: 9px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.isl[data-face="question"] .isl__badge {
+  background: var(--accent);
+  color: var(--text-inverted);
+}
+
+/* The card beside the circle springs out of it and fades back. */
+.isl__side {
+  animation: isl-side 300ms cubic-bezier(0.3, 1.3, 0.5, 1);
+  transform-origin: left center;
+}
+
+.isl__side[data-hiding="true"] {
+  opacity: 0;
+  filter: blur(4px);
+  transition:
+    opacity var(--duration-slow) var(--easing-standard),
+    filter var(--duration-slow) var(--easing-standard);
+}
+
+@keyframes isl-side {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateX(-14px) scale(0.94);
+  }
+}
+
+.isl__card,
+.isl__side > .isl__attn {
+  width: 300px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(28, 30, 35, 0.96);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.isl__side > .isl__attn {
+  width: 320px;
+  padding: 14px 16px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.isl__card--wide {
+  width: 340px;
+}
+
+.isl__card--list {
+  padding: 4px 6px;
+}
+
+.isl__arow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.isl__arow + .isl__arow {
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+}
+
+.isl__arow:hover .isl__rowname,
+.isl__xrow:hover .isl__rowname {
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------- edge pill -- */
+
+.isl__pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  min-width: 46px;
+  max-width: 272px;
+  padding: 0 14px;
+  border-radius: 19px;
+  background: rgba(10, 11, 13, 0.96);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-normal) var(--easing-standard),
+    box-shadow var(--duration-normal) var(--easing-standard),
+    transform 200ms cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+
+.isl__pill:hover {
+  border-color: var(--border-strong);
+}
+
+.isl[data-dragging="true"][data-face] .isl__pill {
+  cursor: grabbing;
+  transform: scale(1.02);
+}
+
+/*
+ * Landing on a rail (or turning a corner onto the next one) the blob stretches
+ * out into the pill: the outline opens from a circle at its center.
+ */
+.isl[data-arrival="dock"] .isl__pill {
+  animation: isl-pill-in 460ms cubic-bezier(0.3, 1.25, 0.45, 1);
+}
+
+.isl[data-arrival="dock"] .isl__pill[data-vertical="true"] {
+  animation-name: isl-pill-in-v;
+}
+
+@keyframes isl-pill-in {
+  from {
+    clip-path: inset(0 calc(50% - 19px) round 19px);
+    filter: blur(2px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  to {
+    clip-path: inset(0 round 19px);
+  }
+}
+
+@keyframes isl-pill-in-v {
+  from {
+    clip-path: inset(calc(50% - 19px) 0 round 19px);
+    filter: blur(2px);
+  }
+  60% {
+    filter: blur(0);
+  }
+  to {
+    clip-path: inset(0 round 19px);
+  }
+}
+
+.isl__pill[data-vertical="true"] {
+  flex-direction: column;
+  justify-content: center;
+  width: 38px;
+  height: auto;
+  min-height: 96px;
+  padding: 12px 0;
+  gap: 7px;
+  border-radius: 22px;
+}
+
+.isl[data-face="approval"] .isl__pill {
+  border-color: rgba(229, 182, 92, 0.7);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 9px rgba(229, 182, 92, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.isl[data-face="question"] .isl__pill {
+  border-color: rgba(140, 157, 255, 0.65);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 9px rgba(140, 157, 255, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.isl[data-face="idle"] .isl__pill .isl__mark,
+.isl[data-face="idle"] .isl__pill .isl__letter {
+  opacity: 0.55;
+}
+
+.isl__pilltext {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  text-align: left;
+}
+
+.isl__pillmeta {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.isl__pillmore {
+  flex: none;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--text-secondary);
+  border-radius: var(--radius-pill);
+  background: var(--surface-active);
+  font-variant-numeric: tabular-nums;
+}
+
+.isl__pillmeta[data-tone="accent"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.isl__count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-pill);
+  background: var(--warning);
+  color: #221a08;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.isl[data-face="question"] .isl__count {
+  background: var(--accent);
+  color: var(--text-inverted);
+}
+
+/* The docked pill opened in place: same unit, grown into its card. */
+.isl__sheet {
+  width: 340px;
+  max-height: 600px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(10, 11, 13, 0.96);
+  border: 1px solid var(--border-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  --pw: 240px;
+  --ph: 38px;
+  --isl-open: 440ms cubic-bezier(0.32, 1.18, 0.42, 1) both;
+  --isl-close: 240ms cubic-bezier(0.5, 0, 0.3, 1) forwards;
+  animation: isl-open-top var(--isl-open);
+}
+
+/*
+ * The sheet is the pill, grown: it starts clipped to the pill's own outline
+ * at the docked edge and unfolds away from it; closing folds it back the
+ * same way before the pill returns.
+ */
+.isl__sheet[data-edge="bottom"] {
+  animation-name: isl-open-bottom;
+}
+
+.isl__sheet[data-edge="left"] {
+  animation-name: isl-open-left;
+}
+
+.isl__sheet[data-edge="right"] {
+  animation-name: isl-open-right;
+}
+
+.isl__sheet[data-closing="true"] {
+  overflow: hidden;
+  pointer-events: none;
+  animation: isl-close-top var(--isl-close);
+}
+
+.isl__sheet[data-closing="true"][data-edge="bottom"] {
+  animation-name: isl-close-bottom;
+}
+
+.isl__sheet[data-closing="true"][data-edge="left"] {
+  animation-name: isl-close-left;
+}
+
+.isl__sheet[data-closing="true"][data-edge="right"] {
+  animation-name: isl-close-right;
+}
+
+@keyframes isl-open-top {
+  from {
+    clip-path: inset(
+      0 calc(50% - var(--pw) / 2) calc(100% - var(--ph)) calc(50% - var(--pw) / 2) round 19px
+    );
+  }
+  to {
+    clip-path: inset(0 round 18px);
+  }
+}
+
+@keyframes isl-open-bottom {
+  from {
+    clip-path: inset(
+      calc(100% - var(--ph)) calc(50% - var(--pw) / 2) 0 calc(50% - var(--pw) / 2) round 19px
+    );
+  }
+  to {
+    clip-path: inset(0 round 18px);
+  }
+}
+
+@keyframes isl-open-left {
+  from {
+    clip-path: inset(
+      calc(50% - var(--ph) / 2) calc(100% - var(--pw)) calc(50% - var(--ph) / 2) 0 round 19px
+    );
+  }
+  to {
+    clip-path: inset(0 round 18px);
+  }
+}
+
+@keyframes isl-open-right {
+  from {
+    clip-path: inset(
+      calc(50% - var(--ph) / 2) 0 calc(50% - var(--ph) / 2) calc(100% - var(--pw)) round 19px
+    );
+  }
+  to {
+    clip-path: inset(0 round 18px);
+  }
+}
+
+@keyframes isl-close-top {
+  from {
+    clip-path: inset(0 round 18px);
+  }
+  to {
+    clip-path: inset(
+      0 calc(50% - var(--pw) / 2) calc(100% - var(--ph)) calc(50% - var(--pw) / 2) round 19px
+    );
+  }
+}
+
+@keyframes isl-close-bottom {
+  from {
+    clip-path: inset(0 round 18px);
+  }
+  to {
+    clip-path: inset(
+      calc(100% - var(--ph)) calc(50% - var(--pw) / 2) 0 calc(50% - var(--pw) / 2) round 19px
+    );
+  }
+}
+
+@keyframes isl-close-left {
+  from {
+    clip-path: inset(0 round 18px);
+  }
+  to {
+    clip-path: inset(
+      calc(50% - var(--ph) / 2) calc(100% - var(--pw)) calc(50% - var(--ph) / 2) 0 round 19px
+    );
+  }
+}
+
+@keyframes isl-close-right {
+  from {
+    clip-path: inset(0 round 18px);
+  }
+  to {
+    clip-path: inset(
+      calc(50% - var(--ph) / 2) 0 calc(50% - var(--ph) / 2) calc(100% - var(--pw)) round 19px
+    );
+  }
+}
+
+/* Content rises in just behind the outline, a row at a time. */
+.isl__sheet > * > * {
+  animation: isl-rise 300ms cubic-bezier(0.2, 0.8, 0.3, 1) 70ms both;
+}
+
+.isl__sheet > * > *:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.isl__sheet > * > *:nth-child(3) {
+  animation-delay: 150ms;
+}
+
+.isl__sheet > * > *:nth-child(n + 4) {
+  animation-delay: 190ms;
+}
+
+.isl__sheet[data-closing="true"] > * > * {
+  animation: isl-sink 140ms ease forwards;
+}
+
+@keyframes isl-sink {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes isl-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* Ink morph: remounted face content crossfades with a short blur pulse. */
+.isl__morph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  animation: isl-morph 300ms cubic-bezier(0.3, 1.3, 0.5, 1);
+}
+
+@keyframes isl-morph {
+  0% {
+    opacity: 0;
+    filter: blur(3px);
+  }
+  60% {
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+/* -------------------------------------------------- open sheet: faces -- */
+
+.isl__x {
+  display: flex;
+  flex-direction: column;
+}
+
+.isl__xh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.isl__live {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--running);
+  border: 1px solid rgba(91, 200, 167, 0.35);
+  border-radius: var(--radius-pill);
+  padding: 1px 8px;
+}
+
+.isl__xrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 2px;
+  text-align: left;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.isl__rowtext {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.isl__rowname {
+  font-size: 12px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--duration-fast) var(--easing-standard);
+}
+
+.isl__rowsub {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.isl__askwrap {
+  margin-top: 8px;
+}
+
+.isl__ask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  cursor: text;
+  transition: border-color var(--duration-fast) var(--easing-standard);
+}
+
+.isl__ask:focus-within {
+  border-color: var(--border-strong);
+}
+
+.isl__askinput {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.isl__ask .isl__askinput:focus,
+.isl__ask .isl__askinput:focus-visible {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.isl__askinput::placeholder {
+  color: var(--text-muted);
+}
+
+.isl__asknote {
+  margin-top: 4px;
+  padding: 0 2px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.isl__xuse {
+  margin-top: 10px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.isl__xl {
+  margin-bottom: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.isl__xstat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 0;
+  font-size: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.isl__xstatvalue {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.island__bar {
+/* --------------------------------------------------------------- usage -- */
+
+.isl__uh {
+  display: flex;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+
+.isl__uhtitle {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.isl__uhtime {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.isl__urow {
+  padding: 7px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.isl__uline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.isl__uname {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.isl__uwindow {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.isl__upct {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.isl__na {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.isl__ubar {
   height: 3px;
+  margin-top: 6px;
   border-radius: var(--radius-pill);
   background: var(--surface-active);
   overflow: hidden;
 }
 
-.island__bar-fill {
+.isl__ubar i {
+  display: block;
   height: 100%;
+  border-radius: inherit;
   background: var(--accent);
+  transition: width var(--duration-slow) var(--easing-standard);
 }
 
-.island__actions {
+.isl__ubar i[data-low="true"] {
+  background: var(--warning);
+}
+
+/* ---------------------------------------------------------- attention -- */
+
+.isl__ahead {
   display: flex;
-  gap: var(--space-3);
-  justify-content: flex-end;
-  /* Buttons must stay clickable inside a draggable region. */
-  -webkit-app-region: no-drag;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
 }
 
-.island__button {
-  font: inherit;
-  font-size: var(--text-xs);
-  color: var(--text-primary);
-  background: var(--surface-active);
+.isl__approveall {
+  margin-left: auto;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  background: none;
   border: none;
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) var(--space-4);
   cursor: pointer;
 }
 
-.island__button:hover {
-  background: var(--surface-selected);
+.isl__approveall:hover {
+  text-decoration: underline;
 }
 
-.island__button--quiet {
-  background: transparent;
+.isl__items {
+  display: flex;
+  flex-direction: column;
+  max-height: 440px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.isl__item + .isl__item {
+  margin-top: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.isl__at {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.isl__attitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.isl__ad {
+  margin: 4px 0 8px;
+  font-size: 11px;
   color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A pretty diff, capped with a fade. */
+.isl__diff {
+  margin: 0 0 8px;
+  padding: 7px 10px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.65;
+  background: #0d0e11;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
+  mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
+}
+
+.isl__diffhead {
+  margin-bottom: 4px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.isl__diffline {
+  display: block;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+
+.isl__diffline[data-kind="add"] {
+  color: var(--success);
+}
+
+.isl__diffline[data-kind="del"] {
+  color: var(--danger);
+}
+
+.isl__actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.isl__btn {
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: 7px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.isl__btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.isl__btn--quiet {
+  background: none;
+  border-color: transparent;
+}
+
+.isl__btn--amber {
+  background: var(--warning);
+  border-color: transparent;
+  color: #221a08;
+  font-weight: 600;
+}
+
+.isl__btn--amber:hover {
+  color: #221a08;
+  border-color: transparent;
+  filter: brightness(1.07);
+}
+
+.isl__qh {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.isl__qtitle {
+  margin: 6px 0 2px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.isl__qsub {
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.isl__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 11px;
+  text-align: left;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--surface-raised);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--easing-standard),
+    background-color var(--duration-fast) var(--easing-standard);
+}
+
+.isl__option:hover {
+  border-color: var(--accent);
+  background: var(--accent-quiet);
+}
+
+.isl__optionlabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.isl__optionhint {
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.isl__option .isl__kbd {
+  margin-left: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .isl__circle,
+  .isl__pill,
+  .isl__side,
+  .isl__sheet,
+  .isl__sheet > * > *,
+  .isl__morph,
+  .isl__ghost,
+  .isl[data-arrival] .isl__circle,
+  .isl[data-arrival] .isl__pill,
+  .isl__sheet[data-closing="true"],
+  .isl__sheet[data-closing="true"] > * > * {
+    animation: none;
+    transition: none;
+  }
+
+  .isl__side[data-hiding="true"] {
+    transition: none;
+  }
 }

@@ -5,6 +5,8 @@ export const usageUnitSchema = z.enum([
   "tokens",
   "requests",
   "credits",
+  /** An amount of money in US dollars, e.g. a cost the tool computed. */
+  "usd",
   "time",
 ]);
 export type UsageUnit = z.infer<typeof usageUnitSchema>;

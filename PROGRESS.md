@@ -35,6 +35,35 @@ server to a provider that speaks MCP. What remains in G4 is remote MCP
 transports, and in G2 verifying the Codex and Antigravity profiles against
 those tools.
 
+### Design rework (2026-09-23)
+
+Usage view, live terminal metrics, Settings, Providers and the Status Island
+were reworked to the approved design. Verified here: typecheck, lint (0
+errors), 307 tests, the production build, rendered screenshots of every island
+face against the mocks, and, in the running app, the following:
+- Claude Code telemetry (tokens, context, cost, 5-hour and weekly limits)
+  reached the tile, the Usage view and the island.
+- The island's prompt line typed into a running Claude Code terminal and got
+  an answer.
+
+Codex limits come from its session files and OpenCode amounts from its own
+CLI, both seen live. Gemini telemetry is written but was not run.
+
+Island drag and dock now run on page pointer events instead of the OS drag
+region, which on Windows swallowed clicks, so the docked pill could not
+open. Main follows the cursor on an 8 ms beat. A docked pill slides along
+its rail, turns corners onto the next rail, gives a little when pulled and
+detaches past `detachPx`. A free blob dropped within `snapPx` of an edge
+settles onto that rail. The pill opens into its sheet and folds back
+through a clip-path morph from its own outline. The drag geometry is
+unit-tested and the animations were rendered headlessly. The real drag
+through the OS cursor has **not** been exercised yet. There is no dock
+ghost-slot or trailer; the blob instead shows a snap cue.
+
+`verify:app` was **not** re-run after these changes, and its island size
+expectations were adjusted to the new layout, so no criterion above was
+ticked or unticked on this basis.
+
 ## How this file is verified
 
 Everything ticked below is proven by `pnpm verify`, which runs:

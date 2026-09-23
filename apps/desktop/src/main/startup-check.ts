@@ -129,7 +129,7 @@ export async function runStartupCheck(
     try {
       const pressed = await islandJs(
         `(() => {
-           const node = document.querySelector('.island');
+           const node = document.querySelector('.isl');
            if (!node) return false;
            node.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }));
            return true;
@@ -142,13 +142,16 @@ export async function runStartupCheck(
     }
   };
 
-  /** Waits until the island page renders the current widget's title. */
+  /** Waits until the island page renders a real unit, not its loading face. */
   const waitIslandDom = async (timeoutMs = 10_000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       try {
         const ready = await islandJs(
-          "Boolean(document.querySelector('.island__title')?.textContent)",
+          `(() => {
+             const label = document.querySelector('.isl')?.getAttribute('aria-label') ?? '';
+             return Boolean(label && !label.includes('loading') && !label.includes('No state'));
+           })()`,
         );
         if (ready === true) {
           return true;
@@ -163,7 +166,18 @@ export async function runStartupCheck(
 
   await check(
     "shell renders",
-    "Boolean(document.querySelector('.app') && document.querySelector('.sidebar'))",
+    `(async () => {
+       // The boot screen gates the shell until the store is ready, so this
+       // waits for the app rather than asserting a single frame.
+       const deadline = Date.now() + 15000;
+       while (Date.now() < deadline) {
+         if (document.querySelector('.app') && document.querySelector('.sidebar')) {
+           return true;
+         }
+         await new Promise(resolve => setTimeout(resolve, 100));
+       }
+       return false;
+     })()`,
   );
 
   await check(
@@ -196,7 +210,19 @@ export async function runStartupCheck(
   );
 
   await checkMain("the island is a separate visible window", async () => {
-    if (!island.visible) {
+    // The island hides while the main window is focused, so the check looks
+    // away first: losing focus is what brings it on screen.
+    window.blur();
+    const deadline = Date.now() + 5_000;
+    let visible = false;
+    while (Date.now() < deadline) {
+      if (island.visible) {
+        visible = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (!visible) {
       return false;
     }
     if (!(await waitIslandDom())) {
@@ -210,34 +236,53 @@ export async function runStartupCheck(
     if (BrowserWindow.getAllWindows().filter((entry) => !entry.isDestroyed()).length !== 2) {
       return false;
     }
-    // It shows exactly the title the service reported — nothing invented —
-    // and it is sized for the state it is in: compact normally, larger while
-    // an entry is holding it open. Which entry that is depends on what the
-    // application knows, so both are compared against the service rather than
-    // against fixed values. On a second start there can be unseen news, so a
-    // check that demanded the compact size would be asserting a fresh profile.
+    // It names what the service reported — nothing invented — and it is sized
+    // for its face: the page measures, main sizes the window to it. Which
+    // face that is depends on what the application knows, so the label is
+    // compared against the service rather than a fixed value. On a second
+    // start there can be unseen news, so a check that demanded one face would
+    // be asserting a fresh profile.
+    const state = island.state;
+    const label = await islandJs(
+      "document.querySelector('.isl')?.getAttribute('aria-label') ?? ''",
+    );
+    const bounds = target.getBounds();
+    const names = state.entries.map((entry) => entry.title);
+    const sized =
+      bounds.width >= 42 &&
+      bounds.width <= 480 &&
+      bounds.height >= 42 &&
+      bounds.height <= 640;
+    return (
+      typeof label === "string" &&
+      label.startsWith("Status Island:") &&
+      (names.some((name) => label.includes(name)) || label.includes("No agents")) &&
+      sized
+    );
+  });
+
+  await checkMain("the island hides while the main window is focused", async () => {
+    focusWindow(window);
     const deadline = Date.now() + 5_000;
-    let matched = false;
     while (Date.now() < deadline) {
-      const state = island.state;
-      const title = await islandJs(
-        "document.querySelector('.island__title')?.textContent ?? ''",
-      );
-      const bounds = target.getBounds();
-      const expected = state.expanded
-        ? { width: 380, height: 132 }
-        : { width: 320, height: 44 };
-      if (
-        title === state.current.title &&
-        bounds.width === expected.width &&
-        bounds.height === expected.height
-      ) {
-        matched = true;
-        break;
+      if (!island.visible) {
+        return true;
       }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
-    return matched;
+    return false;
+  });
+
+  await checkMain("the island returns when focus leaves the app", async () => {
+    window.blur();
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (island.visible) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return false;
   });
 
   await check(
@@ -340,7 +385,19 @@ export async function runStartupCheck(
     );
 
     await checkMain("the island reappears at the stored position", async () => {
-      if (!island.visible) {
+      // A focused main window keeps the island hidden, so the check looks
+      // away first — then the island must be back, at its stored spot.
+      window.blur();
+      const deadline = Date.now() + 5_000;
+      let visible = false;
+      while (Date.now() < deadline) {
+        if (island.visible) {
+          visible = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (!visible) {
         return false;
       }
       if (!(await waitIslandDom())) {
@@ -433,13 +490,15 @@ export async function runStartupCheck(
   // for it explicitly rather than depending on whatever had focus before.
   focusWindow(window);
   await check(
-    "usage detail opens on keyboard focus",
+    "usage pill opens the usage view",
     `(() => {
-       const trigger = document.querySelector('.usage-indicator');
+       const trigger = document.querySelector('.header__actions .usage-pill');
        if (!trigger) return false;
-       trigger.blur();
-       trigger.focus();
-       return ${waitFor("document.querySelector('.popover__panel')", 2000)};
+       trigger.click();
+       return ${waitFor(
+         "[...document.querySelectorAll('.view__title')].some(node => node.textContent === 'Usage')",
+         2000,
+       )};
      })()`,
   );
 
@@ -1064,16 +1123,26 @@ export async function runStartupCheck(
     if (!target) {
       return false;
     }
-    const bounds = target.getBounds();
-    const actions = await islandJs(
-      "[...document.querySelectorAll('.island__actions button')].map(node => node.textContent)",
-    );
-    return (
-      bounds.width === 380 &&
-      bounds.height === 132 &&
-      Array.isArray(actions) &&
-      actions.some((label) => typeof label === "string" && label.includes("Open"))
-    );
+    // The page measures its card and reports back, so the window settles a
+    // few hops after the service: poll for the card, not a single read.
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      const bounds = target.getBounds();
+      const actions = await islandJs(
+        "[...document.querySelectorAll('.isl__actions button')].map(node => node.textContent)",
+      );
+      if (
+        // The card opens beside the circle, so the window holds both.
+        bounds.width >= 340 &&
+        bounds.height > 90 &&
+        Array.isArray(actions) &&
+        actions.some((label) => typeof label === "string" && label.includes("Open"))
+      ) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return false;
   });
 
   // The deep link the island offers, clicked where a user clicks it: the main
@@ -1082,7 +1151,7 @@ export async function runStartupCheck(
     try {
       const clicked = await islandJs(
         `(() => {
-           const button = [...document.querySelectorAll('.island__actions button')]
+           const button = [...document.querySelectorAll('.isl__actions button')]
              .find(node => node.textContent === 'Open');
            if (!button) return false;
            button.click();
@@ -1107,17 +1176,26 @@ export async function runStartupCheck(
     if (!target) {
       return false;
     }
-    const bounds = target.getBounds();
-    const actions = await islandJs(
-      "document.querySelectorAll('.island__actions').length",
-    );
-    const state = await island.refresh();
-    return (
-      bounds.width === 320 &&
-      bounds.height === 44 &&
-      actions === 0 &&
-      state.expanded === false
-    );
+    // Same async settle in reverse: the circle (42px plus the room for its
+    // ring and badge) measures back.
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      const bounds = target.getBounds();
+      const actions = await islandJs(
+        "document.querySelectorAll('.isl__actions').length",
+      );
+      const state = await island.refresh();
+      if (
+        bounds.width <= 72 &&
+        bounds.height <= 72 &&
+        actions === 0 &&
+        state.expanded === false
+      ) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return false;
   });
 
   await checkMain("the main window hides while the runtime continues", () => {
@@ -1147,6 +1225,121 @@ export async function runStartupCheck(
      })()`,
   );
 
+  await checkMain("the main window comes back", () => {
+    window.show();
+    return window.isVisible();
+  });
+
+  // The remaining checks expect the session's chat again.
+  await check(
+    "returns to the session after the settings screens",
+    `(async () => {
+       [...document.querySelectorAll('.sidebar__scroll .row')]
+         .find(node => node.textContent?.includes('Check session'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       return Boolean(document.querySelector('.composer'));
+     })()`,
+  );
+
+  // An optional screenshot makes the rendered result reviewable by a human
+  // instead of only asserted by selectors. A screenshot failure never fails
+  // the check itself — it is evidence, not the subject.
+  const screenshotPath = process.env["AI_WORKBENCH_CHECK_SCREENSHOT"];
+  if (screenshotPath) {
+    try {
+      await mkdir(dirname(screenshotPath), { recursive: true });
+
+      /** Captures one screen, with nothing left over on top of it. */
+      const capture = async (name: string, navigate: string): Promise<void> => {
+        await window.webContents.executeJavaScript(
+          `(async () => {
+             // An overlay from an earlier check would hide the screen.
+             document.querySelector('.palette__input')?.dispatchEvent(
+               new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+             document.activeElement?.blur?.();
+             await new Promise(resolve => setTimeout(resolve, 120));
+             ${navigate}
+             return true;
+           })()`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const file =
+          name === "chat" ? screenshotPath : screenshotPath.replace(/\.png$/, `-${name}.png`);
+        await writeFile(file, (await window.webContents.capturePage()).toPNG());
+      };
+
+      const sidebar = (label: string): string =>
+        `[...document.querySelectorAll('.sidebar__foot .row')]
+           .find(node => node.textContent?.includes(${JSON.stringify(label)}))?.click();`;
+
+      await capture(
+        "chat",
+        `[...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Check session'))?.click();`,
+      );
+      // The agents grid, which only says anything with real panes in it: one
+      // pane should fill the panel, a second should bring a column.
+      const openShell = `[...document.querySelectorAll('button')]
+           .find(node => node.textContent?.trim() === 'Shell')?.click();
+         await new Promise(resolve => setTimeout(resolve, 900));`;
+      await capture(
+        "agents-one",
+        `[...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Check session'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 200));
+         window.dispatchEvent(new KeyboardEvent('keydown',
+           { key: 'A', ctrlKey: true, shiftKey: true, bubbles: true }));
+         await new Promise(resolve => setTimeout(resolve, 300));
+         ${openShell}`,
+      );
+      await capture("agents-two", openShell);
+      // The third pane is where the grid stops growing and starts scrolling.
+      await capture("agents-three", openShell);
+      await capture("providers", sidebar("Providers"));
+      await capture("teams", sidebar("Teams"));
+      await capture("settings", sidebar("Settings"));
+      await capture("skills", sidebar("Skills"));
+      await capture("usage", sidebar("Usage"));
+
+      // The island is its own window, so it is captured from its own page. It
+      // hides while the main window has focus, so focus goes elsewhere first;
+      // a hidden window never answers capturePage, hence the time limit.
+      window.blur();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const islandTarget = islandWindow();
+      if (islandTarget && islandTarget.isVisible()) {
+        const image = await Promise.race([
+          islandTarget.webContents.capturePage(),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+        if (image) {
+          await writeFile(screenshotPath.replace(/\.png$/, "-island.png"), image.toPNG());
+        }
+      }
+
+      // Both themes are meant to be deliberate, so both are reviewable. The
+      // theme is set the way the renderer itself applies it; going through
+      // settings would not reach this window, which already has its own copy.
+      await capture(
+        "settings-light",
+        `document.documentElement.dataset.theme = 'light';
+         ${sidebar("Settings")}`,
+      );
+      await capture("providers-light", sidebar("Providers"));
+      await window.webContents.executeJavaScript(
+        `document.documentElement.dataset.theme = 'dark'`,
+      );
+
+      logger.info("Startup check screenshots written", { directory: dirname(screenshotPath) });
+    } catch (error) {
+      logger.warn("Startup check screenshots failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  // The remote workspace is checked after the screenshots, so the screens
+  // above show exactly the data the approved design was captured with.
   // --- a workspace on another machine -------------------------------------
   //
   // A real SSH server, started in this process, serving a real directory. The
@@ -1369,101 +1562,6 @@ export async function runStartupCheck(
     }
   }
 
-  await checkMain("the main window comes back", () => {
-    window.show();
-    return window.isVisible();
-  });
-
-  // The remaining checks expect the session's chat again.
-  await check(
-    "returns to the session after the settings screens",
-    `(async () => {
-       [...document.querySelectorAll('.sidebar__scroll .row')]
-         .find(node => node.textContent?.includes('Check session'))?.click();
-       await new Promise(resolve => setTimeout(resolve, 400));
-       return Boolean(document.querySelector('.composer'));
-     })()`,
-  );
-
-  // An optional screenshot makes the rendered result reviewable by a human
-  // instead of only asserted by selectors. A screenshot failure never fails
-  // the check itself — it is evidence, not the subject.
-  const screenshotPath = process.env["AI_WORKBENCH_CHECK_SCREENSHOT"];
-  if (screenshotPath) {
-    try {
-      await mkdir(dirname(screenshotPath), { recursive: true });
-
-      /** Captures one screen, with nothing left over on top of it. */
-      const capture = async (name: string, navigate: string): Promise<void> => {
-        await window.webContents.executeJavaScript(
-          `(async () => {
-             // An overlay from an earlier check would hide the screen.
-             document.querySelector('.palette__input')?.dispatchEvent(
-               new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-             document.activeElement?.blur?.();
-             await new Promise(resolve => setTimeout(resolve, 120));
-             ${navigate}
-             return true;
-           })()`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        const file =
-          name === "chat" ? screenshotPath : screenshotPath.replace(/\.png$/, `-${name}.png`);
-        await writeFile(file, (await window.webContents.capturePage()).toPNG());
-      };
-
-      const sidebar = (label: string): string =>
-        `[...document.querySelectorAll('.sidebar__foot .row')]
-           .find(node => node.textContent?.includes(${JSON.stringify(label)}))?.click();`;
-
-      await capture(
-        "chat",
-        `[...document.querySelectorAll('.sidebar__scroll .row')]
-           .find(node => node.textContent?.includes('Check session'))?.click();`,
-      );
-      // The agents grid, which only says anything with real panes in it: one
-      // pane should fill the panel, a second should bring a column.
-      const openShell = `[...document.querySelectorAll('button')]
-           .find(node => node.textContent?.trim() === 'Shell')?.click();
-         await new Promise(resolve => setTimeout(resolve, 900));`;
-      await capture(
-        "agents-one",
-        `[...document.querySelectorAll('.sidebar__scroll .row')]
-           .find(node => node.textContent?.includes('Check session'))?.click();
-         await new Promise(resolve => setTimeout(resolve, 200));
-         window.dispatchEvent(new KeyboardEvent('keydown',
-           { key: 'A', ctrlKey: true, shiftKey: true, bubbles: true }));
-         await new Promise(resolve => setTimeout(resolve, 300));
-         ${openShell}`,
-      );
-      await capture("agents-two", openShell);
-      // The third pane is where the grid stops growing and starts scrolling.
-      await capture("agents-three", openShell);
-      await capture("providers", sidebar("Providers"));
-      await capture("teams", sidebar("Teams"));
-      await capture("settings", sidebar("Settings"));
-      await capture("skills", sidebar("Skills"));
-
-      // Both themes are meant to be deliberate, so both are reviewable. The
-      // theme is set the way the renderer itself applies it; going through
-      // settings would not reach this window, which already has its own copy.
-      await capture(
-        "settings-light",
-        `document.documentElement.dataset.theme = 'light';
-         ${sidebar("Settings")}`,
-      );
-      await capture("providers-light", sidebar("Providers"));
-      await window.webContents.executeJavaScript(
-        `document.documentElement.dataset.theme = 'dark'`,
-      );
-
-      logger.info("Startup check screenshots written", { directory: dirname(screenshotPath) });
-    } catch (error) {
-      logger.warn("Startup check screenshots failed", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
 
   // The machine goes away with the check that started it.
   if (sshServer) {

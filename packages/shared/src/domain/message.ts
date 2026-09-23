@@ -27,6 +27,14 @@ export const messageUsageSchema = z.object({
   limits: z.array(usageLimitSchema),
   inputTokens: z.number().nonnegative().optional(),
   outputTokens: z.number().nonnegative().optional(),
+  /** Input served from the provider's prompt cache. */
+  cacheReadTokens: z.number().nonnegative().optional(),
+  /** Input written to the provider's prompt cache. */
+  cacheWriteTokens: z.number().nonnegative().optional(),
+  /** Cost of the turn in US dollars, as the tool reported it. */
+  costUsd: z.number().nonnegative().optional(),
+  /** How long the turn took, as the tool measured it. */
+  durationMs: z.number().nonnegative().optional(),
   /** Context consumed so far in this provider session, when reported. */
   contextTokens: z.number().nonnegative().optional(),
   /** Size of the model's context window, when known. */

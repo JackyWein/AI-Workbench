@@ -59,12 +59,12 @@ export function windowLabel(minutes: number | null | undefined, slot: "primary" 
     return "Weekly";
   }
   if (minutes % 1440 === 0) {
-    return `${minutes / 1440} day window`;
+    return `${minutes / 1440}-day window`;
   }
   if (minutes % 60 === 0) {
-    return `${minutes / 60} hour window`;
+    return `${minutes / 60}-hour window`;
   }
-  return `${minutes} minute window`;
+  return `${minutes}-minute window`;
 }
 
 /** A reset time as the note shows it, e.g. "Sep 24, 7:42 PM", in local time. */

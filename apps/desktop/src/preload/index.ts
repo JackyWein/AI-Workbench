@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import {
   APP_EVENT_CHANNEL,
   ISLAND_NAVIGATE_CHANNEL,
+  ISLAND_DRAG_CHANNEL,
   ISLAND_STATE_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
   isIpcChannel,
@@ -9,6 +10,7 @@ import {
   type IpcChannel,
   type IpcInput,
   type IpcOutput,
+  type IslandDrag,
   type IslandState,
   type IslandTarget,
   type TerminalEvent,
@@ -89,8 +91,45 @@ const islandApi = {
     await ipcRenderer.invoke("statusIsland.dismiss", undefined);
   },
 
+  async ask(
+    key: string,
+    text: string,
+  ): Promise<{ sent: boolean; to: string | null; reason: string | null }> {
+    return (await ipcRenderer.invoke("statusIsland.ask", { key, text })) as {
+      sent: boolean;
+      to: string | null;
+      reason: string | null;
+    };
+  },
+
   async cycle(direction: 1 | -1): Promise<void> {
     await ipcRenderer.invoke("statusIsland.cycle", { direction });
+  },
+
+  async resetPosition(): Promise<void> {
+    await ipcRenderer.invoke("statusIsland.resetPosition", undefined);
+  },
+
+  async resize(width: number, height: number): Promise<void> {
+    await ipcRenderer.invoke("statusIsland.resize", { width, height });
+  },
+
+  onDrag(listener: (drag: IslandDrag) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, payload: IslandDrag): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(ISLAND_DRAG_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(ISLAND_DRAG_CHANNEL, handler);
+    };
+  },
+
+  async dragStart(grabX: number, grabY: number): Promise<void> {
+    await ipcRenderer.invoke("statusIsland.dragStart", { grabX, grabY });
+  },
+
+  async dragEnd(): Promise<void> {
+    await ipcRenderer.invoke("statusIsland.dragEnd", undefined);
   },
 };
 

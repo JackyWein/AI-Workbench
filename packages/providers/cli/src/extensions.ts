@@ -4,6 +4,7 @@ import type {
   ModelInfo,
   ProviderEvent,
   ProviderUsageSnapshot,
+  TerminalMetrics,
 } from "@ai-workbench/shared";
 import type { ProviderImportables, ProviderToolAccess } from "@ai-workbench/provider-base";
 import type { CliExit, CliRun } from "@ai-workbench/transport-cli";
@@ -42,6 +43,30 @@ export interface CliExtensionContext {
   ): Promise<CliRun>;
 }
 
+/** One interactive run of the tool, as telemetry needs to find it. */
+export interface CliInteractiveRun {
+  /** Unique per run; safe to use in file names. */
+  readonly runId: string;
+  readonly workingDirectory: string;
+  readonly startedAt: Date;
+}
+
+/**
+ * How an extension follows one interactive run (spec §55): arguments and
+ * variables that make the tool report on itself, and a watcher that turns
+ * those reports into metrics.
+ */
+export interface CliInteractiveTelemetry {
+  /** Added to the tool's arguments for this run. */
+  readonly args?: readonly string[];
+  /** Added to the tool's environment for this run. */
+  readonly env?: Readonly<Record<string, string>>;
+  /** Where the numbers come from, e.g. "Codex session log". */
+  readonly source: string;
+  /** Starts watching; the returned function stops it. Must not throw. */
+  watch(onMetrics: (metrics: TerminalMetrics) => void): () => void;
+}
+
 /** Per-turn memory for a custom line parser, e.g. to pair tool calls. */
 export interface CliParseState {
   readonly values: Map<string, unknown>;
@@ -61,6 +86,14 @@ export interface CliProviderExtensions {
   discoverModels?(context: CliExtensionContext): Promise<ModelInfo[] | null>;
   /** Account limits, read without spending a turn. */
   readUsage?(context: CliExtensionContext): Promise<ProviderUsageSnapshot | null>;
+  /**
+   * Follows an interactive run: session time, tokens, cost, context and the
+   * account limits the tool reports while it runs.
+   */
+  interactiveTelemetry?(
+    context: CliExtensionContext,
+    run: CliInteractiveRun,
+  ): Promise<CliInteractiveTelemetry | null>;
   /** Whether and as whom the tool is signed in, without prompting anyone. */
   probeAuth?(context: CliExtensionContext): Promise<AuthStatus | null>;
   /** Skills and MCP servers in the tool's own configuration (spec §31). */

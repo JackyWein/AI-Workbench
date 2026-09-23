@@ -86,6 +86,8 @@ export const ipcContract = {
       version: z.string(),
       platform: z.string(),
       userDataPath: z.string(),
+      /** OS account name for the sidebar card; "local" when unreadable. */
+      username: z.string(),
     }),
   },
 
@@ -484,6 +486,39 @@ export const ipcContract = {
     output: z.object({ opened: z.boolean() }),
   },
   "statusIsland.dismiss": { input: z.void(), output: islandStateSchema },
+  /**
+   * Types a prompt into an agent the island lists, by its row key. Only a
+   * running agent terminal can take one mid-work; the reason says why not.
+   */
+  "statusIsland.ask": {
+    input: z.object({ key: z.string().min(1).max(200), text: z.string().trim().min(1).max(4000) }),
+    output: z.object({ sent: z.boolean(), to: z.string().nullable(), reason: z.string().nullable() }),
+  },
+  /** Returns the island to its default corner and forgets a dragged spot. */
+  "statusIsland.resetPosition": { input: z.void(), output: islandStateSchema },
+  /**
+   * The island page grabbed its unit: main moves the window with the pointer
+   * from here on, sliding a docked pill along its rails or carrying a free
+   * blob, until the page lets go. Grab is where the unit was pressed, in page
+   * pixels.
+   */
+  "statusIsland.dragStart": {
+    input: z.object({
+      grabX: z.number().finite().min(0).max(2000),
+      grabY: z.number().finite().min(0).max(2000),
+    }),
+    output: z.object({ dragging: z.boolean() }),
+  },
+  /** The pointer let go: the island settles on a rail or where it was put. */
+  "statusIsland.dragEnd": { input: z.void(), output: z.object({ dragging: z.boolean() }) },
+  /** Lets the island page report the size its current face needs. */
+  "statusIsland.resize": {
+    input: z.object({
+      width: z.number().int().min(42).max(480),
+      height: z.number().int().min(42).max(640),
+    }),
+    output: z.object({ visible: z.boolean() }),
+  },
 
   "settings.get": { input: z.void(), output: appSettingsSchema },
   "settings.update": {
@@ -540,6 +575,9 @@ export const APP_EVENT_CHANNEL = "workbench:event" as const;
 
 /** Island state, pushed to the island window only. */
 export const ISLAND_STATE_CHANNEL = "workbench:island" as const;
+
+/** Live drag state (the rail under the pointer), pushed to the island only. */
+export const ISLAND_DRAG_CHANNEL = "workbench:island-drag" as const;
 
 /** Where the island asked the main window to go (spec §98). */
 export const ISLAND_NAVIGATE_CHANNEL = "workbench:navigate" as const;

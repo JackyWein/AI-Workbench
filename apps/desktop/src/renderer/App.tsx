@@ -1,5 +1,5 @@
 import { type JSX, useEffect, useState } from "react";
-import type { ChatMessage, MessageUsage } from "@ai-workbench/shared";
+import type { ChatMessage } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
@@ -11,27 +11,35 @@ import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { McpView } from "./components/McpView.js";
-import { ConnectionsView } from "./components/ConnectionsView.js";
 import { PluginsView } from "./components/PluginsView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
+import { UsageView } from "./components/UsageView.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillsView } from "./components/SkillsView.js";
 import { TeamsView } from "./components/TeamsView.js";
 import { WorkspacePanel } from "./components/WorkspacePanel.js";
 
-type AppInfo = { version: string; platform: string; userDataPath: string };
+type AppInfo = { version: string; platform: string; userDataPath: string; username: string };
 
-/** Usage of the most recent answer that reported any. */
-function latestUsage(messages: readonly ChatMessage[]): MessageUsage | null {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const usage = messages[index]?.usage;
-    if (usage) {
-      return usage;
-    }
+/**
+ * True when the last request did not get a finished answer: it failed, was
+ * stopped, or never got one. Only then is there something to resume.
+ */
+function needsResume(messages: readonly ChatMessage[]): boolean {
+  const last = messages[messages.length - 1];
+  if (!last) {
+    return false;
   }
-  return null;
+  if (last.role === "user") {
+    return last.content.trim().length > 0;
+  }
+  return (
+    last.role === "assistant" &&
+    (last.status === "failed" || last.status === "cancelled") &&
+    messages.some((entry) => entry.role === "user" && entry.content.trim().length > 0)
+  );
 }
 
 export function App(): JSX.Element {
@@ -112,6 +120,38 @@ export function App(): JSX.Element {
   const messages = session ? (state.messages[session.id] ?? []) : [];
   const busy = session ? (state.busy[session.id] ?? false) : false;
 
+  // Boot faces belong here, never on the island: a loading screen while the
+  // store fills, and the exact error with a retry when startup itself fails.
+  if (!state.ready) {
+    return (
+      <div className="boot" role="status" aria-label="Starting AI Workbench">
+        <span className="boot__mark" aria-hidden="true">
+          W
+        </span>
+        <p className="boot__text">Starting AI Workbench…</p>
+      </div>
+    );
+  }
+
+  if (state.bootError) {
+    return (
+      <div className="boot" role="alert" aria-label="AI Workbench failed to start">
+        <span className="boot__mark" aria-hidden="true">
+          W
+        </span>
+        <p className="boot__text">Could not start AI Workbench</p>
+        <p className="boot__error">{state.bootError}</p>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => void state.initialize()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="app">
       <Sidebar
@@ -120,6 +160,8 @@ export function App(): JSX.Element {
         activeWorkspaceId={state.activeWorkspaceId}
         activeSessionId={state.activeSessionId}
         view={state.view}
+        appVersion={appInfo?.version ?? null}
+        username={appInfo?.username ?? null}
       />
 
       <main className="main">
@@ -143,8 +185,6 @@ export function App(): JSX.Element {
               providers={state.providers}
               usage={state.usage}
               status={state.status[session.id]}
-              busy={busy}
-              onCancel={() => void state.cancel()}
             />
             <div className="main__body">
               {messages.length === 0 ? (
@@ -158,6 +198,10 @@ export function App(): JSX.Element {
               <Composer
                 busy={busy}
                 disabled={false}
+                modelName={
+                  provider?.models.find((entry) => entry.id === session.modelId)
+                    ?.displayName ?? null
+                }
                 onSend={(text) => void state.sendMessage(text)}
                 onCancel={() => void state.cancel()}
               />
@@ -203,8 +247,9 @@ export function App(): JSX.Element {
         {state.view === "skills" ? <SkillsView /> : null}
         {state.view === "plugins" ? <PluginsView /> : null}
         {state.view === "mcp" ? <McpView /> : null}
-        {state.view === "connections" ? <ConnectionsView /> : null}
         {state.view === "teams" ? <TeamsView /> : null}
+        {state.view === "usage" ? <UsageView /> : null}
+
         {state.view === "settings" ? (
           <SettingsView settings={state.settings} appInfo={appInfo} />
         ) : null}
@@ -216,8 +261,20 @@ export function App(): JSX.Element {
           workspace={workspace}
           provider={provider}
           status={state.status[session.id]}
-          messageCount={messages.length}
-          usage={latestUsage(messages)}
+          messages={messages}
+          onResume={needsResume(messages)
+            ? () => {
+                const store = useWorkbench.getState();
+                const list = store.messages[session.id] ?? [];
+                for (let index = list.length - 1; index >= 0; index -= 1) {
+                  const candidate = list[index];
+                  if (candidate?.role === "user" && candidate.content.trim().length > 0) {
+                    void store.sendMessage(candidate.content);
+                    return;
+                  }
+                }
+              }
+            : null}
         />
       ) : (
         <div />

@@ -333,6 +333,8 @@ describe("honest progress", () => {
         ]),
       ],
       busySessions: [],
+      providers: [],
+      sessions: [],
       attention: [],
       errors: [],
       brokenConnections: [],
@@ -349,6 +351,8 @@ describe("honest progress", () => {
       usage: null,
       runs: [runWith([])],
       busySessions: [],
+      providers: [],
+      sessions: [],
       attention: [],
       errors: [],
       brokenConnections: [],
@@ -392,5 +396,78 @@ describe("honest progress", () => {
     });
 
     expect(state.entries.some((entry) => entry.widget === "providerUsage")).toBe(false);
+  });
+});
+
+describe("the island's agent rows and quiet picture", () => {
+  it("lists every busy agent with its own clock, mark and target", () => {
+    const service = boot();
+    const started = new Date(NOW.getTime() - 252_000);
+    const state = service.update({
+      busySessions: [
+        {
+          key: "tile:a",
+          sessionId: "a",
+          name: "Claude Code",
+          status: "working",
+          startedAt: started,
+          icon: "claude-code",
+          detail: "34.9k tokens · Haiku 4.5",
+          target: { view: "chat" },
+        },
+        { key: "tile:b", sessionId: "b", name: "Codex", status: "working", icon: "codex" },
+      ],
+      now: NOW,
+    });
+    const entry = state.entries.find((candidate) => candidate.widget === "activeAgents");
+    expect(entry?.agents.map((row) => row.key)).toEqual(["tile:a", "tile:b"]);
+    expect(entry?.agents[0]).toMatchObject({
+      title: "Claude Code",
+      detail: "34.9k tokens · Haiku 4.5",
+      icon: "claude-code",
+      startedAt: started,
+    });
+    // No start known means no clock, rather than one that restarts.
+    expect(entry?.agents[1]?.startedAt).toBeNull();
+    expect(entry?.agents[1]?.target).toEqual({ view: "chat", sessionId: "b" });
+  });
+
+  it("names usage rows by the provider and says when a tool reports no limit", () => {
+    const service = boot();
+    const state = service.update({
+      usage: {
+        snapshots: [
+          ...usageWith(40).snapshots,
+          { providerId: "other", state: "available", source: "provider", limits: [], updatedAt: NOW },
+        ],
+        updatedAt: NOW,
+      },
+      providers: [
+        { id: "mock", name: "Mock Provider", icon: null },
+        { id: "other", name: "Other", icon: "opencode" },
+      ],
+      now: NOW,
+    });
+    const rows = state.entries.find((entry) => entry.widget === "providerUsage")?.usage ?? [];
+    expect(rows).toEqual([
+      { providerId: "mock", name: "Mock Provider", icon: null, window: "Weekly", percentLeft: 60, note: "" },
+      { providerId: "other", name: "Other", icon: "opencode", window: "", percentLeft: null, note: "No limit reported" },
+    ]);
+  });
+
+  it("counts resting sessions from the last day and names the longest idle", () => {
+    const minutes = (value: number): Date => new Date(NOW.getTime() - value * 60_000);
+    const state = boot().update({
+      sessions: [
+        { name: "Codex", icon: "codex", lastActiveAt: minutes(42), busy: false },
+        { name: "Claude", icon: "claude-code", lastActiveAt: minutes(5), busy: false },
+        { name: "Busy", icon: null, lastActiveAt: minutes(90), busy: true },
+        { name: "Old", icon: null, lastActiveAt: minutes(60 * 48), busy: false },
+      ],
+      now: NOW,
+    });
+    expect(state.sessions.recent).toBe(2);
+    expect(state.sessions.longestIdle).toEqual({ name: "Codex", icon: "codex", at: minutes(42) });
+    expect(state.sessions.last?.name).toBe("Claude");
   });
 });

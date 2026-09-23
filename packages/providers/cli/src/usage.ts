@@ -4,6 +4,8 @@ import {
   type ProviderUsageSnapshot,
   type UsageLimit,
 } from "@ai-workbench/shared";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { z } from "zod";
 
 export interface UsageStoreOptions {
@@ -23,7 +25,8 @@ export interface UsageStoreOptions {
   readonly now?: () => number;
 }
 
-const TURN_NOTE = "Usage is reported during a turn; none has run yet.";
+const TURN_NOTE = "Usage is reported while the tool works; it has not reported any yet.";
+const USAGE_FILE = "usage.json";
 const FAILED_NOTE = "The tool did not report its usage.";
 const PENDING_NOTE = "Usage is still being read from the tool.";
 
@@ -62,7 +65,7 @@ export function parseOpencodeStatsUsage(stdout: string): UsageLimit[] | null {
     limits.push({ id: "tokens", label: "Tokens", used, unit: "tokens" });
   }
   if (parsed.data.cost !== undefined) {
-    limits.push({ id: "cost", label: "Cost", used: parsed.data.cost, unit: "credits" });
+    limits.push({ id: "cost", label: "Cost", used: parsed.data.cost, unit: "usd" });
   }
   return limits.length > 0 ? limits : null;
 }
@@ -87,6 +90,8 @@ export class UsageStore {
   #failed = false;
   /** Bumped by `reset`, so a reading that started before it is not applied. */
   #epoch = 0;
+  /** Where the last known snapshot is kept between runs; null until loaded. */
+  #file: string | null = null;
 
   constructor(options: UsageStoreOptions) {
     this.#options = options;
@@ -132,8 +137,32 @@ export class UsageStore {
     );
   }
 
+  /**
+   * Restores the last snapshot the tool reported, so usage is known from the
+   * first moment after a restart. It keeps its original time: the person sees
+   * how old it is, and a reading refreshes it once it is stale.
+   */
+  async load(stateDirectory: string): Promise<void> {
+    this.#file = join(stateDirectory, USAGE_FILE);
+    let raw: string;
+    try {
+      raw = await readFile(this.#file, "utf8");
+    } catch {
+      return; // Nothing remembered yet.
+    }
+    const parsed = providerUsageSnapshotSchema.safeParse(reviveDates(safeJson(raw)));
+    if (!parsed.success || parsed.data.state === "unavailable") {
+      this.#options.logger.debug("Ignoring an unreadable usage file", { file: this.#file });
+      return;
+    }
+    const restored = { ...parsed.data, providerId: this.#options.providerId };
+    if (!this.#reading || this.#reading.updatedAt.getTime() < restored.updatedAt.getTime()) {
+      this.#reading = restored;
+    }
+  }
+
   /** Records the limits a turn reported. */
-  observeTurn(limits: readonly UsageLimit[]): void {
+  observeTurn(limits: readonly UsageLimit[], at: Date = new Date(this.#now())): void {
     if (limits.length === 0) {
       return;
     }
@@ -143,7 +172,7 @@ export class UsageStore {
       providerId: this.#options.providerId,
       state: "available",
       limits: [...limits],
-      updatedAt: new Date(this.#now()),
+      updatedAt: at,
       source: "cli",
       // The plan does not change between turns; a turn just does not say it.
       ...(plan === undefined ? {} : { plan }),
@@ -227,6 +256,7 @@ export class UsageStore {
   }
 
   #notify(): void {
+    void this.#persist(this.#freshest());
     try {
       this.#options.onChange();
     } catch (error) {
@@ -235,6 +265,59 @@ export class UsageStore {
       });
     }
   }
+
+  async #persist(snapshot: ProviderUsageSnapshot | null): Promise<void> {
+    const file = this.#file;
+    if (!file || !snapshot || snapshot.state === "unavailable") {
+      return;
+    }
+    const temporary = `${file}.${process.pid}.tmp`;
+    try {
+      await mkdir(join(file, ".."), { recursive: true });
+      await writeFile(temporary, `${JSON.stringify(snapshot, null, 2)}
+`, "utf8");
+      // Written aside and renamed, so a crash never leaves half a file behind.
+      await rename(temporary, file);
+    } catch (error) {
+      this.#options.logger.debug("Could not remember usage", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+/** Turns the ISO strings a snapshot was saved with back into dates. */
+function reviveDates(record: unknown): unknown {
+  if (!isRecord(record)) {
+    return record;
+  }
+  const limits = Array.isArray(record["limits"])
+    ? record["limits"].map((entry: unknown) => {
+        if (!isRecord(entry)) {
+          return entry;
+        }
+        const resetsAt = entry["resetsAt"];
+        return typeof resetsAt === "string" ? { ...entry, resetsAt: new Date(resetsAt) } : entry;
+      })
+    : record["limits"];
+  const updatedAt = record["updatedAt"];
+  return {
+    ...record,
+    limits,
+    updatedAt: typeof updatedAt === "string" ? new Date(updatedAt) : updatedAt,
+  };
 }
 
 /** What a caller would see, without the time it was read. */

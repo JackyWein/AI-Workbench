@@ -10,6 +10,7 @@ import type { IslandSources } from "@ai-workbench/status";
 import type { AppServices } from "./services.js";
 import { StatusIslandWindow } from "./status-island.js";
 import { StatusTray } from "./tray.js";
+import { metricsLine } from "./island-helpers.js";
 
 /**
  * Ties the attention service to the window and the tray (spec §102).
@@ -25,6 +26,11 @@ export interface IslandControllerOptions {
   readonly devServerUrl?: string | undefined;
   readonly focusMainWindow: () => BrowserWindow | null;
   readonly quit: () => void;
+  /**
+   * Side-effect-free read of the main window for visibility/focus checks.
+   * Unlike focusMainWindow, calling this never shows or focuses anything.
+   */
+  readonly getMainWindow: () => BrowserWindow | null;
 }
 
 export class IslandController {
@@ -39,8 +45,25 @@ export class IslandController {
   #needsRefresh = false;
   #lastSessionCount = 0;
   #lastRunCount = 0;
+  /**
+   * When each chat or shell was first seen busy. Those report no start time
+   * of their own, so the island's clock runs from the moment it was observed
+   * (within one refresh) rather than restarting on every refresh.
+   */
+  readonly #busySince = new Map<string, Date>();
+  /** Whether each provider is installed, checked at most once a minute. */
+  readonly #installed = new Map<string, { installed: boolean; at: number }>();
+  /** Where each listed agent can take a typed prompt, by its island key. */
+  #askTargets = new Map<string, { terminalId: string } | { sessionId: string }>();
   /** True while the island is hidden only because the main window is. */
   #hiddenWithMain = false;
+  /** Whether the main window currently holds focus. */
+  #mainFocused = false;
+  /**
+   * Set by an explicit hide; while true, focus changes must not resurrect the
+   * island. Cleared by an explicit show or by re-enabling the island.
+   */
+  #manualHidden = false;
   /** Serializes preference writes so concurrent callers cannot interleave. */
   #preferencesChain: Promise<void> = Promise.resolve();
 
@@ -53,26 +76,21 @@ export class IslandController {
       islandFile: options.islandFile,
       preloadFile: options.preloadFile,
       devServerUrl: options.devServerUrl,
-      onMoved: ({ x, y, displayId }) => {
-        // A dragged island keeps where it was put, across restarts (spec §95).
-        // Positions that are already stored are not written again, so settling
-        // the window cannot turn into a write loop.
-        const current = this.#services.attention.preferences;
-        if (
-          current.position === "custom" &&
-          current.customX === x &&
-          current.customY === y &&
-          current.displayId === displayId
-        ) {
-          return;
-        }
-        void this.setPreferences({
-          position: "custom",
-          customX: x,
-          customY: y,
-          displayId,
-        }).catch((error: unknown) =>
-          this.#services.logger.warn("Could not persist dragged island position", {
+      onSettle: (settle) => {
+        // A dragged island keeps where it was left, across restarts (spec
+        // §95): docked at its spot on a rail, or free where it was dropped.
+        const patch: Partial<IslandPreferences> = settle.dockedEdge
+          ? { dockedEdge: settle.dockedEdge, railT: settle.railT, displayId: settle.displayId }
+          : {
+              dockedEdge: null,
+              railT: null,
+              position: "custom",
+              customX: settle.x,
+              customY: settle.y,
+              displayId: settle.displayId,
+            };
+        void this.setPreferences(patch).catch((error: unknown) =>
+          this.#services.logger.warn("Could not keep where the island was dragged", {
             error: error instanceof Error ? error.message : String(error),
           }),
         );
@@ -84,7 +102,7 @@ export class IslandController {
       islandVisible: () => this.#window.visible,
       actions: {
         openMainWindow: () => options.focusMainWindow(),
-        toggleIsland: () => this.#window.toggle(),
+        toggleIsland: () => this.toggleIsland(),
         describeActivity: () => this.#activity(),
         pauseRuns: () => this.#pauseRuns(),
         stopAllWork: () => this.#stopAllWork(),
@@ -139,6 +157,11 @@ export class IslandController {
       this.#window.apply(settings.statusIsland);
     }
     await this.refresh();
+    // From the first second the focus rule governs: a focused main window
+    // means no island on top of it. Reads focus without touching the window:
+    // focusMainWindow would show and focus it as a side effect.
+    const main = this.#options.getMainWindow();
+    this.setMainFocused(Boolean(main && !main.isDestroyed() && main.isFocused()));
   }
 
   /** Collects the current picture and lets the service decide (spec §102). */
@@ -216,6 +239,19 @@ export class IslandController {
       }));
 
     const sessions = await this.#services.sessions.list();
+    const seenBusy = new Set<string>();
+    const since = (key: string): Date => {
+      seenBusy.add(key);
+      const known = this.#busySince.get(key);
+      if (known) {
+        return known;
+      }
+      this.#busySince.set(key, now);
+      return now;
+    };
+    const iconOf = (providerId: string | null): string | null =>
+      providerId ? (this.#services.providers.get(providerId)?.metadata.icon ?? null) : null;
+    const askTargets = new Map<string, { terminalId: string } | { sessionId: string }>();
     const busySessions: Array<IslandSources["busySessions"][number]> = sessions
       .filter((session) => this.#services.sessions.isBusy(session.id))
       .map((session) => ({
@@ -224,7 +260,12 @@ export class IslandController {
         // A solo session has no task graph, so its state is the honest
         // answer rather than a percentage (spec §103; §96 "Working").
         status: "working",
+        startedAt: since(`session:${session.id}`),
+        icon: iconOf(session.providerId),
       }));
+    for (const session of busySessions) {
+      askTargets.set(`session:${session.sessionId}`, { sessionId: session.sessionId });
+    }
 
     // Agent tiles and plain shells are live work too: without them the island
     // sits on usage while the user visibly works in terminals (spec §95).
@@ -243,11 +284,21 @@ export class IslandController {
           if (tile.terminalId) {
             tileTerminalIds.add(tile.terminalId);
           }
+          const status =
+            tile.purpose === "login" ? "signing in" : tile.purpose === "shell" ? "shell" : "working";
+          const key = `tile:${tile.id}`;
+          if (tile.terminalId && tile.purpose === "agent") {
+            askTargets.set(key, { terminalId: tile.terminalId });
+          }
           busySessions.push({
+            key,
             sessionId: tile.id,
             name: tile.label,
-            status: tile.purpose === "login" ? "signing in" : "working",
+            status,
             target: { view: "chat" },
+            startedAt: tile.startedAt,
+            icon: iconOf(tile.providerId),
+            detail: (tile.metrics ? metricsLine(tile.metrics) : "") || status,
           });
         }
       }
@@ -264,16 +315,25 @@ export class IslandController {
           continue;
         }
         busySessions.push({
+          key: `terminal:${info.id}`,
           sessionId: info.sessionId,
           name: names.get(info.sessionId) ?? "Shell",
           status: "in terminal",
           target: { view: "chat", sessionId: info.sessionId },
+          startedAt: since(`terminal:${info.id}`),
         });
       }
     } catch (error) {
       this.#services.logger.debug("Island could not list terminals", {
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+
+    // Work that stopped forgets its start; the next run starts a new clock.
+    for (const key of this.#busySince.keys()) {
+      if (!seenBusy.has(key)) {
+        this.#busySince.delete(key);
+      }
     }
 
     const sortByNewest = <T extends { at: Date }>(entries: T[]): T[] =>
@@ -283,16 +343,78 @@ export class IslandController {
     this.#lastSessionCount = busySessions.length;
     this.#lastRunCount = runs.filter((snapshot) => snapshot.run.status === "running").length;
 
+    this.#askTargets = askTargets;
+
+    // Usage rows follow the providers the user sees: enabled ones, and the
+    // simulated one only for developers.
+    const settings = await this.#services.settings.get();
+    const usage = await this.#services.usage.get();
+    const installed = new Set<string>();
+    await Promise.all(
+      (usage?.snapshots ?? []).map(async (snapshot) => {
+        if (await this.#isInstalled(snapshot.providerId)) {
+          installed.add(snapshot.providerId);
+        }
+      }),
+    );
+    const providers = (usage?.snapshots ?? []).flatMap((snapshot) => {
+      const adapter = this.#services.providers.get(snapshot.providerId);
+      if (
+        !adapter ||
+        !installed.has(snapshot.providerId) ||
+        !this.#services.providers.isProviderEnabled(snapshot.providerId)
+      ) {
+        return [];
+      }
+      const simulated = adapter.metadata.transportTypes.every((type) => type === "in-process");
+      if (simulated && !settings.developerMode) {
+        return [];
+      }
+      return [
+        {
+          id: snapshot.providerId,
+          name: adapter.metadata.displayName,
+          icon: adapter.metadata.icon ?? null,
+        },
+      ];
+    });
+
+    const sessionRows = sessions.map((session) => ({
+      name: session.name,
+      icon: iconOf(session.providerId),
+      lastActiveAt: session.updatedAt,
+      busy: this.#services.sessions.isBusy(session.id),
+    }));
+
     return this.#services.attention.update({
-      usage: await this.#services.usage.get(),
+      usage,
       runs,
       busySessions,
+      providers,
+      sessions: sessionRows,
       attention: sortByNewest(attention),
       errors: sortByNewest(errors),
       completed: sortByNewest(completed),
       brokenConnections,
       now,
     });
+  }
+
+  /** A tool that is not installed gets no usage row, not even "unavailable". */
+  async #isInstalled(providerId: string): Promise<boolean> {
+    const known = this.#installed.get(providerId);
+    if (known && Date.now() - known.at < 60_000) {
+      return known.installed;
+    }
+    const adapter = this.#services.providers.get(providerId);
+    let installed = false;
+    try {
+      installed = (await adapter?.detectInstallation())?.state === "installed";
+    } catch {
+      installed = false;
+    }
+    this.#installed.set(providerId, { installed, at: Date.now() });
+    return installed;
   }
 
   async setPreferences(patch: Partial<IslandPreferences>): Promise<IslandState> {
@@ -307,9 +429,16 @@ export class IslandController {
   }
 
   async #setPreferencesInner(patch: Partial<IslandPreferences>): Promise<IslandState> {
+    const wasEnabled = this.#services.attention.preferences.enabled;
     const settings = await this.#services.settings.update({
       statusIsland: { ...this.#services.attention.preferences, ...patch },
     });
+    if (patch.enabled === false) {
+      this.#manualHidden = true;
+    } else if (patch.enabled === true && !wasEnabled) {
+      // Re-enabling is an explicit show: back on screen, focus rule after.
+      this.#manualHidden = false;
+    }
     const state = this.#services.attention.setPreferences(settings.statusIsland);
     this.#window.apply(settings.statusIsland);
     this.#tray.refresh();
@@ -343,9 +472,72 @@ export class IslandController {
     return this.#services.attention.dismissOverride();
   }
 
+  /**
+   * Types a prompt into the agent the island lists under `key`, falling back
+   * to the first running agent terminal. A chat session that is mid-answer
+   * cannot take a message, and the answer says so instead of dropping it.
+   */
+  async ask(
+    key: string,
+    text: string,
+  ): Promise<{ sent: boolean; to: string | null; reason: string | null }> {
+    const nameOf = (targetKey: string): string | null =>
+      this.#services.attention.state.entries
+        .flatMap((entry) => entry.agents)
+        .find((row) => row.key === targetKey)?.title ?? null;
+    const direct = this.#askTargets.get(key);
+    const fallback = [...this.#askTargets.entries()].find(([, target]) => "terminalId" in target);
+    const [targetKey, target] =
+      direct && "terminalId" in direct ? [key, direct] : (fallback ?? [key, direct]);
+    if (!target) {
+      return { sent: false, to: null, reason: "No running agent can take a prompt" };
+    }
+    if ("sessionId" in target) {
+      return {
+        sent: false,
+        to: nameOf(targetKey),
+        reason: "Still answering; ask again when it finishes",
+      };
+    }
+    this.#services.terminals.write(target.terminalId, text);
+    // Enter goes separately, so a tool reading the text as a paste still
+    // submits it instead of taking the return as a new line.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    this.#services.terminals.write(target.terminalId, "\r");
+    return { sent: true, to: nameOf(targetKey), reason: null };
+  }
+
+  /** Forgets a dragged spot and edge-dock, back to the default corner. */
+  resetPosition(): Promise<IslandState> {
+    return this.setPreferences({
+      position: "topCenter",
+      customX: null,
+      customY: null,
+      displayId: null,
+      dockedEdge: null,
+      railT: null,
+    });
+  }
+
+  /** The island page grabbed its unit; the window follows the pointer. */
+  beginDrag(grabX: number, grabY: number): { dragging: boolean } {
+    return { dragging: this.#window.beginDrag(grabX, grabY) };
+  }
+
+  /** The island page let go; the unit settles and its spot is kept. */
+  endDrag(): { dragging: boolean } {
+    return { dragging: this.#window.endDrag() };
+  }
+
+  /** Applies the size the island page measured for its current face. */
+  resize(width: number, height: number): boolean {
+    this.#window.setContentSize(width, height);
+    return this.#window.visible;
+  }
+
   show(): boolean {
-    // An explicit show is the user's choice, not a side effect of the main
-    // window coming back.
+    // An explicit show wins immediately; focus changes govern after it.
+    this.#manualHidden = false;
     this.#hiddenWithMain = false;
     this.#window.show();
     this.#tray.refresh();
@@ -353,28 +545,90 @@ export class IslandController {
   }
 
   hide(): boolean {
-    // An explicit hide is the user's choice and stays until shown again.
+    // An explicit hide sticks until an explicit show or re-enable: focus
+    // changes must not resurrect what the user dismissed.
+    this.#manualHidden = true;
     this.#hiddenWithMain = false;
     this.#window.hide();
     this.#tray.refresh();
     return this.#window.visible;
   }
 
+  /** Tray toggle with the same stickiness as the IPC show/hide. */
+  toggleIsland(): boolean {
+    if (this.#window.visible) {
+      this.hide();
+    } else {
+      this.show();
+    }
+    return this.#window.visible;
+  }
+
+  /**
+   * The island belongs on screen from launch, but never on top of the app
+   * itself: a focused main window hides it, losing focus brings it back.
+   * Explicit choices (manual hide, disabled island) always win over this.
+   */
+  setMainFocused(focused: boolean): void {
+    this.#mainFocused = focused;
+    this.#applyFocusRule();
+  }
+
+  #applyFocusRule(): void {
+    const preferences = this.#services.attention.preferences;
+    if (!preferences.enabled || this.#manualHidden) {
+      return;
+    }
+    if (this.#mainFocused) {
+      if (this.#window.visible) {
+        this.#window.hide();
+        this.#tray.refresh();
+        this.#services.logger.info("Island hidden while the main window is focused");
+      }
+      return;
+    }
+    // Focus went elsewhere (or nowhere): the island comes back — unless the
+    // main window itself is gone and the user asked it not to outlive it.
+    // Reads through getMainWindow on purpose: focusMainWindow would restore
+    // and focus the window as a side effect, which un-minimizes it.
+    const main = this.#options.getMainWindow();
+    const mainGone = !main || main.isDestroyed() || !main.isVisible();
+    if (mainGone && !preferences.stayVisibleWhenHidden) {
+      if (this.#window.visible) {
+        this.#window.hide();
+        this.#tray.refresh();
+        this.#services.logger.info("Island hidden with the main window");
+      }
+      return;
+    }
+    if (!this.#window.visible) {
+      this.#window.show();
+      this.#tray.refresh();
+      this.#services.logger.info("Island shown while the main window is in the background");
+    }
+  }
+
   /**
    * Follows the main window when the island was not asked to stay (spec §101).
    * A manually hidden island is never resurrected by this; only an island
-   * that was hidden together with the main window comes back with it.
+   * that was hidden together with the main window comes back with it — and
+   * only when the focus rule would show it anyway.
    */
   setMainVisible(visible: boolean): void {
     if (visible) {
       if (this.#hiddenWithMain) {
         this.#hiddenWithMain = false;
-        this.#window.apply(this.#services.attention.preferences);
+        this.#applyFocusRule();
         this.#tray.refresh();
       }
       return;
     }
+    // A hidden window is not in front any more, but hiding it does not blur
+    // it on Windows: without this the island would still think the app is
+    // focused and stay hidden after closing to the tray.
+    this.#mainFocused = false;
     if (this.#services.attention.preferences.stayVisibleWhenHidden) {
+      this.#applyFocusRule();
       return;
     }
     if (this.#window.visible) {

@@ -340,7 +340,7 @@ describe("recorded stream from the real Claude Code CLI", () => {
         environmentVariables: { REPLAY_FILE: claudeStream },
       },
       logger: nullLogger,
-      stateDirectory: "/tmp/cli-provider-test",
+      stateDirectory: join(tmpdir(), `cli-provider-test-${String(process.pid)}-${Math.random().toString(36).slice(2)}`),
     });
     return adapter;
   }
@@ -522,7 +522,7 @@ describe("profile-driven usage reading", () => {
     );
     expect(limits).toEqual([
       { id: "tokens", label: "Tokens", used: 1250, unit: "tokens" },
-      { id: "cost", label: "Cost", used: 1.5, unit: "credits" },
+      { id: "cost", label: "Cost", used: 1.5, unit: "usd" },
     ]);
   });
 
