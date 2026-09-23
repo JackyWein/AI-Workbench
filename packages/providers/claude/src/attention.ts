@@ -205,7 +205,10 @@ function answerOf(request: HookRequest, response: TerminalAttentionResponse): st
 
 /** Claude Code's hooks, as the shared hook state reads them. */
 export const claudeDialect: HookDialect = {
-  waitEvent: "PermissionRequest",
+  permissionEvent: "PermissionRequest",
+  // Claude Code keeps its own dialog usable while the hook waits (measured),
+  // so the hook itself carries the answer.
+  answerBy: "hook",
   toolDone: ["PostToolUse", "PostToolUseFailure"],
   turnStart: ["UserPromptSubmit"],
   turnEnd: ["SessionStart", "Stop", "StopFailure"],

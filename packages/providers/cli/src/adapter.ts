@@ -649,9 +649,9 @@ export class CliProviderAdapter implements AIProviderAdapter {
         : {}),
       ...(respond
         ? {
-            respond: async (attentionId, response) => {
+            respond: async (attentionId, response, terminal) => {
               try {
-                return await respond(attentionId, response);
+                return await respond(attentionId, response, terminal);
               } catch (error) {
                 failed("interactiveTelemetry.respond", error);
                 return false;

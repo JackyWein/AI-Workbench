@@ -16,10 +16,12 @@ import type { CliProviderProfileInput } from "@ai-workbench/provider-cli";
  * - models, sign-in and limits through the tool's own app server, which the
  *   extensions in this package read without spending a turn.
  *
- * What was not: a successful turn. The account used for verification had
- * exhausted its weekly limit, so only a failing turn stream was recorded. The
- * event mapping for a working turn follows the documented shapes, which is why
- * the profile stays marked `unverified` (see {@link codexNotice}).
+ * A successful turn was then run with codex-cli 0.156.1 against a local
+ * stand-in for the model (`real-codex-attention.test.ts`): the answer, the
+ * thread id and its resume with `exec resume`, `--model`, and a command the
+ * turn ran shown as a tool call with its output — Codex's own event stream,
+ * only the model was not OpenAI's. What an OpenAI account adds — its limits,
+ * the models it may use — comes through the app server, as checked above.
  */
 export const codexProfile: CliProviderProfileInput = {
   schemaVersion: 1,
@@ -135,7 +137,6 @@ export const codexProfile: CliProviderProfileInput = {
     markers: ["auth.json"],
     loginArgs: ["login"],
   },
-  unverified: true,
 };
 
 /**
@@ -147,6 +148,5 @@ export const codexProfile: CliProviderProfileInput = {
  */
 export const codexNotice =
   "Models, sign-in, usage limits and every command line flag were checked " +
-  "against the installed Codex CLI. A complete turn has not been observed yet, " +
-  "so how its answer and tool calls are shown follows Codex's documented event " +
-  "format.";
+  "against the installed Codex CLI, and complete turns — answer, resume and " +
+  "tool calls — were run through it.";

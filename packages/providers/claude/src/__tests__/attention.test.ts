@@ -3,7 +3,7 @@ import { appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
-import { POSIX_HOOK_SCRIPT, posixHookCommand } from "@ai-workbench/provider-cli";
+import { HOOK_DIR_ENV, POSIX_HOOK_SCRIPT, posixHookCommand } from "@ai-workbench/provider-cli";
 import {
   ClaudeHookState,
   DENY_MESSAGE,
@@ -151,10 +151,13 @@ describe.runIf(process.platform !== "win32")("Claude Code hook bridge", () => {
     event: HookEvent,
     input: unknown,
   ): { readonly pid: number; readonly done: Promise<{ stdout: string; code: number | null }>; kill(): void } {
-    const child = spawn("/bin/sh", [
-      "-c",
-      posixHookCommand({ script, directory: events, event, waits: event === "PermissionRequest" }),
-    ]);
+    const child = spawn(
+      "/bin/sh",
+      ["-c", posixHookCommand({ script, event, waits: event === "PermissionRequest" })],
+      // The run's event directory travels in the environment, as Claude
+      // Code hands its own environment to its hooks.
+      { env: { ...process.env, [HOOK_DIR_ENV]: events } },
+    );
     running.push(child);
     child.stdin.end(JSON.stringify(input));
     let stdout = "";

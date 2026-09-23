@@ -8,6 +8,7 @@ import {
   modifiedAt,
   numberField,
   poll,
+  HOOK_DIR_ENV,
   POSIX_HOOK_SCRIPT,
   POWERSHELL_HOOK_SCRIPT,
   hookTelemetry,
@@ -441,7 +442,6 @@ export async function statusLineTelemetry(
         hooks: hookSettings((event) =>
           (windows ? powershellHookCommand : posixHookCommand)({
             script: hookScript,
-            directory: hookDirectory,
             event,
             waits: event === "PermissionRequest",
           }),
@@ -455,6 +455,9 @@ export async function statusLineTelemetry(
 
   return {
     args: ["--settings", settingsFile],
+    // The hooks write this run's events here (Claude Code passes its
+    // environment on to its hooks).
+    env: { [HOOK_DIR_ENV]: hookDirectory },
     source: STATUS_LINE_SOURCE,
     watch: (onMetrics) => {
       let seen: number | null = null;

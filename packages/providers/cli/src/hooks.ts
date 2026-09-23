@@ -1,4 +1,5 @@
-import { rename, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   TerminalActivity,
@@ -26,7 +27,19 @@ import { JsonLinesFollower, field, listDirectory, modifiedAt, poll, readJsonFile
  * waits for an answer file from the application, for a note that the request
  * was settled elsewhere, or for the tool to end it, and prints the answer as
  * is, so no JSON is ever parsed in a shell.
+ *
+ * Not every tool keeps its own prompt usable while a hook runs: Codex shows
+ * no dialog until its permission hook returns. For such a tool the hook only
+ * reports, and an answer from outside is the dialog's own key pressed in the
+ * tile's terminal — the tool's own path, pressed for the person.
+ *
+ * The hook command is the same on every run: tools that ask the person to
+ * trust new hooks (Codex does) then ask once, not on every start. Where a
+ * run's events go is in the environment instead (`HOOK_DIR_ENV`).
  */
+
+/** Names the run's event directory for the bridge; set in the tool's environment. */
+export const HOOK_DIR_ENV = "AI_WORKBENCH_HOOK_DIR";
 
 /**
  * How long a waiting hook may wait for an answer from the application. The
@@ -38,12 +51,15 @@ export const HOOK_WAIT_TIMEOUT_S = 86_400;
 const WAIT_STEPS = HOOK_WAIT_TIMEOUT_S * 5;
 
 /**
- * The bridge on macOS and Linux, run with /bin/sh. Arguments: the run's event
- * directory, the event's name, and "wait" for the one event that waits.
+ * The bridge on macOS and Linux, run with /bin/sh. Arguments: the event's
+ * name, and "wait" for the one event that waits. A tool started anywhere
+ * else than in the application has no event directory, and the bridge then
+ * does nothing at all.
  */
-export const POSIX_HOOK_SCRIPT = `dir=$1
-name=$2
-mode=$3
+export const POSIX_HOOK_SCRIPT = `dir=$${HOOK_DIR_ENV}
+name=$1
+mode=$2
+[ -n "$dir" ] && [ -d "$dir" ] || exit 0
 base="$dir/$name.$$"
 if cat > "$base.tmp"; then
   mv -f "$base.tmp" "$base.json"
@@ -75,8 +91,10 @@ exit 0
  * The same bridge for Windows, where tools run hook commands through Git Bash
  * or PowerShell and \`powershell -File\` works from both.
  */
-export const POWERSHELL_HOOK_SCRIPT = `param([string]$Dir, [string]$Name, [string]$Mode = 'observe')
+export const POWERSHELL_HOOK_SCRIPT = `param([string]$Name, [string]$Mode = 'observe')
 $ErrorActionPreference = 'SilentlyContinue'
+$Dir = $env:${HOOK_DIR_ENV}
+if (-not $Dir -or -not (Test-Path -LiteralPath $Dir)) { exit 0 }
 $utf8 = New-Object System.Text.UTF8Encoding $false
 [Console]::InputEncoding = $utf8
 [Console]::OutputEncoding = $utf8
@@ -117,7 +135,6 @@ function windowsQuoted(path: string): string {
 
 export interface HookCommandOptions {
   readonly script: string;
-  readonly directory: string;
   readonly event: string;
   /** True for the one event whose hook waits for an answer. */
   readonly waits: boolean;
@@ -128,7 +145,6 @@ export function posixHookCommand(options: HookCommandOptions): string {
   return [
     POSIX_HOOK_SHELL,
     shellQuote(options.script),
-    shellQuote(options.directory),
     options.event,
     options.waits ? "wait" : "observe",
   ].join(" ");
@@ -139,10 +155,73 @@ export function powershellHookCommand(options: HookCommandOptions): string {
   return [
     "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File",
     windowsQuoted(options.script),
-    windowsQuoted(options.directory),
     windowsQuoted(options.event),
     options.waits ? '"wait"' : '"observe"',
   ].join(" ");
+}
+
+/** One run's hook bridge: the script to call and where its events go. */
+export interface HookRun {
+  readonly script: string;
+  readonly directory: string;
+  readonly windows: boolean;
+}
+
+/** Run folders older than this are removed when a new run starts. */
+const HOOK_RUN_TTL_MS = 3 * 24 * 60 * 60 * 1000;
+
+/**
+ * Prepares the bridge for one run: the script, always at the same path and
+ * with the same content so the hook command never changes, and a fresh
+ * folder for the run's events. Null when the shell the bridge needs is
+ * missing: no hook is installed rather than one that cannot run.
+ */
+export async function prepareHookRun(stateDirectory: string, runId: string): Promise<HookRun | null> {
+  const windows = process.platform === "win32";
+  if (!windows && !existsSync(POSIX_HOOK_SHELL)) {
+    return null;
+  }
+  const script = join(stateDirectory, windows ? "hook-bridge.ps1" : "hook-bridge.sh");
+  // With a byte order mark: Windows PowerShell reads a file without one in
+  // the legacy code page.
+  await writeFile(script, windows ? `\uFEFF${POWERSHELL_HOOK_SCRIPT}` : POSIX_HOOK_SCRIPT, "utf8");
+  const root = join(stateDirectory, "hook-runs");
+  await mkdir(root, { recursive: true });
+  void sweepHookRuns(root, Date.now());
+  const directory = join(root, runId);
+  await mkdir(directory, { recursive: true });
+  return { script, directory, windows };
+}
+
+/** The hook command for one event of a prepared run. */
+export function hookCommandFor(run: HookRun, event: string, waits: boolean): string {
+  return (run.windows ? powershellHookCommand : posixHookCommand)({
+    script: run.script,
+    event,
+    waits,
+  });
+}
+
+/** Removes the event folders of earlier runs, so they do not pile up. */
+async function sweepHookRuns(root: string, now: number): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    entries.map(async (entry) => {
+      const path = join(root, entry);
+      try {
+        if (now - (await stat(path)).mtimeMs > HOOK_RUN_TTL_MS) {
+          await rm(path, { force: true, recursive: true });
+        }
+      } catch {
+        // Gone already, or in use.
+      }
+    }),
+  );
 }
 
 /** Whether a process still runs. Signal 0 checks without touching it. */
@@ -187,13 +266,24 @@ export interface HookRequest {
   readonly input: unknown;
 }
 
+/** Somewhere to type into the tool's own terminal. */
+export interface TerminalInput {
+  write(data: string): void;
+}
+
 /**
  * How one tool's hooks speak. Event names are the tool's own; everything a
  * dialect leaves out simply does not happen for that tool.
  */
 export interface HookDialect {
-  /** The event whose hook waits for an answer; null when none can take one. */
-  readonly waitEvent: string | null;
+  /** The event that reports a permission request; null when none does. */
+  readonly permissionEvent: string | null;
+  /**
+   * How an answer from outside reaches the tool: "hook" — the permission
+   * hook waits and prints it; "keys" — the hook only reports, and the answer
+   * is the key the tool's own dialog takes, typed into its terminal.
+   */
+  readonly answerBy: "hook" | "keys";
   /**
    * Events that say the tool waits on the person without taking an answer
    * from a hook — shown, answered only in the terminal. Returns the tool and
@@ -208,22 +298,34 @@ export interface HookDialect {
   readonly turnEnd: readonly string[];
   /** What the application shows for a request. */
   describe(id: string, tool: string, input: unknown, since: Date): TerminalAttention;
-  /** What the waiting hook prints for this answer; null when it cannot take it. */
+  /**
+   * The answer: what the waiting hook prints, or the keys to type into the
+   * tool's terminal; null when the request cannot take it.
+   */
   answer(request: HookRequest, response: TerminalAttentionResponse): string | null;
   /** A transcript record that ends a turn no hook reports, such as an interruption. */
   endsTurn?(record: unknown): boolean;
 }
 
 interface OpenRequest extends HookRequest {
+  /** How it is answered: its waiting hook, keys in the terminal, or not from here. */
+  readonly via: "hook" | "keys" | "none";
   /** Path prefix of the hook's answer and withdrawn files; null when nothing waits. */
   readonly base: string | null;
-  /** The waiting hook's process; null for a request that was only reported. */
+  /** The waiting hook's process; null when no hook waits. */
   readonly pid: number | null;
   /** The subagent that asked, when it was not the main conversation. */
   readonly agentId: string | undefined;
 }
 
 const EVENT_FILE = /^([A-Za-z]+)\.(\d+)\.json$/;
+
+/**
+ * A key answer waits this long after the request was reported: the tool
+ * draws its dialog a moment after the hook ran (Codex took under a second),
+ * and a key typed before that would land in its prompt instead.
+ */
+export const KEY_ANSWER_SETTLE_MS = 1500;
 
 /**
  * A run's state as its hooks report it: the requests waiting on the person,
@@ -302,20 +404,44 @@ export class HookState {
   }
 
   /**
-   * Hands an answer to the waiting hook, which passes it to the tool. False
-   * when the request no longer waits or cannot take this answer.
+   * Hands an answer to the tool: to its waiting hook, or as its own key in its
+   * terminal. False when the request no longer waits or cannot take it.
    */
-  async respond(attentionId: string, response: TerminalAttentionResponse): Promise<boolean> {
+  async respond(
+    attentionId: string,
+    response: TerminalAttentionResponse,
+    terminal?: TerminalInput,
+  ): Promise<boolean> {
     const request = this.#open.find((entry) => entry.attention.id === attentionId);
-    if (!request?.attention.answerable || request.pid === null || request.base === null) {
-      return false;
-    }
-    if (!this.#alive(request.pid)) {
-      await this.#close(request, false);
+    if (!request?.attention.answerable || request.via === "none") {
       return false;
     }
     const output = this.#dialect.answer(request, response);
     if (output === null) {
+      return false;
+    }
+    if (request.via === "keys") {
+      if (!terminal) {
+        return false;
+      }
+      const wait = request.attention.since.getTime() + KEY_ANSWER_SETTLE_MS - Date.now();
+      if (wait > 0) {
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+      // Answered in the terminal meanwhile: nothing left to press.
+      await this.read();
+      if (!this.#open.includes(request)) {
+        return false;
+      }
+      terminal.write(output);
+      this.#open = this.#open.filter((entry) => entry !== request);
+      return true;
+    }
+    if (request.pid === null || request.base === null) {
+      return false;
+    }
+    if (!this.#alive(request.pid)) {
+      await this.#close(request, false);
       return false;
     }
     // Renamed into place, so the hook never prints half an answer.
@@ -338,13 +464,15 @@ export class HookState {
     if (dialect.endsTurn) {
       await this.#follow(stringField(body, "transcript_path"));
     }
-    if (event === dialect.waitEvent) {
+    if (event === dialect.permissionEvent) {
       const tool = stringField(body, "tool_name") ?? "a tool";
       const input = field(body, "tool_input");
+      const hookWaits = dialect.answerBy === "hook";
       this.#open.push({
         attention: dialect.describe(`${pid}-${Math.round(at)}`, tool, input, new Date(at)),
-        base: join(this.#directory, `${event}.${pid}`),
-        pid,
+        via: dialect.answerBy,
+        base: hookWaits ? join(this.#directory, `${event}.${pid}`) : null,
+        pid: hookWaits ? pid : null,
         tool,
         input,
         agentId,
@@ -361,6 +489,7 @@ export class HookState {
       );
       this.#open.push({
         attention: { ...attention, answerable: false, choices: [] },
+        via: "none",
         base: null,
         pid: null,
         tool: observed.tool,
@@ -485,6 +614,6 @@ export function hookTelemetry(
         stopReading();
       };
     },
-    respond: (attentionId, response) => state.respond(attentionId, response),
+    respond: (attentionId, response, terminal) => state.respond(attentionId, response, terminal),
   };
 }

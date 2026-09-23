@@ -126,6 +126,11 @@ export interface InteractiveLaunchRequest {
   readonly startedAt?: Date;
 }
 
+/** Typing into a run's own terminal, as the person would. */
+export interface TerminalKeys {
+  write(data: string): void;
+}
+
 /**
  * Follows what the tool reports about one interactive run: session time,
  * tokens, cost, context and account limits (spec §55). Watching must never
@@ -150,9 +155,15 @@ export interface InteractiveTelemetry {
   /**
    * Answers the request the tool is waiting on, from outside its terminal.
    * False when that request no longer waits or cannot take this answer; the
-   * tool's own prompt in the terminal stays usable either way.
+   * tool's own prompt in the terminal stays usable either way. `terminal`
+   * types into the run's own terminal, for a tool whose answer is a key its
+   * own dialog takes.
    */
-  respond?(attentionId: string, response: TerminalAttentionResponse): Promise<boolean>;
+  respond?(
+    attentionId: string,
+    response: TerminalAttentionResponse,
+    terminal: TerminalKeys,
+  ): Promise<boolean>;
 }
 
 export interface InteractiveLaunch {

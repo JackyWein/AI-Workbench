@@ -9,7 +9,11 @@ import type {
   TerminalAttentionResponse,
   TerminalMetrics,
 } from "@ai-workbench/shared";
-import type { ProviderImportables, ProviderToolAccess } from "@ai-workbench/provider-base";
+import type {
+  ProviderImportables,
+  ProviderToolAccess,
+  TerminalKeys,
+} from "@ai-workbench/provider-base";
 import type { CliExit, CliRun } from "@ai-workbench/transport-cli";
 import type { CliProviderProfile } from "./profile.js";
 
@@ -73,7 +77,11 @@ export interface CliInteractiveTelemetry {
   /** Follows whether the tool works on a turn or idles at its prompt. */
   watchActivity?(onActivity: (activity: TerminalActivity | null) => void): () => void;
   /** Answers the waiting request from outside the terminal; false when it cannot. */
-  respond?(attentionId: string, response: TerminalAttentionResponse): Promise<boolean>;
+  respond?(
+    attentionId: string,
+    response: TerminalAttentionResponse,
+    terminal: TerminalKeys,
+  ): Promise<boolean>;
 }
 
 /** Per-turn memory for a custom line parser, e.g. to pair tool calls. */

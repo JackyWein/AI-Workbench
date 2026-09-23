@@ -126,7 +126,11 @@ describe("terminal agent attention", () => {
       logger,
       providers,
       workspaces,
-      terminals: { create: () => ({ id: `term-${++terminals}` }), close: () => true },
+      terminals: {
+        create: () => ({ id: `term-${++terminals}` }),
+        close: () => true,
+        write: () => undefined,
+      },
       resolveCommand: (launch) => ({ file: launch.command, args: launch.args, env: launch.env }),
     });
     tile = await service.launch({ workspaceId: workspace.id, providerId: "mock" });

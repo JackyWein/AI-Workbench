@@ -32,6 +32,8 @@ export interface AgentTerminalHost {
     readonly env?: Record<string, string>;
   }): { readonly id: string };
   close(terminalId: string): boolean;
+  /** Types into a running terminal, as the person would. */
+  write(terminalId: string, data: string): void;
 }
 
 export interface AgentTerminalServiceOptions {
@@ -66,7 +68,13 @@ interface Runtime {
   /** Working or idle, as the tool reported; null when it does not say. */
   activity: TerminalActivity | null;
   /** Answers the tool's waiting request; null when the tool takes no answers. */
-  respond: ((attentionId: string, response: TerminalAttentionResponse) => Promise<boolean>) | null;
+  respond:
+    | ((
+        attentionId: string,
+        response: TerminalAttentionResponse,
+        terminal: { write(data: string): void },
+      ) => Promise<boolean>)
+    | null;
   /** Stops following the tool's reports; null when nothing is followed. */
   stopTelemetry: (() => void) | null;
 }
@@ -281,9 +289,17 @@ export class AgentTerminalService {
     if (!fits) {
       return false;
     }
+    const terminalId = runtime.terminalId;
+    if (!terminalId) {
+      return false;
+    }
     let answered = false;
     try {
-      answered = await runtime.respond(attentionId, response);
+      // Some tools take the answer as their own dialog's key, typed into the
+      // tile's terminal for the person.
+      answered = await runtime.respond(attentionId, response, {
+        write: (data) => this.#terminals.write(terminalId, data),
+      });
     } catch {
       answered = false;
     }

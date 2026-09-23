@@ -1479,33 +1479,46 @@ export async function runStartupCheck(
     }
   }
 
-  // --- a terminal agent waiting on the person ------------------------------
+  // --- terminal agents waiting on the person -------------------------------
   //
-  // Claude Code itself was run against this path in
-  // real-claude-attention.test.ts. Here a stand-in for its executable does
-  // what Claude Code does with a permission hook — run the command from the
-  // run's settings file with the request on stdin, and act on what it prints —
-  // so the whole application path runs without spending quota: the Claude
-  // package's settings and hook bridge, the terminal service, the island's
-  // entry with Claude's mark, and Allow clicked on the island itself.
-  if (process.platform !== "win32") {
-    const fixtureDirectory = join(dirname(workspaceDirectory), "fixture-claude");
-    const standIn = join(fixtureDirectory, "claude");
-    const hookAnswer = join(fixtureDirectory, "hook-answer.json");
+  // Claude Code and Codex themselves were run against this path in
+  // real-claude-attention.test.ts and real-codex-attention.test.ts. Here a
+  // stand-in for each executable does what the tool does with its hooks — run
+  // the commands the application handed it, each event on stdin, and act on
+  // the answer the way the tool does — so the whole application path runs
+  // without spending quota: the provider package's hooks and the shared
+  // bridge, the terminal service, the island's entry with the tool's mark,
+  // and Allow clicked on the island itself. Claude Code takes the answer from
+  // its waiting hook; Codex takes it as a key in its own dialog.
+  const waitingAgent = async (agent: {
+    readonly providerId: string;
+    readonly label: string;
+    readonly command: string;
+    readonly script: string;
+    readonly summary: string;
+    /** What the stand-in kept of the answer, as the tool would take it. */
+    readonly answered: (printed: string) => boolean;
+    readonly screenshot: string;
+  }): Promise<void> => {
+    const fixtureDirectory = join(dirname(workspaceDirectory), `fixture-${agent.providerId}`);
+    const standIn = join(fixtureDirectory, agent.command);
+    const answerFile = join(fixtureDirectory, "answer.json");
     await mkdir(fixtureDirectory, { recursive: true });
-    await rm(hookAnswer, { force: true });
-    await writeFile(standIn, STAND_IN_CLAUDE, { mode: 0o755 });
+    await rm(answerFile, { force: true });
+    await writeFile(standIn, agent.script, { mode: 0o755 });
 
     await check(
-      "a terminal agent reports that it waits for a permission",
+      `${agent.label} reports that it waits for a permission`,
       `(async () => {
          const api = window.workbench;
          const workspaceId = window.__checkWorkspaceId;
          await api.invoke('provider.saveConfig', {
-           providerId: 'claude-code', enabled: true, executablePath: ${JSON.stringify(standIn)},
+           providerId: ${JSON.stringify(agent.providerId)}, enabled: true,
+           executablePath: ${JSON.stringify(standIn)},
          });
          const tile = await api.invoke('agentTerminal.launch', {
-           workspaceId, providerId: 'claude-code', label: 'Claude Code',
+           workspaceId, providerId: ${JSON.stringify(agent.providerId)},
+           label: ${JSON.stringify(agent.label)},
          });
          window.__checkWaitingTile = tile.id;
          const deadline = Date.now() + 15000;
@@ -1516,7 +1529,7 @@ export async function runStartupCheck(
            // Mid-turn: it works on the prompt and waits for the permission.
            if (waiting && current.activity) {
              return waiting.kind === 'permission' && waiting.tool === 'Bash'
-               && waiting.summary === 'touch island-allowed.txt' && waiting.answerable
+               && waiting.summary === ${JSON.stringify(agent.summary)} && waiting.answerable
                && current.activity.state === 'working'
                || JSON.stringify({ waiting, activity: current.activity });
            }
@@ -1527,7 +1540,7 @@ export async function runStartupCheck(
       30_000,
     );
 
-    await checkMain("the island shows the waiting agent with its mark, Allow and Deny", async () => {
+    await checkMain(`the island shows ${agent.label} waiting with its mark, Allow and Deny`, async () => {
       // The island hides while the main window has focus.
       window.blur();
       const deadline = Date.now() + 12_000;
@@ -1561,7 +1574,7 @@ export async function runStartupCheck(
           seen = JSON.stringify({ icon: entry.icon, options: entry.options, face });
           const shown = face as { face: string; mark: boolean; buttons: string[]; title: string };
           if (
-            entry.icon === "claude-code" &&
+            entry.icon === agent.providerId &&
             shown.face === "approval" &&
             shown.mark &&
             shown.buttons.includes("Allow") &&
@@ -1585,11 +1598,11 @@ export async function runStartupCheck(
         new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
       ]);
       if (image) {
-        await writeFile(screenshotPath.replace(/\.png$/, "-island-approval.png"), image.toPNG());
+        await writeFile(screenshotPath.replace(/\.png$/, `-${agent.screenshot}.png`), image.toPNG());
       }
     }
 
-    await checkMain("Allow on the island reaches the agent's permission hook", async () => {
+    await checkMain(`Allow on the island reaches ${agent.label}`, async () => {
       const clicked = await islandJs(
         `(() => {
            const button = [...document.querySelectorAll('.isl__actions button')]
@@ -1604,24 +1617,20 @@ export async function runStartupCheck(
       }
       const deadline = Date.now() + 10_000;
       while (Date.now() < deadline) {
-        const printed = await readFile(hookAnswer, "utf8").catch(() => null);
+        const printed = await readFile(answerFile, "utf8").catch(() => null);
         if (printed !== null) {
-          // Exactly what Claude Code reads from a permission hook.
-          const answer = JSON.parse(printed) as {
-            hookSpecificOutput?: { hookEventName?: string; decision?: { behavior?: string } };
-          };
-          return (
-            answer.hookSpecificOutput?.hookEventName === "PermissionRequest" &&
-            answer.hookSpecificOutput.decision?.behavior === "allow"
-          );
+          if (agent.answered(printed)) {
+            return true;
+          }
+          throw new Error(`the tool was answered with ${printed}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 200));
       }
-      throw new Error("the hook printed nothing");
+      throw new Error("the answer never arrived");
     });
 
     // The turn ended: the agent is idle at its prompt, which is rest, not work.
-    await checkMain("the island lets go once the agent no longer waits, and it rests", async () => {
+    await checkMain(`the island lets go once ${agent.label} no longer waits, and it rests`, async () => {
       const deadline = Date.now() + 8_000;
       let seen = "nothing";
       while (Date.now() < deadline) {
@@ -1629,9 +1638,9 @@ export async function runStartupCheck(
         const waiting = state.entries.some((item) => item.key.startsWith("tile:"));
         const working = state.entries
           .flatMap((item) => item.agents)
-          .some((row) => row.title === "Claude Code");
+          .some((row) => row.title === agent.label);
         seen = JSON.stringify({ waiting, working, sessions: state.sessions });
-        if (!waiting && !working && state.sessions.last?.name === "Claude Code") {
+        if (!waiting && !working && state.sessions.last?.name === agent.label) {
           return true;
         }
         await new Promise((resolve) => setTimeout(resolve, 200));
@@ -1639,16 +1648,49 @@ export async function runStartupCheck(
       throw new Error(`the island still had ${seen}`);
     });
 
-    // The stand-in goes, and Claude Code is found on the PATH again.
+    // The stand-in goes, and the tool is found on the PATH again.
     await check(
-      "the stand-in agent is removed again",
+      `the stand-in for ${agent.label} is removed again`,
       `(async () => {
          const api = window.workbench;
          const removed = await api.invoke('agentTerminal.remove', { id: window.__checkWaitingTile });
-         await api.invoke('provider.saveConfig', { providerId: 'claude-code', executablePath: null });
+         await api.invoke('provider.saveConfig', {
+           providerId: ${JSON.stringify(agent.providerId)}, executablePath: null,
+         });
          return removed.removed;
        })()`,
     );
+  };
+
+  if (process.platform !== "win32") {
+    await waitingAgent({
+      providerId: "claude-code",
+      label: "Claude Code",
+      command: "claude",
+      script: STAND_IN_CLAUDE,
+      summary: "touch island-allowed.txt",
+      // Exactly what Claude Code reads from a permission hook.
+      answered: (printed) => {
+        const answer = JSON.parse(printed) as {
+          hookSpecificOutput?: { hookEventName?: string; decision?: { behavior?: string } };
+        };
+        return (
+          answer.hookSpecificOutput?.hookEventName === "PermissionRequest" &&
+          answer.hookSpecificOutput.decision?.behavior === "allow"
+        );
+      },
+      screenshot: "island-approval",
+    });
+    await waitingAgent({
+      providerId: "codex",
+      label: "Codex",
+      command: "codex",
+      script: STAND_IN_CODEX,
+      summary: "touch island-codex.txt",
+      // "y" is what Codex's own approval dialog takes for "yes, proceed".
+      answered: (printed) => (JSON.parse(printed) as { key?: string }).key === "y",
+      screenshot: "island-approval-codex",
+    });
   }
 
   // The remote workspace is checked after the screenshots, so the screens
@@ -1939,10 +1981,68 @@ const toolInput = { command: "touch island-allowed.txt", description: "Create a 
   await run("UserPromptSubmit", { prompt: "Create island-allowed.txt" });
   process.stdout.write("Stand-in for Claude Code: asks to run touch island-allowed.txt\\r\\n");
   const printed = await run("PermissionRequest", { tool_name: "Bash", tool_input: toolInput });
-  writeFileSync(join(__dirname, "hook-answer.json"), printed);
+  writeFileSync(join(__dirname, "answer.json"), printed);
   await run("PostToolUse", { tool_name: "Bash", tool_input: toolInput, tool_response: {} });
   await run("Stop", { stop_hook_active: false, last_assistant_message: "Done." });
   process.stdout.write("The hook answered.\\r\\n");
+})();
+setInterval(() => undefined, 60000);
+`;
+
+/**
+ * Stands in for Codex in the startup check: started the way the application
+ * starts Codex, it reads the hooks from the run's `-c hooks.<Event>=[...]`
+ * overrides and runs one turn's worth in Codex's order, each event on stdin.
+ * Like Codex, it does not wait on the permission hook; it then shows its own
+ * approval prompt and takes a key from the terminal — "y" runs the command,
+ * Esc ends the turn with the `Interrupt` hook — and keeps which key it got.
+ * Everything else it is asked (a version probe, the app server) gets a short
+ * answer. It stays running, like an interactive tool.
+ */
+const STAND_IN_CODEX = `#!/usr/bin/env node
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  process.stdout.write("codex-cli 0.156.1\\n");
+  process.exit(0);
+}
+const hooks = {};
+for (let index = 0; index < args.length - 1; index += 1) {
+  const match = args[index] === "-c"
+    && /^hooks\\.(\\w+)=.*?command="((?:[^"\\\\]|\\\\.)*)"/.exec(args[index + 1]);
+  if (match) {
+    hooks[match[1]] = match[2].replace(/\\\\(.)/g, "$1");
+  }
+}
+if (!hooks.PermissionRequest) {
+  process.exit(0);
+}
+const run = (event, input) =>
+  new Promise((resolve) => {
+    const hook = spawn("/bin/sh", ["-c", hooks[event]], { stdio: ["pipe", "ignore", "ignore"] });
+    hook.on("close", resolve);
+    hook.stdin.end(JSON.stringify({ session_id: "startup-check", hook_event_name: event, ...input }));
+  });
+const toolInput = { command: "touch island-codex.txt" };
+(async () => {
+  await run("SessionStart", { source: "startup" });
+  await run("UserPromptSubmit", { prompt: "Create island-codex.txt" });
+  await run("PermissionRequest", { tool_name: "Bash", tool_input: toolInput });
+  process.stdout.write("Would you like to run the following command? touch island-codex.txt\\r\\n");
+  process.stdin.setRawMode?.(true);
+  process.stdin.on("data", async (chunk) => {
+    const key = String(chunk);
+    if (key === "y") {
+      writeFileSync(join(__dirname, "answer.json"), JSON.stringify({ key }));
+      await run("PostToolUse", { tool_name: "Bash", tool_input: toolInput, tool_response: "" });
+      await run("Stop", { stop_hook_active: false, last_assistant_message: "Done." });
+    } else if (key === "\\u001b") {
+      writeFileSync(join(__dirname, "answer.json"), JSON.stringify({ key: "escape" }));
+      await run("Interrupt", {});
+    }
+  });
 })();
 setInterval(() => undefined, 60000);
 `;

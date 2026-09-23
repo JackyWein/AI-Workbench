@@ -1,8 +1,8 @@
-import { writeFile } from "node:fs/promises";
+import { utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
-import { HookState, describeToolInput, type HookDialect } from "../hooks.js";
+import { HookState, KEY_ANSWER_SETTLE_MS, describeToolInput, type HookDialect } from "../hooks.js";
 
 /**
  * A tool whose hooks can only report that it waits, never answer — the shape
@@ -10,7 +10,8 @@ import { HookState, describeToolInput, type HookDialect } from "../hooks.js";
  * when the tool moves on.
  */
 const reportingDialect: HookDialect = {
-  waitEvent: null,
+  permissionEvent: null,
+  answerBy: "hook",
   observeWaiting: (event, body) => {
     if (event !== "Notification") {
       return null;
@@ -91,5 +92,75 @@ describe("hook state for a tool that only reports", () => {
     await event("AfterAgent", {});
     await state.read();
     expect(state.current).toBeNull();
+  });
+});
+
+/**
+ * A tool that shows no dialog while a hook runs — Codex — reports through a
+ * hook that returns at once, and is answered with its own dialog's key.
+ */
+const keysDialect: HookDialect = {
+  ...reportingDialect,
+  permissionEvent: "PermissionRequest",
+  answerBy: "keys",
+  observeWaiting: undefined,
+  toolDone: ["PostToolUse"],
+  turnStart: ["UserPromptSubmit"],
+  turnEnd: ["Stop", "Interrupt"],
+  answer: (_request, response) =>
+    "decision" in response ? (response.decision === "allow" ? "y" : "\u001b") : null,
+};
+
+describe("hook state answered with the tool's own keys", () => {
+  let directory: string;
+
+  beforeEach(async () => {
+    directory = await makeTempDirectory("hooks-keys-");
+  });
+
+  afterEach(async () => {
+    await removeTempDirectory(directory);
+  });
+
+  /** An event file written `ago` milliseconds back, as a hook left it. */
+  async function event(name: string, pid: number, body: unknown, ago = 0): Promise<void> {
+    const path = join(directory, `${name}.${pid}.json`);
+    await writeFile(path, JSON.stringify(body));
+    const at = new Date(Date.now() - ago);
+    await utimes(path, at, at);
+  }
+
+  it("types the dialog's key once the dialog had time to appear", async () => {
+    const state = new HookState(directory, keysDialect, { alive: () => false });
+    // Long enough ago that the dialog is up; the hook itself is long gone.
+    await event("PermissionRequest", 5001, { tool_name: "Bash", tool_input: { command: "touch x" } }, KEY_ANSWER_SETTLE_MS + 500);
+    await state.read();
+    // A hook that returned at once is no reason to forget the request.
+    expect(state.current).toMatchObject({ tool: "Bash", summary: "touch x", answerable: true });
+
+    const typed: string[] = [];
+    expect(await state.respond(state.current!.id, { decision: "allow" }, { write: (data) => typed.push(data) })).toBe(true);
+    expect(typed).toEqual(["y"]);
+    expect(state.current).toBeNull();
+  });
+
+  it("types nothing when the person answered in the terminal first", async () => {
+    const state = new HookState(directory, keysDialect, { alive: () => false });
+    await event("PermissionRequest", 5002, { tool_name: "Bash", tool_input: { command: "touch x" } }, 200);
+    await state.read();
+    const id = state.current!.id;
+    const typed: string[] = [];
+    const answering = state.respond(id, { decision: "deny" }, { write: (data) => typed.push(data) });
+    // While the answer waits for the dialog, Esc in the terminal ends the turn.
+    await event("Interrupt", 5003, {});
+    expect(await answering).toBe(false);
+    expect(typed).toEqual([]);
+  });
+
+  it("cannot answer by keys without the terminal", async () => {
+    const state = new HookState(directory, keysDialect, { alive: () => false });
+    await event("PermissionRequest", 5004, { tool_name: "Bash", tool_input: {} }, KEY_ANSWER_SETTLE_MS + 500);
+    await state.read();
+    expect(await state.respond(state.current!.id, { decision: "allow" })).toBe(false);
   });
 });

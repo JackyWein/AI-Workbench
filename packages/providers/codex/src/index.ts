@@ -6,6 +6,7 @@ import {
 } from "@ai-workbench/provider-cli";
 import type { ProviderFactory } from "@ai-workbench/provider-base";
 import { probeAppServer, type CodexProbe } from "./app-server.js";
+import { codexHookTelemetry } from "./attention.js";
 import { toAuthStatus } from "./auth.js";
 import { parseCodexLine } from "./events.js";
 import { toModelInfos } from "./models.js";
@@ -15,6 +16,7 @@ import { toUsageSnapshot } from "./usage.js";
 
 export { codexProfile, codexNotice } from "./profile.js";
 export * from "./rollout.js";
+export * from "./attention.js";
 export { toUsageSnapshot, windowLabel } from "./usage.js";
 
 /** One app server answers models, account and limits; asked at most this often. */
@@ -58,7 +60,22 @@ export const codexExtensions: CliProviderExtensions = {
     return readRolloutUsage(sessionsRoot(context), context.providerId);
   },
   parseLine: parseCodexLine,
-  interactiveTelemetry: rolloutTelemetry,
+  // Numbers from its session log; waiting and working from its hooks.
+  interactiveTelemetry: async (context, run) => {
+    const [rollout, hooks] = await Promise.all([
+      rolloutTelemetry(context, run),
+      codexHookTelemetry(context, run),
+    ]);
+    if (!rollout || !hooks) {
+      return rollout;
+    }
+    return {
+      ...rollout,
+      ...hooks,
+      args: [...(rollout.args ?? []), ...(hooks.args ?? [])],
+      env: { ...rollout.env, ...hooks.env },
+    };
+  },
 };
 
 /** Codex's entries: the default account and any further ones. */
