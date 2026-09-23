@@ -35,6 +35,24 @@ server to a provider that speaks MCP. What remains in G4 is remote MCP
 transports, and in G2 verifying the Codex and Antigravity profiles against
 those tools.
 
+### Design rework (2026-09-23)
+
+Usage view, live terminal metrics, Settings, Providers and the Status Island
+were reworked to the approved design. Verified here: typecheck, lint (0
+errors), 307 tests, the production build, rendered screenshots of every island
+face against the mocks, and, in the running app, the following:
+- Claude Code telemetry (tokens, context, cost, 5-hour and weekly limits)
+  reached the tile, the Usage view and the island.
+- The island's prompt line typed into a running Claude Code terminal and got
+  an answer.
+
+Codex limits come from its session files and OpenCode amounts from its own
+CLI, both seen live. Gemini telemetry is written but was not run.
+
+`verify:app` was **not** re-run after these changes, and its island size
+expectations were adjusted to the new layout, so no criterion above was
+ticked or unticked on this basis.
+
 ## How this file is verified
 
 Everything ticked below is proven by `pnpm verify`, which runs:
