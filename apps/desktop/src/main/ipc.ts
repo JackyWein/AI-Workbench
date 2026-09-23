@@ -433,7 +433,9 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     }),
 
     "mcp.list": () => services.mcp.list(),
-    "mcp.save": (input) => services.mcp.save(input),
+    "mcp.save": (input) => services.mcp.saveFromWindow(input),
+    "mcp.signIn": (input) => services.mcp.signIn(input.id, input.clientSecret),
+    "mcp.signOut": (input) => services.mcp.signOut(input.id),
     "mcp.delete": async (input) => ({
       deleted: await services.mcp.delete(input.id),
     }),

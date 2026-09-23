@@ -223,7 +223,10 @@ export const geminiProfile: CliProviderProfileInput = {
     "toolCalls",
     "nativeTools",
     "cliAuthentication",
+    "mcp",
   ],
+  // Servers reach it through a settings layer of its own (Gemini package).
+  mcp: { via: "extension" },
   // The tool has no command that lists models, but it names its own aliases
   // and resolves them to whatever models are current (GEMINI_MODEL_ALIAS_* in
   // Gemini CLI 0.60, and its `/model` dialog). Offering those names guesses
@@ -313,7 +316,10 @@ export const opencodeProfile: CliProviderProfileInput = {
     "nativeTools",
     "cliAuthentication",
     "usage",
+    "mcp",
   ],
+  // Servers reach it through OPENCODE_CONFIG_CONTENT (OpenCode package).
+  mcp: { via: "extension" },
   // Asked from the tool itself via `opencode models`; nothing is assumed here.
   models: [],
   modelsArgs: ["models"],

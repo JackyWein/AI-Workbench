@@ -20,6 +20,7 @@ import {
   type HookDialect,
 } from "@ai-workbench/provider-cli";
 import type { ProviderIntegration, TerminalMetrics } from "@ai-workbench/shared";
+import { MCP_BRIDGE_SCRIPT } from "./mcp-bridge.js";
 
 /**
  * What an interactive Gemini CLI run waits on the person for, and whether it
@@ -52,7 +53,7 @@ export const GEMINI_TRANSCRIPT_SOURCE = "Gemini CLI session transcript";
 /** The extension's name, as Gemini CLI lists it. */
 export const ISLAND_EXTENSION = "ai-workbench-island";
 /** Raised whenever the extension's files change, so an update is offered. */
-export const ISLAND_EXTENSION_VERSION = "1.0.0";
+export const ISLAND_EXTENSION_VERSION = "1.1.0";
 
 /** The events the extension reports; none of them waits. */
 export const GEMINI_HOOK_EVENTS = [
@@ -149,7 +150,15 @@ export function islandExtensionFiles(platform: NodeJS.Platform): Record<string, 
         name: ISLAND_EXTENSION,
         version: ISLAND_EXTENSION_VERSION,
         description:
-          "Tells AI Workbench when Gemini CLI waits for you or works. Does nothing outside AI Workbench.",
+          "Tells AI Workbench when Gemini CLI waits for you or works, and brings in the connectors of the session. Does nothing outside AI Workbench.",
+        // The session's connectors, through a bridge to AI Workbench (see
+        // mcp-bridge.ts). Gemini CLI replaces ${extensionPath} and ${/}.
+        mcpServers: {
+          "ai-workbench": {
+            command: "node",
+            args: ["${extensionPath}${/}mcp-bridge.cjs"],
+          },
+        },
       },
       null,
       2,
@@ -169,6 +178,7 @@ export function islandExtensionFiles(platform: NodeJS.Platform): Record<string, 
     [windows ? "hook-bridge.ps1" : "hook-bridge.sh"]: windows
       ? POWERSHELL_HOOK_SCRIPT
       : POSIX_HOOK_SCRIPT,
+    "mcp-bridge.cjs": MCP_BRIDGE_SCRIPT,
   };
 }
 
@@ -220,8 +230,9 @@ async function installedExtension(context: CliExtensionContext): Promise<Install
 
 const DESCRIPTION =
   "Lets the status island show when Gemini CLI waits for you, works or rests, " +
-  "and answer its shell prompts. Installs a small extension with Gemini CLI's " +
-  "own installer, which asks you first; it does nothing outside AI Workbench.";
+  "and answer its shell prompts, and gives Gemini CLI the connectors of the " +
+  "session. Installs a small extension with Gemini CLI's own installer, which " +
+  "asks you first; it does nothing outside AI Workbench.";
 
 /** Whether the island's extension is installed, current and on. */
 export async function islandIntegration(

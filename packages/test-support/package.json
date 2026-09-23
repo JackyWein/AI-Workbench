@@ -9,7 +9,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "ssh2": "^1.17.0"
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ssh2": "^1.17.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/ssh2": "^1.15.0"

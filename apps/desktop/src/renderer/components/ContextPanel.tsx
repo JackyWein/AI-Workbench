@@ -299,7 +299,10 @@ function SessionSkills({ sessionId }: { readonly sessionId: string }): JSX.Eleme
   );
 }
 
-/** Which MCP servers this session may use (spec §38). */
+/**
+ * Which connectors this session may use (spec §38): the ones available in its
+ * workspace, each of which the session can switch off (or on) for itself.
+ */
 function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Element | null {
   const servers = useWorkbench((state) => state.mcpServers);
   const enabledIds = useWorkbench((state) => state.sessionMcpServerIds);
@@ -320,14 +323,16 @@ function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Elemen
     };
   }, [sessionId, refreshMcp]);
 
-  if (servers.length === 0) {
+  // A switched-off connector is off everywhere; it is not offered here.
+  const offered = servers.filter((server) => server.enabled);
+  if (offered.length === 0) {
     return null;
   }
 
   return (
     <div className="context__section">
-      <p className="context__heading">MCP servers</p>
-      {servers.map((server) => {
+      <p className="context__heading">Connectors</p>
+      {offered.map((server) => {
         const status = statuses.find((entry) => entry.id === server.id);
         const enabled = enabledIds.includes(server.id);
         return (

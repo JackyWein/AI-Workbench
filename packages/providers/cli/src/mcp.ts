@@ -171,21 +171,8 @@ function isRemote(server: CliMcpServer): boolean {
   return server.transport === "http" || server.transport === "sse";
 }
 
-/**
- * Request headers, when the server carries them. The tool access contract does
- * not declare them yet, so they are read structurally and only a plain map of
- * strings is passed on.
- */
+/** Request headers a remote server is reached with, when it has any. */
 function headersOf(server: CliMcpServer): Record<string, string> | null {
-  const candidate: unknown = (server as { readonly headers?: unknown }).headers;
-  if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate)) {
-    return null;
-  }
-  const headers: Record<string, string> = {};
-  for (const [key, value] of Object.entries(candidate)) {
-    if (typeof value === "string") {
-      headers[key] = value;
-    }
-  }
-  return Object.keys(headers).length > 0 ? headers : null;
+  const headers = server.headers ?? {};
+  return Object.keys(headers).length > 0 ? { ...headers } : null;
 }

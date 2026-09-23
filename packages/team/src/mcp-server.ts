@@ -367,5 +367,7 @@ export function describeTeamMcpServer(scope: TeamMcpScope, stdio: TeamMcpStdio):
     env: { ...stdio.env, ...teamMcpScopeEnv(scope) },
     ...(stdio.cwd === undefined ? {} : { cwd: stdio.cwd }),
     enabled: true,
+    availability: "everywhere",
+    workspaceIds: [],
   };
 }

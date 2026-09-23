@@ -57,6 +57,7 @@ import {
 } from "../domain/plugin.js";
 import {
   mcpServerConfigSchema,
+  mcpServerSaveInputSchema,
   mcpServerStatusSchema,
 } from "../domain/mcp.js";
 import {
@@ -414,7 +415,20 @@ export const ipcContract = {
   },
 
   "mcp.list": { input: z.void(), output: z.array(mcpServerConfigSchema) },
-  "mcp.save": { input: mcpServerConfigSchema, output: mcpServerConfigSchema },
+  "mcp.save": { input: mcpServerSaveInputSchema, output: mcpServerConfigSchema },
+  /** Signs in to a server in the browser; the tokens stay in the main process. */
+  "mcp.signIn": {
+    input: z.object({
+      id: z.string().min(1),
+      /** Only for a client the person registered that came with a secret. */
+      clientSecret: z.string().min(1).max(1000).optional(),
+    }),
+    output: mcpServerStatusSchema.nullable(),
+  },
+  "mcp.signOut": {
+    input: z.object({ id: z.string().min(1) }),
+    output: mcpServerStatusSchema.nullable(),
+  },
   "mcp.delete": {
     input: z.object({ id: z.string().min(1) }),
     output: z.object({ deleted: z.boolean() }),

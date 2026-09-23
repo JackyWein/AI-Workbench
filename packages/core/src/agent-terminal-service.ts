@@ -1,7 +1,11 @@
 import { asc, eq } from "drizzle-orm";
 import type { Database } from "@ai-workbench/database";
 import { agentTerminals, type AgentTerminalRow } from "@ai-workbench/database";
-import type { InteractiveLaunch } from "@ai-workbench/provider-base";
+import type {
+  AIProviderAdapter,
+  InteractiveLaunch,
+  ProviderToolAccess,
+} from "@ai-workbench/provider-base";
 import {
   launchAgentTerminalInputSchema,
   permissionModeSchema,
@@ -16,6 +20,7 @@ import {
 } from "@ai-workbench/shared";
 import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
 import type { EventBus } from "./event-bus.js";
+import type { McpService } from "./mcp-service.js";
 import { createId } from "./ids.js";
 import type { ProviderManager } from "./provider-manager.js";
 import type { WorkspaceManager } from "./workspace-manager.js";
@@ -52,6 +57,11 @@ export interface AgentTerminalServiceOptions {
     readonly args: readonly string[] | string;
     readonly env: Record<string, string>;
   };
+  /**
+   * The MCP servers an agent in this workspace may use. Without it agents
+   * get none — the same as a session with no servers.
+   */
+  readonly mcp?: Pick<McpService, "enabledForWorkspace" | "toolAccess">;
 }
 
 interface Runtime {
@@ -102,6 +112,7 @@ export class AgentTerminalService {
   readonly #workspaces: WorkspaceManager;
   readonly #terminals: AgentTerminalHost;
   readonly #resolveCommand: AgentTerminalServiceOptions["resolveCommand"];
+  readonly #mcp: AgentTerminalServiceOptions["mcp"];
   readonly #runtime = new Map<string, Runtime>();
   /** Sign-in terminals are not persisted; they live only while they run. */
   readonly #transient = new Map<string, AgentTerminal>();
@@ -115,6 +126,7 @@ export class AgentTerminalService {
     this.#workspaces = options.workspaces;
     this.#terminals = options.terminals;
     this.#resolveCommand = options.resolveCommand;
+    this.#mcp = options.mcp;
   }
 
   async list(workspaceId: string): Promise<AgentTerminal[]> {
@@ -480,8 +492,10 @@ export class AgentTerminalService {
     }
     let launch: InteractiveLaunch;
     try {
+      const toolAccess = await this.#toolAccess(terminal.workspaceId, adapter);
       launch = await adapter.describeInteractiveLaunch({
         workingDirectory: terminal.workingDirectory,
+        ...(toolAccess ? { toolAccess } : {}),
         runId: `${terminal.id}-${Date.now().toString(36)}`,
         startedAt: new Date(),
         ...(terminal.modelId ? { modelId: terminal.modelId } : {}),
@@ -492,6 +506,26 @@ export class AgentTerminalService {
       return this.#fail(terminal, error instanceof Error ? error.message : String(error));
     }
     return this.#spawn(terminal, launch, size);
+  }
+
+  /** The servers the agent may use, as its provider takes them; none when that fails. */
+  async #toolAccess(
+    workspaceId: string,
+    adapter: AIProviderAdapter,
+  ): Promise<ProviderToolAccess | null> {
+    if (!this.#mcp) {
+      return null;
+    }
+    try {
+      const capabilities = await adapter.getCapabilities();
+      return await this.#mcp.toolAccess(capabilities, await this.#mcp.enabledForWorkspace(workspaceId));
+    } catch (error) {
+      this.#logger.warn("MCP servers could not be resolved for an agent", {
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
   }
 
   #spawn(

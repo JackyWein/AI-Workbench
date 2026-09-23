@@ -3,21 +3,34 @@ import type { Database } from "@ai-workbench/database";
 import {
   mcpServers,
   sessionMcpServers,
+  sessions,
   type McpServerRow,
 } from "@ai-workbench/database";
-import type { McpManager } from "@ai-workbench/mcp";
+import type { McpGateway, McpGatewayRoute, McpManager, McpOAuth, McpOAuthTarget } from "@ai-workbench/mcp";
+import type { ProviderToolAccess } from "@ai-workbench/provider-base";
+import { ToolBridge } from "./tool-bridge.js";
 import {
+  mcpServerSaveInputSchema,
   parseMcpServerConfig,
+  type McpServerSaveInput,
   type Logger,
   type McpServerConfig,
   type McpServerConfigInput,
   type McpServerStatus,
+  type ProviderCapabilities,
 } from "@ai-workbench/shared";
 
 export interface McpServiceOptions {
   readonly db: Database;
   readonly logger: Logger;
   readonly manager: McpManager;
+  /** Signs in to servers that use OAuth; without it they cannot be used. */
+  readonly oauth?: McpOAuth;
+  /**
+   * The local gateway tools reach servers that need a credential through,
+   * so the credential stays in the main process.
+   */
+  readonly gateway?: Pick<McpGateway, "endpointFor" | "endpointForAll">;
   /**
    * Where remote auth secrets come from. Only the credential reference is
    * ever stored or sent anywhere; the secret is resolved here, in the main
@@ -29,6 +42,9 @@ export interface McpServiceOptions {
 /** Anything that can turn a credential reference into its secret. */
 export interface McpCredentialSource {
   resolve(reference: string): Promise<string | null>;
+  /** Stores a secret (replacing the one under `reference`); returns its reference. */
+  store?(label: string, secret: string, reference?: string): Promise<string>;
+  delete?(reference: string): Promise<void>;
 }
 
 /**
@@ -47,15 +63,162 @@ export class McpService {
   readonly #db: Database;
   readonly #logger: Logger;
   readonly #manager: McpManager;
+  readonly #oauth: McpOAuth | undefined;
+  readonly #gateway: Pick<McpGateway, "endpointFor" | "endpointForAll"> | undefined;
+  readonly #credentials: McpCredentialSource | undefined;
+  readonly #toolBridge = new ToolBridge();
 
   constructor(options: McpServiceOptions) {
     this.#db = options.db;
     this.#logger = options.logger.child("MCP");
     this.#manager = options.manager;
+    this.#oauth = options.oauth;
+    this.#gateway = options.gateway;
+    this.#credentials = options.credentials;
     if (options.credentials) {
       const source = options.credentials;
       this.#manager.setCredentialResolver((reference) => source.resolve(reference));
     }
+    this.#manager.setEndpointResolver(async (config) => {
+      if (!config.oauth) {
+        return null;
+      }
+      if (!(await this.#oauth?.isSignedIn(config.oauth.reference))) {
+        return { signInRequired: `Sign in to ${config.name} to use it.` };
+      }
+      return this.#gateway ? this.#gateway.endpointFor(config.id) : null;
+    });
+  }
+
+  /**
+   * How the gateway reaches a server and signs its requests: with the
+   * stored credential, or the OAuth token, renewed when it runs out.
+   */
+  async gatewayRoute(serverId: string): Promise<McpGatewayRoute | null> {
+    const config = await this.get(serverId);
+    if (!config?.url || config.transport === "stdio" || !config.enabled) {
+      return null;
+    }
+    const oauth = config.oauth;
+    if (oauth) {
+      const service = this.#oauth;
+      return {
+        url: config.url,
+        name: config.name,
+        authorization: async (force) => {
+          const token = await service?.accessToken(oauthTarget(config), { force });
+          return token ? `Bearer ${token}` : null;
+        },
+      };
+    }
+    const reference = config.credentialReference;
+    if (!reference) {
+      return null;
+    }
+    const source = this.#credentials;
+    return {
+      url: config.url,
+      name: config.name,
+      authorization: async () => {
+        const secret = await source?.resolve(reference);
+        if (!secret) {
+          return null;
+        }
+        return /^\S+\s+\S/.test(secret) ? secret : `Bearer ${secret}`;
+      },
+    };
+  }
+
+  /**
+   * Signs in to a server with OAuth in the person's browser, then connects
+   * it. `clientSecret` is only for services that issue one with a client
+   * the person registered; it is kept with the tokens.
+   */
+  async signIn(id: string, clientSecret?: string): Promise<McpServerStatus | null> {
+    const config = await this.get(id);
+    if (!config?.oauth || !config.url) {
+      throw new Error("This connector does not sign in with OAuth.");
+    }
+    if (!this.#oauth) {
+      throw new Error("Signing in is not available in this process.");
+    }
+    const reference = await this.#oauth.signIn({
+      ...oauthTarget(config),
+      ...(clientSecret ? { clientSecret } : {}),
+    });
+    await this.setOAuthReference(id, reference);
+    return this.connect(id);
+  }
+
+  /** Forgets a server's sign-in; it asks for a new one before it is used. */
+  async signOut(id: string): Promise<McpServerStatus | null> {
+    const config = await this.get(id);
+    if (!config?.oauth) {
+      return null;
+    }
+    await this.#oauth?.signOut(config.oauth.reference);
+    await this.setOAuthReference(id, null);
+    await this.#manager.disconnect(id);
+    return this.connect(id);
+  }
+
+  /**
+   * What a provider gets for these servers: the servers themselves for a
+   * tool that connects on its own — through the gateway when they need a
+   * credential — or the tools the application runs for it.
+   */
+  async toolAccess(
+    capabilities: ProviderCapabilities,
+    serverIds: readonly string[],
+  ): Promise<ProviderToolAccess | null> {
+    if (serverIds.length === 0) {
+      return null;
+    }
+    const plan = this.#toolBridge.plan({
+      capabilities,
+      enabledServerIds: serverIds,
+      configs: await this.list(),
+      statuses: this.statuses(),
+      toolsFor: (ids) => this.#manager.toolsForSession(ids),
+    });
+    for (const entry of plan.unavailable) {
+      this.#logger.debug("MCP server is enabled but unusable", {
+        serverId: entry.id,
+        reason: entry.reason,
+      });
+    }
+    if (plan.kind === "none") {
+      return null;
+    }
+    const combined =
+      plan.kind === "provider-mcp" && this.#gateway
+        ? this.#gateway.endpointForAll(plan.mcpServers.map((config) => config.id))
+        : null;
+    return {
+      kind: plan.kind,
+      mcpServers: plan.mcpServers.map((config) => this.#forTools(config)),
+      ...(combined ? { combined } : {}),
+      hostTools: plan.hostTools,
+    };
+  }
+
+  #forTools(config: McpServerConfig): ProviderToolAccess["mcpServers"][number] {
+    const signs = config.transport !== "stdio" && (config.oauth || config.credentialReference);
+    const endpoint = signs && this.#gateway ? this.#gateway.endpointFor(config.id) : null;
+    return {
+      id: config.id,
+      name: config.name,
+      transport: config.transport,
+      ...(config.command ? { command: config.command } : {}),
+      args: config.args,
+      env: config.env,
+      ...(config.cwd ? { cwd: config.cwd } : {}),
+      ...(endpoint
+        ? { url: endpoint.url, headers: endpoint.headers }
+        : config.url
+          ? { url: config.url }
+          : {}),
+    };
   }
 
   get manager(): McpManager {
@@ -90,6 +253,17 @@ export class McpService {
       delete env[CREDENTIAL_ENV_KEY];
     }
 
+    // A sign-in made before is kept when the form that saves the server does
+    // not carry it: only signing out forgets it.
+    const oauth = config.oauth
+      ? {
+          ...config.oauth,
+          ...(config.oauth.reference === undefined && existing?.oauth?.reference
+            ? { reference: existing.oauth.reference }
+            : {}),
+        }
+      : null;
+
     const values = {
       id: config.id,
       name: config.name,
@@ -100,6 +274,10 @@ export class McpService {
       url: config.url ?? null,
       cwd: config.cwd ?? null,
       enabled: config.enabled,
+      availability: config.availability,
+      workspaceIds: config.workspaceIds,
+      catalogId: config.catalogId ?? null,
+      oauth,
       createdAt: existing ? undefined : now,
       updatedAt: now,
     };
@@ -118,16 +296,88 @@ export class McpService {
           url: values.url,
           cwd: values.cwd,
           enabled: values.enabled,
+          availability: values.availability,
+          workspaceIds: values.workspaceIds,
+          catalogId: values.catalogId,
+          oauth: values.oauth,
           updatedAt: now,
         },
       });
 
-    return config;
+    return (await this.get(config.id)) ?? config;
+  }
+
+  /** Records where a server's sign-in is kept, or that it has none. */
+  async setOAuthReference(id: string, reference: string | null): Promise<McpServerConfig | null> {
+    const config = await this.get(id);
+    if (!config) {
+      return null;
+    }
+    const { reference: _previous, ...rest } = config.oauth ?? { scopes: [] };
+    const oauth = { ...rest, ...(reference ? { reference } : {}) };
+    await this.#db
+      .update(mcpServers)
+      .set({ oauth, updatedAt: new Date() })
+      .where(eq(mcpServers.id, id));
+    return this.get(id);
+  }
+
+  /**
+   * Saves what the window sent: a new API key is stored here and only its
+   * reference kept; a sign-in made before is kept. The server is connected
+   * (or let go) to match.
+   */
+  async saveFromWindow(raw: McpServerSaveInput): Promise<McpServerConfig> {
+    const input = mcpServerSaveInputSchema.parse(raw);
+    const existing = await this.get(input.id);
+    let credentialReference = existing?.credentialReference;
+    if (input.apiKey) {
+      if (!this.#credentials?.store) {
+        throw new Error("API keys cannot be stored in this process.");
+      }
+      credentialReference = await this.#credentials.store(
+        `${input.name} API key`,
+        input.apiKey,
+        credentialReference,
+      );
+    } else if (input.clearApiKey && credentialReference) {
+      await this.#credentials?.delete?.(credentialReference);
+      credentialReference = undefined;
+    }
+    // Leaving OAuth behind leaves nothing of the sign-in behind either.
+    if (existing?.oauth?.reference && !input.oauth) {
+      await this.#oauth?.signOut(existing.oauth.reference);
+    }
+    const { apiKey: _apiKey, clearApiKey: _clear, ...config } = input;
+    const saved = await this.save({
+      ...config,
+      ...(credentialReference ? { credentialReference } : {}),
+      ...(input.oauth
+        ? {
+            oauth: {
+              ...input.oauth,
+              ...(existing?.oauth?.reference ? { reference: existing.oauth.reference } : {}),
+            },
+          }
+        : {}),
+    });
+    if (saved.enabled) {
+      await this.connect(saved.id);
+    } else {
+      await this.#manager.disconnect(saved.id);
+    }
+    return saved;
   }
 
   async delete(id: string): Promise<boolean> {
+    const config = await this.get(id);
     await this.#manager.disconnect(id);
     await this.#db.delete(mcpServers).where(eq(mcpServers.id, id));
+    // Its key and sign-in go with it.
+    if (config?.credentialReference) {
+      await this.#credentials?.delete?.(config.credentialReference);
+    }
+    await this.#oauth?.signOut(config?.oauth?.reference);
     return true;
   }
 
@@ -171,13 +421,28 @@ export class McpService {
     return this.#manager.statuses();
   }
 
-  /** Which servers a session may use (spec §38). */
+  /**
+   * Which servers a session may use (spec §38): every enabled server that is
+   * available in its workspace, unless the session switched it off, plus any
+   * the session switched on for itself.
+   */
   async enabledForSession(sessionId: string): Promise<string[]> {
+    const [session] = await this.#db
+      .select({ workspaceId: sessions.workspaceId })
+      .from(sessions)
+      .where(eq(sessions.id, sessionId))
+      .limit(1);
     const rows = await this.#db
       .select()
       .from(sessionMcpServers)
       .where(eq(sessionMcpServers.sessionId, sessionId));
-    return rows.filter((row) => row.enabled).map((row) => row.serverId);
+    const overrides = new Map(rows.map((row) => [row.serverId, row.enabled]));
+    return availableServers(await this.list(), session?.workspaceId ?? null, overrides);
+  }
+
+  /** Which servers a terminal agent in this workspace gets. */
+  async enabledForWorkspace(workspaceId: string | null): Promise<string[]> {
+    return availableServers(await this.list(), workspaceId, new Map());
   }
 
   async setSessionAccess(
@@ -206,6 +471,43 @@ export class McpService {
   }
 }
 
+function oauthTarget(config: McpServerConfig): McpOAuthTarget {
+  return {
+    id: config.id,
+    name: config.name,
+    url: config.url ?? "",
+    reference: config.oauth?.reference,
+    scopes: config.oauth?.scopes ?? [],
+    clientId: config.oauth?.clientId,
+  };
+}
+
+/**
+ * The servers a place may use: enabled ones available everywhere or in its
+ * workspace, then what a session decided for itself on top.
+ */
+export function availableServers(
+  configs: readonly McpServerConfig[],
+  workspaceId: string | null,
+  overrides: ReadonlyMap<string, boolean>,
+): string[] {
+  return configs
+    .filter((config) => {
+      if (!config.enabled) {
+        return false;
+      }
+      const decided = overrides.get(config.id);
+      if (decided !== undefined) {
+        return decided;
+      }
+      return (
+        config.availability === "everywhere" ||
+        (workspaceId !== null && config.workspaceIds.includes(workspaceId))
+      );
+    })
+    .map((config) => config.id);
+}
+
 function toConfig(row: McpServerRow): McpServerConfig {
   const env = { ...row.env };
   const credentialReference = env[CREDENTIAL_ENV_KEY];
@@ -223,5 +525,17 @@ function toConfig(row: McpServerRow): McpServerConfig {
       ? { credentialReference }
       : {}),
     enabled: row.enabled,
+    availability: row.availability,
+    workspaceIds: row.workspaceIds,
+    ...(row.catalogId === null ? {} : { catalogId: row.catalogId }),
+    ...(isOAuth(row.oauth) ? { oauth: row.oauth } : {}),
   };
+}
+
+function isOAuth(value: unknown): value is NonNullable<McpServerConfig["oauth"]> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as { scopes?: unknown }).scopes)
+  );
 }

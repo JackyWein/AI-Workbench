@@ -755,7 +755,7 @@ export class CliProviderAdapter implements AIProviderAdapter {
       return failed("its provider package does not say how.");
     }
     try {
-      const launch = this.#extensions.mcpLaunch(servers, context);
+      const launch = this.#extensions.mcpLaunch(servers, context, toolAccess?.combined);
       return { launch: { args: [...launch.args], env: { ...launch.env } } };
     } catch (error) {
       this.#logger.warn("Provider extension failed", {

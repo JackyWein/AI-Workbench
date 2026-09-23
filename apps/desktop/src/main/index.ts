@@ -1,12 +1,12 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, net, shell } from "electron";
 import { createServices, type AppServices } from "./services.js";
 import { checkForUpdates, getUpdateState, initUpdater } from "./updater.js";
 import { registerIpcHandlers, removeIpcHandlers } from "./ipc.js";
 import { IslandController } from "./island-controller.js";
-import { runStartupCheck } from "./startup-check.js";
+import { approveSignInPage, runStartupCheck } from "./startup-check.js";
 import { resolveIslandFile } from "./status-island.js";
 import { hideToTray } from "./tray.js";
 import { createMainWindow, resolveRendererFile } from "./window.js";
@@ -42,7 +42,16 @@ async function bootstrap(): Promise<void> {
   }
 
   const userDataPath = app.getPath("userData");
-  services = await createServices({ userDataPath, isDevelopment });
+  services = await createServices({
+    userDataPath,
+    isDevelopment,
+    // The check has no person at a browser: its sign-in pages approve at
+    // once, so it opens them itself and follows the redirect back.
+    openExternal: startupCheckOnly ? (url) => approveSignInPage(url) : (url) => shell.openExternal(url),
+    // Electron's own networking, so connectors go through the system proxy
+    // and certificate store like the rest of the app.
+    fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+  });
 
   // Update checks run against GitHub Releases in packaged builds only. The
   // startup check only ever asks which version is current; downloading and

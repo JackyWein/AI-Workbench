@@ -326,6 +326,16 @@ export const mcpServers = sqliteTable("mcp_servers", {
   url: text("url"),
   cwd: text("cwd"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  availability: text("availability", { enum: ["everywhere", "workspaces"] })
+    .notNull()
+    .default("everywhere"),
+  workspaceIds: text("workspace_ids", { mode: "json" })
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'[]'`),
+  catalogId: text("catalog_id"),
+  /** OAuth settings (reference, scopes, client id); never tokens. */
+  oauth: text("oauth", { mode: "json" }).$type<unknown>(),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });

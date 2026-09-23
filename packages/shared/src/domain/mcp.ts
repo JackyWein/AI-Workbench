@@ -29,6 +29,33 @@ export const mcpServerConfigSchema = z
     enabled: z.boolean().default(true),
     /** Working directory for a stdio server. */
     cwd: z.string().optional(),
+    /**
+     * Where the server may be used: in every session and terminal agent, or
+     * only in the listed workspaces. A session can still switch one off (or
+     * on) for itself.
+     */
+    availability: z.enum(["everywhere", "workspaces"]).default("everywhere"),
+    workspaceIds: z.array(z.string().min(1)).default([]),
+    /** The catalog entry the server was added from, when it was. */
+    catalogId: z.string().min(1).max(100).optional(),
+    /**
+     * Signs in with OAuth, the way MCP specifies it. The registration and
+     * tokens live in the credential store under this reference; the main
+     * process uses them and nothing else ever sees them.
+     */
+    oauth: z
+      .object({
+        reference: z.string().min(1).max(200).optional(),
+        /** Asked for at sign-in; the server's own list when absent. */
+        scopes: z.array(z.string().min(1)).default([]),
+        /**
+         * For services that do not register apps on their own (Google): the
+         * OAuth client the person made for it. The secret, when the service
+         * issues one, is kept with the tokens, never here.
+         */
+        clientId: z.string().min(1).max(500).optional(),
+      })
+      .optional(),
   })
   .superRefine((config, context) => {
     if (config.transport === "stdio" && !config.command) {
@@ -67,6 +94,8 @@ export const mcpConnectionStateSchema = z.enum([
   "connected",
   "failed",
   "unsupported",
+  /** It signs in with OAuth and has no valid sign-in yet. */
+  "signInRequired",
 ]);
 export type McpConnectionState = z.infer<typeof mcpConnectionStateSchema>;
 
@@ -83,3 +112,35 @@ export const mcpServerStatusSchema = z.object({
   updatedAt: z.date(),
 });
 export type McpServerStatus = z.infer<typeof mcpServerStatusSchema>;
+
+/**
+ * What the window may save about a server. Credentials are never named from
+ * there: a new API key travels once and is stored by the main process, and
+ * a sign-in is made with `mcp.signIn`, so the window cannot point a server
+ * at a credential it was not given for.
+ */
+export const mcpServerSaveInputSchema = z.object({
+  id: z.string().min(1).max(100),
+  name: z.string().min(1).max(200),
+  transport: mcpTransportSchema.default("stdio"),
+  command: z.string().min(1).optional(),
+  args: z.array(z.string()).default([]),
+  env: z.record(z.string()).default({}),
+  url: z.string().url().optional(),
+  cwd: z.string().optional(),
+  enabled: z.boolean().default(true),
+  availability: z.enum(["everywhere", "workspaces"]).default("everywhere"),
+  workspaceIds: z.array(z.string().min(1)).default([]),
+  catalogId: z.string().min(1).max(100).optional(),
+  oauth: z
+    .object({
+      scopes: z.array(z.string().min(1)).default([]),
+      clientId: z.string().min(1).max(500).optional(),
+    })
+    .optional(),
+  /** A new API key sent as the Authorization header; replaces the stored one. */
+  apiKey: z.string().min(1).max(10_000).optional(),
+  /** Forgets the stored API key. */
+  clearApiKey: z.boolean().optional(),
+});
+export type McpServerSaveInput = z.input<typeof mcpServerSaveInputSchema>;

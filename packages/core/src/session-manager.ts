@@ -31,7 +31,6 @@ import { createId } from "./ids.js";
 import type { ProviderManager } from "./provider-manager.js";
 import type { McpService } from "./mcp-service.js";
 import type { SkillService } from "./skill-service.js";
-import { ToolBridge } from "./tool-bridge.js";
 import type { WorkspaceManager } from "./workspace-manager.js";
 
 export class SessionNotFoundError extends Error {
@@ -94,7 +93,6 @@ export class SessionManager {
   readonly #skills: SkillService | undefined;
   readonly #mcp: McpService | undefined;
   readonly #attachmentsDirectory: string | undefined;
-  readonly #toolBridge = new ToolBridge();
   readonly #runs = new Map<string, ActiveRun>();
 
   constructor(options: SessionManagerOptions) {
@@ -688,32 +686,10 @@ export class SessionManager {
       return null;
     }
     try {
-      const enabledServerIds = await this.#mcp.enabledForSession(session.id);
-      if (enabledServerIds.length === 0) {
-        return null;
-      }
-
-      const plan = this.#toolBridge.plan({
+      return await this.#mcp.toolAccess(
         capabilities,
-        enabledServerIds,
-        configs: await this.#mcp.list(),
-        statuses: this.#mcp.statuses(),
-        toolsFor: (ids) => this.#mcp!.manager.toolsForSession(ids),
-      });
-
-      for (const entry of plan.unavailable) {
-        this.#logger.warn("MCP server is enabled but unusable", {
-          sessionId: session.id,
-          serverId: entry.id,
-          reason: entry.reason,
-        });
-      }
-
-      return {
-        kind: plan.kind,
-        mcpServers: plan.mcpServers,
-        hostTools: plan.hostTools,
-      };
+        await this.#mcp.enabledForSession(session.id),
+      );
     } catch (error) {
       this.#logger.warn("Tool access could not be resolved", {
         sessionId: session.id,

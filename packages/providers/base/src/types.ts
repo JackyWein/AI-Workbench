@@ -45,7 +45,14 @@ export interface ProviderToolAccess {
     readonly env?: Readonly<Record<string, string>>;
     readonly url?: string;
     readonly cwd?: string;
+    /** Sent with every request to a remote server (the gateway's key). */
+    readonly headers?: Readonly<Record<string, string>>;
   }>;
+  /**
+   * One local endpoint serving the tools of all `mcpServers`, for a tool that
+   * can be given only one server (or only one fixed entry).
+   */
+  readonly combined?: { readonly url: string; readonly headers: Readonly<Record<string, string>> };
   /** Tools the application executes on the provider's behalf. */
   readonly hostTools: ReadonlyArray<{
     readonly serverId: string;

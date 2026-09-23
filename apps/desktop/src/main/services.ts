@@ -20,7 +20,7 @@ import {
   createLogger,
 } from "@ai-workbench/core";
 import { CredentialManager } from "@ai-workbench/credentials";
-import { McpManager } from "@ai-workbench/mcp";
+import { McpGateway, McpManager, McpOAuth } from "@ai-workbench/mcp";
 import { ClaudeSkillImporter, MarkdownSkillImporter } from "@ai-workbench/skills";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import {
@@ -86,6 +86,10 @@ export interface AppServices {
 export interface CreateServicesOptions {
   readonly userDataPath: string;
   readonly isDevelopment: boolean;
+  /** Opens a sign-in page in the person's browser; logged only when absent. */
+  readonly openExternal?: (url: string) => void | Promise<void>;
+  /** How connectors reach the network; the system proxy's when Electron passes it. */
+  readonly fetch?: typeof fetch;
 }
 
 /** Maps stored user overrides onto the adapter configuration shape. */
@@ -276,12 +280,75 @@ async function createServicesInner(
   await plugins.load();
 
   const mcpManager = new McpManager({ logger, clientVersion: "1.0.0" });
+  // Tools reach servers that sign in through this local gateway, which adds
+  // the credential; it needs the service to know the servers, and the
+  // service needs its address, so the link is made once both exist.
+  let mcpRef: McpService | null = null;
+  const mcpGateway = new McpGateway({
+    logger,
+    route: (serverId) => mcpRef?.gatewayRoute(serverId) ?? Promise.resolve(null),
+    // The combined endpoint serves tools through the application's own
+    // connections to the servers.
+    tools: {
+      list: (serverIds) => mcpManager.toolsForSession(serverIds),
+      call: async (serverId, name, args) => {
+        const result = await mcpManager.callTool(serverId, name, args);
+        return result.ok
+          ? result.result
+          : { content: [{ type: "text", text: result.error }], isError: true };
+      },
+    },
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
+  await mcpGateway.start();
+  const mcpOAuth = new McpOAuth({
+    logger,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    openBrowser: (url) => {
+      if (options.openExternal) {
+        return options.openExternal(url);
+      }
+      logger.child("MCP").warn("No browser to open a sign-in page in");
+    },
+    store: {
+      load: (reference) => credentials.resolve(reference),
+      save: async (reference, label, value) =>
+        (
+          await credentials.store({
+            label,
+            kind: "mcp-oauth",
+            secret: value,
+            ...(reference ? { reference } : {}),
+          })
+        ).reference,
+      delete: async (reference) => {
+        await credentials.delete(reference);
+      },
+    },
+  });
   const mcp = new McpService({
     db: database.db,
     logger,
     manager: mcpManager,
-    credentials: { resolve: (reference) => credentials.resolve(reference) },
+    oauth: mcpOAuth,
+    gateway: mcpGateway,
+    credentials: {
+      resolve: (reference) => credentials.resolve(reference),
+      store: async (label, secret, reference) =>
+        (
+          await credentials.store({
+            label,
+            kind: "mcp-api-key",
+            secret,
+            ...(reference ? { reference } : {}),
+          })
+        ).reference,
+      delete: async (reference) => {
+        await credentials.delete(reference);
+      },
+    },
   });
+  mcpRef = mcp;
   // Servers the user enabled come up with the application; one that refuses to
   // start is reported, never thrown (spec §60).
   const connected = await mcp.connectEnabled();
@@ -349,6 +416,7 @@ async function createServicesInner(
     workspaces,
     terminals,
     resolveCommand: (launch) => resolveInteractiveCommand(launch),
+    mcp,
   });
   agentTerminalsRef = agentTerminals;
 
@@ -406,6 +474,7 @@ async function createServicesInner(
         await teams.shutdown();
         await sessions.shutdown();
         await mcpManager.disconnectAll();
+        await mcpGateway.stop();
         // Open SSH connections are closed with everything else, so a quit
         // does not leave a socket to a remote machine behind.
         access.dispose();

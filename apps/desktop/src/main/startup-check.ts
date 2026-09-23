@@ -883,11 +883,14 @@ export async function runStartupCheck(
 
        // And the screen says so rather than showing it as usable.
        [...document.querySelectorAll('.sidebar__foot .row')]
-         .find(row => row.textContent?.includes('MCP servers'))?.click();
-       await new Promise(resolve => setTimeout(resolve, 600));
-       const entry = [...document.querySelectorAll('.provider-entry')]
+         .find(row => row.textContent?.includes('Connectors'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       [...document.querySelectorAll('.segmented__item')]
+         .find(node => node.textContent?.startsWith('Yours'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       const card = [...document.querySelectorAll('.connector-card')]
          .find(node => node.textContent?.includes('Check missing server'));
-       return Boolean(entry && entry.textContent?.includes('Failed'));
+       return Boolean(card?.querySelector('.connector-card__state[data-tone="error"]'));
      })()`,
   );
 
@@ -903,11 +906,77 @@ export async function runStartupCheck(
   );
 
   await check(
-    "connecting an account never falls back to plaintext",
+    "the connector catalog lists services and says how each signs in",
     `(async () => {
        [...document.querySelectorAll('.sidebar__foot .row')]
-         .find(row => row.textContent?.includes('Plugins'))?.click();
+         .find(row => row.textContent?.includes('Connectors'))?.click();
        await new Promise(resolve => setTimeout(resolve, 300));
+       [...document.querySelectorAll('.segmented__item')]
+         .find(node => node.textContent === 'Discover')?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       const cards = [...document.querySelectorAll('.connector-card')];
+       if (cards.length < 10) return 'only ' + cards.length + ' services';
+       cards.find(node => node.textContent?.includes('Gmail'))?.click();
+       const opened = await ${waitFor("document.querySelector('.connector-panel')?.textContent?.includes('OAuth client ID')", 2000)};
+       if (!opened) return 'the Gmail panel does not ask for its OAuth client';
+       const facts = document.querySelector('.connector-facts')?.textContent ?? '';
+       document.querySelector('.connector-panel__close')?.click();
+       return facts.includes('Answered from AI Workbench') ? true : 'no test date: ' + facts;
+     })()`,
+  );
+
+  // A service behind OAuth, the way MCP specifies it, started in this
+  // process: the connector is added and signed in to through the screen,
+  // and its tools come through the gateway that keeps the token.
+  const oauthService = await import("@ai-workbench/test-support").then((support) =>
+    support.startOAuthMcpTestServer(),
+  );
+  await check(
+    "a connector added by hand signs in with OAuth and offers its tools",
+    `(async () => {
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(row => row.textContent?.includes('Connectors'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       [...document.querySelectorAll('.connectors__header .primary-button')]
+         .find(node => node.textContent?.includes('Add'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       const panel = document.querySelector('.connector-panel');
+       if (!panel) return 'no form';
+       const type = (input, value) => {
+         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+         setter.call(input, value);
+         input.dispatchEvent(new Event('input', { bubbles: true }));
+       };
+       const inputs = [...panel.querySelectorAll('input.text-input')];
+       type(inputs[0], 'Check notes');
+       type(inputs[1], ${JSON.stringify(oauthService.url)});
+       [...panel.querySelectorAll('.segmented__item')]
+         .find(node => node.textContent === 'Sign in (OAuth)')?.click();
+       await new Promise(resolve => setTimeout(resolve, 100));
+       [...panel.querySelectorAll('.primary-button')]
+         .find(node => node.textContent === 'Add connector')?.click();
+       const connected = await ${waitFor(
+         "document.querySelector('.connector-panel__status')?.textContent?.includes('Connected · 1 tool')",
+         15000,
+       )};
+       if (!connected) return 'status: ' + (document.querySelector('.connector-panel')?.textContent ?? 'no panel');
+       const [server] = (await window.workbench.invoke('mcp.list', undefined)).filter(entry => entry.name === 'Check notes');
+       const status = (await window.workbench.invoke('mcp.statuses', undefined)).find(entry => entry.id === server?.id);
+       document.querySelector('.connector-panel__close')?.click();
+       // Only a reference to the sign-in is stored with the connector.
+       const passed = server?.oauth?.reference && !JSON.stringify(server).includes('access_token')
+         && status?.tools?.[0]?.name === 'read_note';
+       // The service lives only as long as this run; so does the connector.
+       if (server) await window.workbench.invoke('mcp.delete', { id: server.id });
+       return passed ? true : JSON.stringify({ server, status });
+     })()`,
+    30_000,
+  );
+  await oauthService.close();
+
+  await check(
+    "connecting an account never falls back to plaintext",
+    `(async () => {
 
        // Either the operating system stores the secret, or the attempt is
        // refused with a reason. Storing it unprotected is not an outcome.
@@ -1591,8 +1660,19 @@ export async function runStartupCheck(
       await capture("settings", sidebar("Settings"));
       await capture("skills", sidebar("Skills"));
       await capture("usage", sidebar("Usage"));
-      await capture("mcp", sidebar("MCP servers"));
-      await capture("plugins", sidebar("Plugins"));
+      await capture("connectors", sidebar("Connectors"));
+      await capture(
+        "connectors-discover",
+        `${sidebar("Connectors")}
+         await new Promise(resolve => setTimeout(resolve, 200));
+         [...document.querySelectorAll('.segmented__item')]
+           .find(node => node.textContent === 'Discover')?.click();`,
+      );
+      await capture(
+        "connectors-gmail",
+        `[...document.querySelectorAll('.connector-card')]
+           .find(node => node.textContent?.includes('Gmail'))?.click();`,
+      );
       await capture(
         "skills-open",
         `${sidebar("Skills")}
@@ -2777,4 +2857,17 @@ function once(
     window.webContents.once(event, onLoad);
     window.webContents.on("did-fail-load", onFail);
   });
+}
+
+/**
+ * The check's browser for sign-in pages: the stand-in service approves at
+ * once and redirects, and this follows the redirect to the app's listener,
+ * as a person's browser would after they clicked Allow.
+ */
+export async function approveSignInPage(url: string): Promise<void> {
+  const page = await fetch(url, { redirect: "manual" });
+  const location = page.headers.get("location");
+  if (location) {
+    await fetch(location);
+  }
 }

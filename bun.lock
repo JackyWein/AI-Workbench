@@ -17,7 +17,7 @@
     },
     "apps/desktop": {
       "name": "@ai-workbench/desktop",
-      "version": "0.0.3",
+      "version": "0.0.4",
       "dependencies": {
         "@libsql/client": "^0.15.0",
         "drizzle-orm": "^0.45.0",
@@ -120,6 +120,9 @@
         "@ai-workbench/shared": "workspace:*",
         "@modelcontextprotocol/sdk": "^1.30.0",
         "zod": "^3.25.76",
+      },
+      "devDependencies": {
+        "@ai-workbench/test-support": "workspace:*",
       },
     },
     "packages/plugins": {
@@ -287,7 +290,9 @@
       "name": "@ai-workbench/test-support",
       "version": "0.0.0",
       "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.30.0",
         "ssh2": "^1.17.0",
+        "zod": "^3.25.76",
       },
       "devDependencies": {
         "@types/ssh2": "^1.15.0",

@@ -18,3 +18,4 @@ export * from "./events/provider-events.js";
 export * from "./events/app-events.js";
 export * from "./ipc/contract.js";
 export * from "./logging/index.js";
+export * from "./catalog/connectors.js";

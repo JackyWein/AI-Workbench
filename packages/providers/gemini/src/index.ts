@@ -26,6 +26,7 @@ import {
   metricsFromTranscript,
 } from "./attention.js";
 import { parseGeminiLine } from "./events.js";
+import { geminiMcpLaunch } from "./mcp.js";
 
 export * from "./attention.js";
 export * from "./events.js";
@@ -151,6 +152,7 @@ function safeJson(text: string): unknown {
 /** What the Gemini CLI needs beyond its profile data. */
 export const geminiExtensions: CliProviderExtensions = {
   interactiveTelemetry,
+  mcpLaunch: geminiMcpLaunch,
   parseLine: parseGeminiLine,
   integration: { status: islandIntegration, setupArgs: islandSetupArgs },
 };
@@ -158,3 +160,5 @@ export const geminiExtensions: CliProviderExtensions = {
 export function geminiFactory(): ProviderFactory {
   return cliProviderFactory(parseProfile(geminiProfile), geminiExtensions);
 }
+
+export { geminiMcpLaunch, MCP_URL_ENV } from "./mcp.js";

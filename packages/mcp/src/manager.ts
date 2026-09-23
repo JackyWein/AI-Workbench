@@ -19,6 +19,19 @@ interface Connection {
 /** Resolves a credential reference to its secret. Main process only. */
 export type McpCredentialResolver = (reference: string) => Promise<string | null>;
 
+/**
+ * Where to reach a remote server instead of its own address — the local
+ * gateway, for one that signs in — or that it cannot be reached until the
+ * person signs in. Null leaves the server's own address and credential.
+ */
+export type McpEndpointResolver = (
+  config: McpServerConfig,
+) => Promise<
+  | { readonly url: string; readonly headers: Record<string, string> }
+  | { readonly signInRequired: string }
+  | null
+>;
+
 export interface McpManagerOptions {
   readonly logger: Logger;
   readonly clientName?: string;
@@ -54,12 +67,18 @@ export class McpManager {
   readonly #clientName: string;
   readonly #clientVersion: string;
   #resolveCredential: McpCredentialResolver | undefined;
+  #resolveEndpoint: McpEndpointResolver | undefined;
 
   constructor(options: McpManagerOptions) {
     this.#logger = options.logger.child("MCP");
     this.#clientName = options.clientName ?? "ai-workbench";
     this.#clientVersion = options.clientVersion ?? "1.0.0";
     this.#resolveCredential = options.resolveCredential;
+  }
+
+  /** Routes remote servers that sign in through the gateway. */
+  setEndpointResolver(resolver: McpEndpointResolver | undefined): void {
+    this.#resolveEndpoint = resolver;
   }
 
   /** Replaces the credential resolver, e.g. once the main process owns one. */
@@ -99,11 +118,25 @@ export class McpManager {
       updatedAt: new Date(),
     });
 
+    const endpoint =
+      config.transport === "stdio" ? null : await this.#resolveEndpoint?.(config).catch(() => null);
+    if (endpoint && "signInRequired" in endpoint) {
+      return this.#record({
+        id: config.id,
+        name: config.name,
+        transport: config.transport,
+        state: "signInRequired",
+        tools: [],
+        detail: endpoint.signInRequired,
+        updatedAt: new Date(),
+      });
+    }
+
     try {
       const started = Date.now();
       const { client, tools } = config.transport === "stdio"
         ? await this.#connectStdio(config)
-        : await this.#connectRemote(config);
+        : await this.#connectRemote(config, endpoint ?? null);
       const latencyMs = Date.now() - started;
 
       this.#connections.set(config.id, { config, client, tools });
@@ -233,15 +266,18 @@ export class McpManager {
 
   async #connectRemote(
     config: McpServerConfig,
+    endpoint: { readonly url: string; readonly headers: Record<string, string> } | null,
   ): Promise<{ client: Client; tools: McpTool[] }> {
     if (!config.url) {
       throw new Error(`A ${config.transport} server needs a url`);
     }
-    const auth = await this.#authHeaders(config);
+    const auth = endpoint
+      ? { ok: true as const, headers: endpoint.headers }
+      : await this.#authHeaders(config);
     if (!auth.ok) {
       throw new Error(auth.error);
     }
-    const url = new URL(config.url);
+    const url = new URL(endpoint?.url ?? config.url);
     const transport = config.transport === "http"
       ? new StreamableHTTPClientTransport(url, { requestInit: { headers: auth.headers } })
       : new SSEClientTransport(url, { requestInit: { headers: auth.headers } });

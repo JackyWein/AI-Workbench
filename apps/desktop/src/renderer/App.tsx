@@ -11,8 +11,7 @@ import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { RendererErrorBoundary } from "./components/ErrorBoundary.js";
-import { McpView } from "./components/McpView.js";
-import { PluginsView } from "./components/PluginsView.js";
+import { ConnectorsView } from "./components/ConnectorsView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
@@ -282,14 +281,9 @@ export function App(): JSX.Element {
             <SkillsView />
           </RendererErrorBoundary>
         ) : null}
-        {state.view === "plugins" ? (
-          <RendererErrorBoundary fallbackTitle="Plugins">
-            <PluginsView />
-          </RendererErrorBoundary>
-        ) : null}
-        {state.view === "mcp" ? (
-          <RendererErrorBoundary fallbackTitle="MCP">
-            <McpView />
+        {state.view === "connectors" ? (
+          <RendererErrorBoundary fallbackTitle="Connectors">
+            <ConnectorsView />
           </RendererErrorBoundary>
         ) : null}
         {state.view === "teams" ? (

@@ -20,6 +20,7 @@ import type {
   UsageLimit,
 } from "@ai-workbench/shared";
 import { parseOpencodeLine } from "./events.js";
+import { opencodeMcpLaunch } from "./mcp.js";
 import { mergeOpencodeModels, parseOpencodeModels } from "./models.js";
 import { opencodeServerTelemetry, sessionMetrics } from "./server.js";
 import { adaptOpencodeArgs, opencodeMajor } from "./version.js";
@@ -345,6 +346,7 @@ async function discoverModels(context: CliExtensionContext): Promise<ModelInfo[]
 /** What OpenCode needs beyond its profile data. */
 export const opencodeExtensions: CliProviderExtensions = {
   adaptArgs: adaptOpencodeArgs,
+  mcpLaunch: (servers) => opencodeMcpLaunch(servers),
   discoverModels,
   readUsage,
   interactiveTelemetry,
@@ -354,3 +356,5 @@ export const opencodeExtensions: CliProviderExtensions = {
 export function opencodeFactory(): ProviderFactory {
   return cliProviderFactory(parseProfile(opencodeProfile), opencodeExtensions);
 }
+
+export { opencodeMcpLaunch, opencodeServerMap } from "./mcp.js";

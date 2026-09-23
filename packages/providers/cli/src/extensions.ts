@@ -133,6 +133,7 @@ export interface CliProviderExtensions {
   mcpLaunch?(
     servers: ProviderToolAccess["mcpServers"],
     context: CliExtensionContext,
+    combined?: ProviderToolAccess["combined"],
   ): { readonly args: string[]; readonly env: Record<string, string> };
   /**
    * A one-time setup the tool needs for what cannot be given per run, such as

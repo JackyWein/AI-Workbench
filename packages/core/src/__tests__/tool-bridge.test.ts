@@ -11,6 +11,8 @@ function config(id: string, enabled = true): McpServerConfig {
     args: [],
     env: {},
     enabled,
+    availability: "everywhere",
+    workspaceIds: [],
   };
 }
 

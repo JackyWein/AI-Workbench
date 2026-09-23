@@ -1,6 +1,7 @@
 import { type JSX, useMemo, useState } from "react";
 import {
   ArrowUpCircle,
+  Plug,
   FolderPlus,
   Gauge,
   MessageSquarePlus,
@@ -8,8 +9,6 @@ import {
   Boxes,
   BookOpen,
   Folder,
-  Puzzle,
-  Server,
   Trash2,
   Users,
 } from "lucide-react";
@@ -49,7 +48,6 @@ export function Sidebar({
   const messages = useWorkbench((state) => state.messages);
   const setPaletteOpen = useWorkbench((state) => state.setPaletteOpen);
   const skills = useWorkbench((state) => state.skills);
-  const plugins = useWorkbench((state) => state.plugins);
   const mcpServers = useWorkbench((state) => state.mcpServers);
   const providers = useWorkbench((state) => state.providers);
   const teams = useWorkbench((state) => state.teams);
@@ -295,18 +293,6 @@ export function Sidebar({
         <button
           type="button"
           className="row"
-          aria-current={view === "plugins"}
-          onClick={() => setView("plugins")}
-        >
-          <Puzzle size={14} strokeWidth={1.75} aria-hidden="true" />
-          <span className="row__text">Plugins</span>
-          {plugins.length > 0 ? (
-            <span className="row__count">{plugins.length}</span>
-          ) : null}
-        </button>
-        <button
-          type="button"
-          className="row"
           aria-current={view === "teams"}
           onClick={() => setView("teams")}
         >
@@ -317,11 +303,11 @@ export function Sidebar({
         <button
           type="button"
           className="row"
-          aria-current={view === "mcp"}
-          onClick={() => setView("mcp")}
+          aria-current={view === "connectors"}
+          onClick={() => setView("connectors")}
         >
-          <Server size={14} strokeWidth={1.75} aria-hidden="true" />
-          <span className="row__text">MCP servers</span>
+          <Plug size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">Connectors</span>
           {mcpServers.length > 0 ? (
             <span className="row__count">{mcpServers.length}</span>
           ) : null}

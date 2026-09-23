@@ -12,6 +12,7 @@ import type {
   AppSettings,
   ChatMessage,
   MessageAttachment,
+  McpServerSaveInput,
   UpdateState,
   McpServerConfig,
   McpServerStatus,
@@ -64,8 +65,7 @@ export type MainView =
   | "chat"
   | "providers"
   | "skills"
-  | "plugins"
-  | "mcp"
+  | "connectors"
   | "teams"
   | "usage"
   | "settings";
@@ -310,7 +310,11 @@ interface WorkbenchState {
   cancelTeamRun(runId: string): Promise<void>;
 
   refreshMcp(): Promise<void>;
-  saveMcpServer(config: McpServerConfig): Promise<void>;
+  /** Saves a connector; the reason comes back when it is refused. */
+  saveMcpServer(config: McpServerSaveInput): Promise<string | null>;
+  /** Signs in to a connector in the browser; the reason when it fails. */
+  signInMcp(id: string, clientSecret?: string): Promise<string | null>;
+  signOutMcp(id: string): Promise<void>;
 
   refreshConnections(): Promise<void>;
   /** Adds a machine; a refusal (a key that cannot work) comes back as its reason. */
@@ -1119,7 +1123,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       await get().openTeamRun(target.runId);
       return;
     }
-    set({ view: target.view });
+    // The island names the MCP screen by its old name; it is Connectors now.
+    set({ view: target.view === "mcp" ? "connectors" : target.view });
   },
 
   async refreshTeams() {
@@ -1391,6 +1396,28 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async saveMcpServer(config) {
     try {
       await invoke("mcp.save", config);
+      await get().refreshMcp();
+      return null;
+    } catch (error) {
+      await get().refreshMcp();
+      return describeError(error);
+    }
+  },
+
+  async signInMcp(id, clientSecret) {
+    try {
+      await invoke("mcp.signIn", { id, ...(clientSecret ? { clientSecret } : {}) });
+      await get().refreshMcp();
+      return null;
+    } catch (error) {
+      await get().refreshMcp();
+      return describeError(error);
+    }
+  },
+
+  async signOutMcp(id) {
+    try {
+      await invoke("mcp.signOut", { id });
       await get().refreshMcp();
     } catch (error) {
       set({ error: describeError(error) });
