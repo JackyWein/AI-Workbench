@@ -83,7 +83,11 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
    Windows and macOS on every push, so a platform difference shows up there
    first; its first run found a macOS-only SSH path bug, since fixed.
    A release can be started without pushing a tag: Actions → Release →
-   Run workflow tags the built commit with the application version.
+   Run workflow tags the built commit with the application version, and
+   running it again for the same version replaces that release's files.
+   Release file names carry no space: GitHub stores "AI Workbench-x" as
+   "AI.Workbench-x" while latest*.yml names "AI-Workbench-x", so the
+   updater of 0.0.4's first upload found nothing to download.
 
 ## Things that will bite you
 

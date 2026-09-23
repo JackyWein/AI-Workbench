@@ -43,16 +43,21 @@ publish:
 releaseInfo:
   releaseNotesFile: release-notes.md
 
+# File names without the space in the product name: GitHub stores an
+# uploaded "AI Workbench-..." as "AI.Workbench-...", while the update
+# metadata (latest*.yml) names "AI-Workbench-...", so the updater found no
+# file to download (0.0.4's first upload). With no space the file, the
+# release asset and the metadata carry the same name.
 win:
   target:
     - target: nsis
       arch: [x64]
     - target: portable
       arch: [x64]
-  artifactName: ${productName}-${version}-windows-${arch}.${ext}
+  artifactName: AI-Workbench-${version}-windows-${arch}.${ext}
 
 portable:
-  artifactName: ${productName}-${version}-windows-portable-${arch}.${ext}
+  artifactName: AI-Workbench-${version}-windows-portable-${arch}.${ext}
 
 nsis:
   oneClick: false
@@ -66,7 +71,7 @@ mac:
     - target: zip
       arch: [arm64, x64]
   category: public.app-category.developer-tools
-  artifactName: ${productName}-${version}-macos-${arch}.${ext}
+  artifactName: AI-Workbench-${version}-macos-${arch}.${ext}
 
 linux:
   # Lets desktop environments associate running windows with the launcher entry;
@@ -79,4 +84,4 @@ linux:
       arch: [x64]
   category: Development
   synopsis: Local desktop environment for multiple AI providers
-  artifactName: ${productName}-${version}-linux-${arch}.${ext}
+  artifactName: AI-Workbench-${version}-linux-${arch}.${ext}

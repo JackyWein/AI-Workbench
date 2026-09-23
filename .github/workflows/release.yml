@@ -136,6 +136,21 @@ jobs:
           } | sed 's/^          //' > release-body.md
           cat release-body.md
 
+      # Releasing a version again replaces its files instead of leaving a
+      # second, differently named set next to them.
+      - name: Clear an earlier upload of this version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.package.outputs.version }}
+        run: |
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' |
+              while IFS= read -r asset; do
+                echo "removing $asset"
+                gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes
+              done
+          fi
+
       - uses: softprops/action-gh-release@v2
         with:
           # A manual run tags the current commit with the application version,
