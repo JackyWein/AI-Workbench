@@ -599,6 +599,15 @@ export class CliProviderAdapter implements AIProviderAdapter {
    * this entry's usage: a terminal is as good a witness as a turn.
    */
   #forwardTelemetry(telemetry: CliInteractiveTelemetry): InteractiveTelemetry {
+    const failed = (hook: string, error: unknown): void => {
+      this.#logger.warn("Provider extension failed", {
+        hook,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    };
+    const watchAttention = telemetry.watchAttention?.bind(telemetry);
+    const watchActivity = telemetry.watchActivity?.bind(telemetry);
+    const respond = telemetry.respond?.bind(telemetry);
     return {
       source: telemetry.source,
       watch: (onMetrics) => {
@@ -610,13 +619,46 @@ export class CliProviderAdapter implements AIProviderAdapter {
             onMetrics(metrics);
           });
         } catch (error) {
-          this.#logger.warn("Provider extension failed", {
-            hook: "interactiveTelemetry.watch",
-            error: error instanceof Error ? error.message : String(error),
-          });
+          failed("interactiveTelemetry.watch", error);
           return () => undefined;
         }
       },
+      ...(watchAttention
+        ? {
+            watchAttention: (onAttention) => {
+              try {
+                return watchAttention(onAttention);
+              } catch (error) {
+                failed("interactiveTelemetry.watchAttention", error);
+                return () => undefined;
+              }
+            },
+          }
+        : {}),
+      ...(watchActivity
+        ? {
+            watchActivity: (onActivity) => {
+              try {
+                return watchActivity(onActivity);
+              } catch (error) {
+                failed("interactiveTelemetry.watchActivity", error);
+                return () => undefined;
+              }
+            },
+          }
+        : {}),
+      ...(respond
+        ? {
+            respond: async (attentionId, response) => {
+              try {
+                return await respond(attentionId, response);
+              } catch (error) {
+                failed("interactiveTelemetry.respond", error);
+                return false;
+              }
+            },
+          }
+        : {}),
     };
   }
 

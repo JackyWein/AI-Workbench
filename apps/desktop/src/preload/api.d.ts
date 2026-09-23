@@ -19,8 +19,9 @@ export interface WorkbenchApi {
 
 /**
  * The Status Island's own bridge. It is deliberately tiny: the island shows
- * what it is given and can ask for two things, so a floating always-on-top
- * window carries none of the main window's reach (spec §5).
+ * what it is given and can ask for a few things — navigate, settle, type a
+ * prompt, answer what an agent waits on — so a floating always-on-top window
+ * carries none of the main window's reach (spec §5).
  */
 export interface WorkbenchIslandApi {
   onState(listener: (state: IslandState) => void): () => void;
@@ -30,6 +31,8 @@ export interface WorkbenchIslandApi {
   dismiss(): Promise<void>;
   /** Types a prompt into the agent listed under this key. */
   ask(key: string, text: string): Promise<{ sent: boolean; to: string | null; reason: string | null }>;
+  /** Answers the entry under this key in place with one of its options. */
+  respond(key: string, option: string): Promise<{ answered: boolean; reason: string | null }>;
   /** Steps through the widgets that currently have something to say. */
   cycle(direction: 1 | -1): Promise<void>;
   /** Forgets a dragged spot and edge-dock, back to the default corner. */

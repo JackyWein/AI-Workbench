@@ -84,6 +84,66 @@ export const terminalMetricsSchema = z.object({
 });
 export type TerminalMetrics = z.infer<typeof terminalMetricsSchema>;
 
+/** One choice of a question a tool put to the person. */
+export const terminalAttentionChoiceSchema = z.object({
+  id: z.string().min(1).max(200),
+  label: z.string().min(1).max(200),
+  hint: z.string().max(200).optional(),
+});
+export type TerminalAttentionChoice = z.infer<typeof terminalAttentionChoiceSchema>;
+
+/**
+ * Something a terminal agent's tool is waiting on the person for (spec §99),
+ * as the tool itself reported it through its own documented channel.
+ *
+ * The tool's own prompt stays in its terminal and stays answerable there;
+ * this only lets the application show that it waits, and — where the tool
+ * accepts it — take the answer somewhere else, such as the island.
+ */
+export const terminalAttentionSchema = z.object({
+  /** Identifies this one request; a new request gets a new id. */
+  id: z.string().min(1).max(200),
+  /**
+   * "permission": it asks to use one of its tools. "question": it asks the
+   * person something and offers choices.
+   */
+  kind: z.enum(["permission", "question"]),
+  /** The tool it wants to use, as the tool names it (e.g. "Bash"). */
+  tool: z.string().min(1).max(120).optional(),
+  /** What it wants, in one line: the command, the file, the question. */
+  summary: z.string().max(500),
+  /** The choices of a question; empty for a permission. */
+  choices: z.array(terminalAttentionChoiceSchema).max(9).default([]),
+  /**
+   * True when the tool takes the answer from outside its terminal. When
+   * false, the only place to answer is the terminal itself.
+   */
+  answerable: z.boolean(),
+  /** When the tool started waiting. */
+  since: z.date(),
+});
+export type TerminalAttention = z.infer<typeof terminalAttentionSchema>;
+
+/**
+ * What a terminal agent's tool says it is doing: working on a turn, or idle at
+ * its prompt waiting for the person. Only what the tool reported through its
+ * own channel; a tool that says nothing has no activity at all, and a running
+ * process alone is not taken to mean it works.
+ */
+export const terminalActivitySchema = z.object({
+  state: z.enum(["working", "idle"]),
+  /** When it started working, or became idle. */
+  since: z.date(),
+});
+export type TerminalActivity = z.infer<typeof terminalActivitySchema>;
+
+/** An answer to a waiting request: a permission granted or refused, or a choice. */
+export const terminalAttentionResponseSchema = z.union([
+  z.object({ decision: z.enum(["allow", "deny"]) }),
+  z.object({ choice: z.string().min(1).max(200) }),
+]);
+export type TerminalAttentionResponse = z.infer<typeof terminalAttentionResponseSchema>;
+
 export const agentTerminalSchema = z.object({
   id: z.string().min(1),
   workspaceId: z.string().min(1),
@@ -103,6 +163,10 @@ export const agentTerminalSchema = z.object({
   startedAt: z.date().nullable(),
   /** The last numbers the tool reported for this run; null until it says any. */
   metrics: terminalMetricsSchema.nullable().default(null),
+  /** What the tool waits on the person for right now; null when nothing. */
+  attention: terminalAttentionSchema.nullable().default(null),
+  /** Working or idle, as the tool reported; null when it does not say. */
+  activity: terminalActivitySchema.nullable().default(null),
   createdAt: z.date(),
 });
 export type AgentTerminal = z.infer<typeof agentTerminalSchema>;

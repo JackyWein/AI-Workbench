@@ -70,7 +70,8 @@ const api = {
 /**
  * The island's bridge is separate and tiny on purpose: a floating,
  * always-on-top window gets only what it needs (spec §5). It may show state,
- * navigate the main window, settle back and cycle widgets — nothing else.
+ * navigate the main window, settle back, cycle widgets, type a prompt into an
+ * agent and answer what an agent waits on — nothing else.
  */
 const islandApi = {
   onState(listener: (state: IslandState) => void): () => void {
@@ -98,6 +99,13 @@ const islandApi = {
     return (await ipcRenderer.invoke("statusIsland.ask", { key, text })) as {
       sent: boolean;
       to: string | null;
+      reason: string | null;
+    };
+  },
+
+  async respond(key: string, option: string): Promise<{ answered: boolean; reason: string | null }> {
+    return (await ipcRenderer.invoke("statusIsland.respond", { key, option })) as {
+      answered: boolean;
       reason: string | null;
     };
   },

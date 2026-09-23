@@ -14,7 +14,20 @@ import {
   type CliInteractiveRun,
   type CliInteractiveTelemetry,
 } from "@ai-workbench/provider-cli";
-import type { TerminalMetrics, TerminalTokens, UsageLimit } from "@ai-workbench/shared";
+import type {
+  TerminalActivity,
+  TerminalAttention,
+  TerminalMetrics,
+  TerminalTokens,
+  UsageLimit,
+} from "@ai-workbench/shared";
+import {
+  ClaudeHookState,
+  POSIX_HOOK_SCRIPT,
+  POWERSHELL_HOOK_SCRIPT,
+  hookSettings,
+  type HookEvent,
+} from "./attention.js";
 
 /**
  * Follows an interactive Claude Code run through the tool's documented status
@@ -36,6 +49,8 @@ export const STATUS_LINE_SOURCE = "Claude Code status line";
 
 /** How often the bridge's output is checked for a new report. */
 const POLL_MS = 1000;
+/** How often the hooks' reports are checked; someone may be waiting. */
+const ATTENTION_POLL_MS = 250;
 /** Run files older than this are removed when a new run starts. */
 const RUN_FILE_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
@@ -184,6 +199,31 @@ export function bridgeCommand(options: {
     options.chain ? quoted(options.chain) : '"none"',
     options.chain && options.shell ? quoted(options.shell) : '"none"',
   ].join(" ");
+}
+
+/** A hook bridge command for one run and one event, on Windows. */
+export function hookCommand(options: {
+  readonly script: string;
+  readonly directory: string;
+  readonly event: HookEvent;
+}): string {
+  return [
+    "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File",
+    quoted(options.script),
+    quoted(options.directory),
+    quoted(options.event),
+  ].join(" ");
+}
+
+/** A hook bridge command for one run and one event, on macOS and Linux. */
+export function posixHookCommand(options: {
+  readonly script: string;
+  readonly directory: string;
+  readonly event: HookEvent;
+}): string {
+  return [POSIX_SHELL, shellQuote(options.script), shellQuote(options.directory), options.event].join(
+    " ",
+  );
 }
 
 /** The POSIX bridge as a status line command for one run. */
@@ -342,7 +382,7 @@ export class TranscriptTokens {
   }
 }
 
-/** Removes run files of earlier runs, so the directory does not grow forever. */
+/** Removes run files and folders of earlier runs, so the directory does not grow forever. */
 async function sweep(directory: string, now: number): Promise<void> {
   let entries: string[];
   try {
@@ -355,7 +395,7 @@ async function sweep(directory: string, now: number): Promise<void> {
       const path = join(directory, entry);
       try {
         if (now - (await stat(path)).mtimeMs > RUN_FILE_TTL_MS) {
-          await rm(path, { force: true });
+          await rm(path, { force: true, recursive: true });
         }
       } catch {
         // Gone already, or in use; either way not ours to worry about.
@@ -374,7 +414,10 @@ export function configHomeOf(context: CliExtensionContext): string {
   );
 }
 
-/** Prepares one interactive run and says how to follow it. */
+/**
+ * Prepares one interactive run and says how to follow it: the status line
+ * bridge for its numbers, and the hooks for what it waits on the person for.
+ */
 export async function statusLineTelemetry(
   context: CliExtensionContext,
   run: CliInteractiveRun,
@@ -399,6 +442,51 @@ export async function statusLineTelemetry(
   // one in the legacy code page.
   await writeFile(script, windows ? `\uFEFF${BRIDGE_SCRIPT}` : POSIX_BRIDGE_SCRIPT, "utf8");
 
+  // The hooks report what the run waits on the person for (./attention.ts).
+  const hookScript = join(context.stateDirectory, windows ? "hook-bridge.ps1" : "hook-bridge.sh");
+  await writeFile(
+    hookScript,
+    windows ? `\uFEFF${POWERSHELL_HOOK_SCRIPT}` : POSIX_HOOK_SCRIPT,
+    "utf8",
+  );
+  const hookDirectory = join(directory, `${run.runId}.hooks`);
+  await mkdir(hookDirectory, { recursive: true });
+  const hooks = new ClaudeHookState(hookDirectory);
+  // One reader for both watchers: whoever watches first starts it.
+  const listeners = {
+    attention: null as ((attention: TerminalAttention | null) => void) | null,
+    activity: null as ((activity: TerminalActivity | null) => void) | null,
+  };
+  let reading: (() => void) | null = null;
+  let lastAttention: string | null = null;
+  let lastActivity: string | null = null;
+  const startReading = (): void => {
+    reading ??= poll(async () => {
+      await hooks.read();
+      const attention = hooks.current;
+      const attentionSignature = attention ? JSON.stringify(attention) : null;
+      if (attentionSignature !== lastAttention) {
+        lastAttention = attentionSignature;
+        listeners.attention?.(attention);
+      }
+      const activity = hooks.activity;
+      const activitySignature = activity ? JSON.stringify(activity) : null;
+      if (activitySignature !== lastActivity) {
+        lastActivity = activitySignature;
+        listeners.activity?.(activity);
+      }
+    }, ATTENTION_POLL_MS);
+  };
+  const stopReading = (): void => {
+    if (listeners.attention || listeners.activity || !reading) {
+      return;
+    }
+    reading();
+    reading = null;
+    // Nobody answers from here any more; the terminal still can.
+    void hooks.withdrawAll().catch(() => undefined);
+  };
+
   const output = join(directory, `${run.runId}.status.json`);
   const settingsFile = join(directory, `${run.runId}.settings.json`);
   const userStatusLine = await findUserStatusLine(run.workingDirectory, configHomeOf(context));
@@ -417,6 +505,12 @@ export async function statusLineTelemetry(
             : posixBridgeCommand({ script, output, chain }),
           ...(userStatusLine?.padding === undefined ? {} : { padding: userStatusLine.padding }),
         },
+        // Added to the person's own hooks, which Claude Code keeps running.
+        hooks: hookSettings((event) =>
+          windows
+            ? hookCommand({ script: hookScript, directory: hookDirectory, event })
+            : posixHookCommand({ script: hookScript, directory: hookDirectory, event }),
+        ),
       },
       null,
       2,
@@ -467,5 +561,24 @@ export async function statusLineTelemetry(
         }
       }, POLL_MS);
     },
+    watchAttention: (onAttention) => {
+      listeners.attention = onAttention;
+      lastAttention = null;
+      startReading();
+      return () => {
+        listeners.attention = null;
+        stopReading();
+      };
+    },
+    watchActivity: (onActivity) => {
+      listeners.activity = onActivity;
+      lastActivity = null;
+      startReading();
+      return () => {
+        listeners.activity = null;
+        stopReading();
+      };
+    },
+    respond: (attentionId, response) => hooks.respond(attentionId, response),
   };
 }

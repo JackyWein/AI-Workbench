@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { BrowserWindow, screen } from "electron";
 import { execCli } from "@ai-workbench/transport-cli";
@@ -1479,6 +1479,178 @@ export async function runStartupCheck(
     }
   }
 
+  // --- a terminal agent waiting on the person ------------------------------
+  //
+  // Claude Code itself was run against this path in
+  // real-claude-attention.test.ts. Here a stand-in for its executable does
+  // what Claude Code does with a permission hook — run the command from the
+  // run's settings file with the request on stdin, and act on what it prints —
+  // so the whole application path runs without spending quota: the Claude
+  // package's settings and hook bridge, the terminal service, the island's
+  // entry with Claude's mark, and Allow clicked on the island itself.
+  if (process.platform !== "win32") {
+    const fixtureDirectory = join(dirname(workspaceDirectory), "fixture-claude");
+    const standIn = join(fixtureDirectory, "claude");
+    const hookAnswer = join(fixtureDirectory, "hook-answer.json");
+    await mkdir(fixtureDirectory, { recursive: true });
+    await rm(hookAnswer, { force: true });
+    await writeFile(standIn, STAND_IN_CLAUDE, { mode: 0o755 });
+
+    await check(
+      "a terminal agent reports that it waits for a permission",
+      `(async () => {
+         const api = window.workbench;
+         const workspaceId = window.__checkWorkspaceId;
+         await api.invoke('provider.saveConfig', {
+           providerId: 'claude-code', enabled: true, executablePath: ${JSON.stringify(standIn)},
+         });
+         const tile = await api.invoke('agentTerminal.launch', {
+           workspaceId, providerId: 'claude-code', label: 'Claude Code',
+         });
+         window.__checkWaitingTile = tile.id;
+         const deadline = Date.now() + 15000;
+         while (Date.now() < deadline) {
+           const tiles = await api.invoke('agentTerminal.list', { workspaceId });
+           const current = tiles.find(entry => entry.id === tile.id);
+           const waiting = current?.attention;
+           // Mid-turn: it works on the prompt and waits for the permission.
+           if (waiting && current.activity) {
+             return waiting.kind === 'permission' && waiting.tool === 'Bash'
+               && waiting.summary === 'touch island-allowed.txt' && waiting.answerable
+               && current.activity.state === 'working'
+               || JSON.stringify({ waiting, activity: current.activity });
+           }
+           await new Promise(resolve => setTimeout(resolve, 200));
+         }
+         return 'the tile never reported that it waits';
+       })()`,
+      30_000,
+    );
+
+    await checkMain("the island shows the waiting agent with its mark, Allow and Deny", async () => {
+      // The island hides while the main window has focus.
+      window.blur();
+      const deadline = Date.now() + 12_000;
+      let seen = "nothing";
+      while (Date.now() < deadline) {
+        const state = await island.refresh();
+        const entry = state.entries.find(
+          (item) => item.widget === "needsAttention" && item.key.startsWith("tile:"),
+        );
+        const target = islandWindow();
+        if (entry && target?.isVisible()) {
+          const face = await islandJs(
+            `(async () => {
+               const unit = document.querySelector('.isl');
+               const mark = Boolean(document.querySelector('.isl__circle .isl__mark svg'));
+               if (unit?.dataset.face === 'approval' && mark
+                   && document.querySelectorAll('.isl__actions button').length === 0) {
+                 // Keeps the card open, as a click on the circle does.
+                 document.querySelector('.isl__circle')?.click();
+                 await new Promise(resolve => setTimeout(resolve, 600));
+               }
+               return {
+                 face: unit?.dataset.face ?? null,
+                 mark,
+                 buttons: [...document.querySelectorAll('.isl__actions button')]
+                   .map(node => node.textContent?.trim()),
+                 title: document.querySelector('.isl__attitle')?.textContent ?? '',
+               };
+             })()`,
+          );
+          seen = JSON.stringify({ icon: entry.icon, options: entry.options, face });
+          const shown = face as { face: string; mark: boolean; buttons: string[]; title: string };
+          if (
+            entry.icon === "claude-code" &&
+            shown.face === "approval" &&
+            shown.mark &&
+            shown.buttons.includes("Allow") &&
+            shown.buttons.includes("Deny") &&
+            shown.title.includes("wants to use Bash")
+          ) {
+            return true;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error(`the island showed ${seen}`);
+    });
+
+    // Evidence for a person to look at, like the screenshots above.
+    const screenshotPath = process.env["AI_WORKBENCH_CHECK_SCREENSHOT"];
+    const target = islandWindow();
+    if (screenshotPath && target?.isVisible()) {
+      const image = await Promise.race([
+        target.webContents.capturePage(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
+      if (image) {
+        await writeFile(screenshotPath.replace(/\.png$/, "-island-approval.png"), image.toPNG());
+      }
+    }
+
+    await checkMain("Allow on the island reaches the agent's permission hook", async () => {
+      const clicked = await islandJs(
+        `(() => {
+           const button = [...document.querySelectorAll('.isl__actions button')]
+             .find(node => node.textContent?.trim() === 'Allow');
+           if (!button) return false;
+           button.click();
+           return true;
+         })()`,
+      );
+      if (clicked !== true) {
+        throw new Error("no Allow button on the island");
+      }
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const printed = await readFile(hookAnswer, "utf8").catch(() => null);
+        if (printed !== null) {
+          // Exactly what Claude Code reads from a permission hook.
+          const answer = JSON.parse(printed) as {
+            hookSpecificOutput?: { hookEventName?: string; decision?: { behavior?: string } };
+          };
+          return (
+            answer.hookSpecificOutput?.hookEventName === "PermissionRequest" &&
+            answer.hookSpecificOutput.decision?.behavior === "allow"
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      throw new Error("the hook printed nothing");
+    });
+
+    // The turn ended: the agent is idle at its prompt, which is rest, not work.
+    await checkMain("the island lets go once the agent no longer waits, and it rests", async () => {
+      const deadline = Date.now() + 8_000;
+      let seen = "nothing";
+      while (Date.now() < deadline) {
+        const state = await island.refresh();
+        const waiting = state.entries.some((item) => item.key.startsWith("tile:"));
+        const working = state.entries
+          .flatMap((item) => item.agents)
+          .some((row) => row.title === "Claude Code");
+        seen = JSON.stringify({ waiting, working, sessions: state.sessions });
+        if (!waiting && !working && state.sessions.last?.name === "Claude Code") {
+          return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      throw new Error(`the island still had ${seen}`);
+    });
+
+    // The stand-in goes, and Claude Code is found on the PATH again.
+    await check(
+      "the stand-in agent is removed again",
+      `(async () => {
+         const api = window.workbench;
+         const removed = await api.invoke('agentTerminal.remove', { id: window.__checkWaitingTile });
+         await api.invoke('provider.saveConfig', { providerId: 'claude-code', executablePath: null });
+         return removed.removed;
+       })()`,
+    );
+  }
+
   // The remote workspace is checked after the screenshots, so the screens
   // above show exactly the data the approved design was captured with.
   // --- a workspace on another machine -------------------------------------
@@ -1726,6 +1898,54 @@ export async function runStartupCheck(
 
   return { healthy, outcomes };
 }
+
+/**
+ * Stands in for Claude Code in the startup check: started the way the
+ * application starts Claude Code, it runs one turn's hooks from the run's
+ * settings file the way Claude Code does — each event on stdin, in Claude
+ * Code's order — and keeps what the permission hook printed. Everything else
+ * it is asked (a version probe) gets a short answer. It stays running, like
+ * an interactive tool.
+ */
+const STAND_IN_CLAUDE = `#!/usr/bin/env node
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  process.stdout.write("2.1.280 (Claude Code)\\n");
+  process.exit(0);
+}
+const at = args.indexOf("--settings");
+if (at < 0) {
+  process.exit(0);
+}
+const settings = JSON.parse(readFileSync(args[at + 1], "utf8"));
+const run = (event, input) =>
+  new Promise((resolve) => {
+    const command = settings.hooks[event][0].hooks[0].command;
+    const hook = spawn("/bin/sh", ["-c", command], { stdio: ["pipe", "pipe", "ignore"] });
+    let printed = "";
+    hook.stdout.on("data", (chunk) => {
+      printed += chunk;
+    });
+    hook.on("close", () => resolve(printed));
+    hook.stdin.end(JSON.stringify({ session_id: "startup-check", hook_event_name: event, ...input }));
+  });
+const toolInput = { command: "touch island-allowed.txt", description: "Create a file" };
+(async () => {
+  await run("SessionStart", { source: "startup" });
+  await run("UserPromptSubmit", { prompt: "Create island-allowed.txt" });
+  process.stdout.write("Stand-in for Claude Code: asks to run touch island-allowed.txt\\r\\n");
+  const printed = await run("PermissionRequest", { tool_name: "Bash", tool_input: toolInput });
+  writeFileSync(join(__dirname, "hook-answer.json"), printed);
+  await run("PostToolUse", { tool_name: "Bash", tool_input: toolInput, tool_response: {} });
+  await run("Stop", { stop_hook_active: false, last_assistant_message: "Done." });
+  process.stdout.write("The hook answered.\\r\\n");
+})();
+setInterval(() => undefined, 60000);
+`;
 
 /**
  * Gives the check workspace something to show: files to browse and, when git is

@@ -494,6 +494,15 @@ export const ipcContract = {
     input: z.object({ key: z.string().min(1).max(200), text: z.string().trim().min(1).max(4000) }),
     output: z.object({ sent: z.boolean(), to: z.string().nullable(), reason: z.string().nullable() }),
   },
+  /**
+   * Answers what an agent on the island waits on, in place, by the entry's
+   * key and one of its options (Allow/Deny, or a question's choice). The
+   * agent's tool decides whether it takes the answer; the reason says why not.
+   */
+  "statusIsland.respond": {
+    input: z.object({ key: z.string().min(1).max(300), option: z.string().min(1).max(200) }),
+    output: z.object({ answered: z.boolean(), reason: z.string().nullable() }),
+  },
   /** Returns the island to its default corner and forgets a dragged spot. */
   "statusIsland.resetPosition": { input: z.void(), output: islandStateSchema },
   /**

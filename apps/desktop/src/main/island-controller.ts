@@ -5,6 +5,7 @@ import {
   type IslandState,
   type IslandTarget,
   type IslandWidgetId,
+  type TerminalAttentionResponse,
 } from "@ai-workbench/shared";
 import type { IslandSources } from "@ai-workbench/status";
 import type { AppServices } from "./services.js";
@@ -55,6 +56,11 @@ export class IslandController {
   readonly #installed = new Map<string, { installed: boolean; at: number }>();
   /** Where each listed agent can take a typed prompt, by its island key. */
   #askTargets = new Map<string, { terminalId: string } | { sessionId: string }>();
+  /** Which tile's request each answerable island entry is, by its key. */
+  #respondTargets = new Map<
+    string,
+    { tileId: string; attentionId: string; kind: "permission" | "question" }
+  >();
   /** True while the island is hidden only because the main window is. */
   #hiddenWithMain = false;
   /** Whether the main window currently holds focus. */
@@ -189,16 +195,23 @@ export class IslandController {
     const runs = await this.#runSnapshots();
 
     const attention: Array<IslandSources["attention"][number]> = [];
+    const questions: Array<IslandSources["questions"][number]> = [];
     const errors: Array<IslandSources["errors"][number]> = [];
     const completed: Array<IslandSources["completed"][number]> = [];
 
+    const iconOf = (providerId: string | null | undefined): string | null =>
+      providerId ? (this.#services.providers.get(providerId)?.metadata.icon ?? null) : null;
+
     // A message names its sender by agent id, which means nothing to a person;
-    // the island says who is asking by the name the team gave that agent.
+    // the island says who is asking by the name the team gave that agent, and
+    // shows the mark of the tool that agent runs on.
     const agentNames = new Map<string, string>();
+    const agentIcons = new Map<string, string | null>();
     for (const teamId of new Set(runs.map((snapshot) => snapshot.run.teamId))) {
       const team = await this.#services.teams.get(teamId).catch(() => null);
       for (const agent of team?.agents ?? []) {
         agentNames.set(agent.id, agent.displayName);
+        agentIcons.set(agent.id, iconOf(agent.providerId));
       }
     }
 
@@ -211,6 +224,7 @@ export class IslandController {
             title: `${agentNames.get(message.from) ?? message.from} needs your attention`,
             detail: message.content.slice(0, 120),
             runId: snapshot.run.id,
+            icon: agentIcons.get(message.from) ?? null,
             at: message.timestamp,
           });
         }
@@ -222,6 +236,7 @@ export class IslandController {
             title: task.title,
             detail: task.error.slice(0, 120),
             runId: snapshot.run.id,
+            icon: task.assignedTo ? (agentIcons.get(task.assignedTo) ?? null) : null,
             at: task.completedAt ?? task.createdAt,
           });
         }
@@ -259,9 +274,11 @@ export class IslandController {
       this.#busySince.set(key, now);
       return now;
     };
-    const iconOf = (providerId: string | null): string | null =>
-      providerId ? (this.#services.providers.get(providerId)?.metadata.icon ?? null) : null;
     const askTargets = new Map<string, { terminalId: string } | { sessionId: string }>();
+    const respondTargets = new Map<
+      string,
+      { tileId: string; attentionId: string; kind: "permission" | "question" }
+    >();
     const busySessions: Array<IslandSources["busySessions"][number]> = sessions
       .filter((session) => this.#services.sessions.isBusy(session.id))
       .map((session) => ({
@@ -281,6 +298,8 @@ export class IslandController {
     // sits on usage while the user visibly works in terminals (spec §95).
     // Tile ptys are excluded from the shell list below so nothing counts twice.
     const tileTerminalIds = new Set<string>();
+    /** Agents whose tool said it is idle at its prompt: resting, not at work. */
+    const restingTiles: Array<IslandSources["sessions"][number]> = [];
     try {
       const workspaces = await this.#services.workspaces.list();
       for (const workspace of workspaces) {
@@ -294,22 +313,82 @@ export class IslandController {
           if (tile.terminalId) {
             tileTerminalIds.add(tile.terminalId);
           }
-          const status =
-            tile.purpose === "login" ? "signing in" : tile.purpose === "shell" ? "shell" : "working";
           const key = `tile:${tile.id}`;
           if (tile.terminalId && tile.purpose === "agent") {
             askTargets.set(key, { terminalId: tile.terminalId });
           }
-          busySessions.push({
-            key,
-            sessionId: tile.id,
-            name: tile.label,
-            status,
-            target: { view: "chat" },
-            startedAt: tile.startedAt,
-            icon: iconOf(tile.providerId),
-            detail: (tile.metrics ? metricsLine(tile.metrics) : "") || status,
-          });
+          // Working and idle are what the tool itself reported (spec §103). A
+          // tool that reports neither is only known to be running, and says so
+          // instead of claiming work.
+          const activity = tile.purpose === "agent" ? tile.activity : null;
+          const waiting = tile.purpose === "agent" ? tile.attention : null;
+          if (activity?.state === "idle" && !waiting) {
+            restingTiles.push({
+              name: tile.label,
+              icon: iconOf(tile.providerId),
+              lastActiveAt: activity.since,
+              busy: false,
+            });
+          } else {
+            const status =
+              tile.purpose === "login"
+                ? "signing in"
+                : tile.purpose === "shell"
+                  ? "shell"
+                  : activity?.state === "working"
+                    ? "working"
+                    : "running";
+            busySessions.push({
+              key,
+              sessionId: tile.id,
+              name: tile.label,
+              status,
+              target: { view: "chat" },
+              // A turn's clock runs from when the tool started on it.
+              startedAt: activity?.state === "working" ? activity.since : tile.startedAt,
+              icon: iconOf(tile.providerId),
+              detail: (tile.metrics ? metricsLine(tile.metrics) : "") || status,
+            });
+          }
+          // The tool itself said it waits on the person (spec §99): the
+          // island shows it with that tool's mark, and offers the answers the
+          // tool takes from outside its terminal.
+          if (waiting) {
+            const attentionKey = `tile:${tile.id}:${waiting.id}`;
+            if (waiting.answerable) {
+              respondTargets.set(attentionKey, {
+                tileId: tile.id,
+                attentionId: waiting.id,
+                kind: waiting.kind,
+              });
+            }
+            if (waiting.kind === "question") {
+              questions.push({
+                key: attentionKey,
+                title: waiting.summary || `${tile.label} has a question`,
+                detail: tile.label,
+                icon: iconOf(tile.providerId),
+                options: waiting.answerable ? waiting.choices : [],
+                target: { view: "chat" },
+                at: waiting.since,
+              });
+            } else {
+              attention.push({
+                key: attentionKey,
+                title: `${tile.label} wants to use ${waiting.tool ?? "a tool"}`,
+                detail: waiting.summary,
+                target: { view: "chat" },
+                icon: iconOf(tile.providerId),
+                options: waiting.answerable
+                  ? [
+                      { id: "deny", label: "Deny" },
+                      { id: "allow", label: "Allow" },
+                    ]
+                  : [],
+                at: waiting.since,
+              });
+            }
+          }
         }
       }
     } catch (error) {
@@ -354,6 +433,7 @@ export class IslandController {
     this.#lastRunCount = runs.filter((snapshot) => snapshot.run.status === "running").length;
 
     this.#askTargets = askTargets;
+    this.#respondTargets = respondTargets;
 
     // Usage rows follow the providers the user sees: enabled ones, and the
     // simulated one only for developers.
@@ -389,12 +469,15 @@ export class IslandController {
       ];
     });
 
-    const sessionRows = sessions.map((session) => ({
-      name: session.name,
-      icon: iconOf(session.providerId),
-      lastActiveAt: session.updatedAt,
-      busy: this.#services.sessions.isBusy(session.id),
-    }));
+    const sessionRows = [
+      ...sessions.map((session) => ({
+        name: session.name,
+        icon: iconOf(session.providerId),
+        lastActiveAt: session.updatedAt,
+        busy: this.#services.sessions.isBusy(session.id),
+      })),
+      ...restingTiles,
+    ];
 
     // The snapshots follow the same filter as the names. Handing over every
     // snapshot while the list of providers came out empty would let the
@@ -412,6 +495,7 @@ export class IslandController {
       providers,
       sessions: sessionRows,
       attention: sortByNewest(attention),
+      questions: sortByNewest(questions),
       errors: sortByNewest(errors),
       completed: sortByNewest(completed),
       brokenConnections,
@@ -524,6 +608,37 @@ export class IslandController {
     await new Promise((resolve) => setTimeout(resolve, 40));
     this.#services.terminals.write(target.terminalId, "\r");
     return { sent: true, to: nameOf(targetKey), reason: null };
+  }
+
+  /**
+   * Answers what an agent on the island waits on, in place: Allow or Deny for
+   * a permission, one of its choices for a question. The tool decides whether
+   * it takes the answer; its own prompt in its terminal stays usable.
+   */
+  async respond(key: string, option: string): Promise<{ answered: boolean; reason: string | null }> {
+    const target = this.#respondTargets.get(key);
+    if (!target) {
+      return { answered: false, reason: "It is no longer waiting" };
+    }
+    let response: TerminalAttentionResponse;
+    if (target.kind === "permission") {
+      if (option !== "allow" && option !== "deny") {
+        return { answered: false, reason: "That is not an answer to a permission" };
+      }
+      response = { decision: option };
+    } else {
+      response = { choice: option };
+    }
+    const answered = await this.#services.agentTerminals.respond(
+      target.tileId,
+      target.attentionId,
+      response,
+    );
+    await this.refresh().catch(() => undefined);
+    return {
+      answered,
+      reason: answered ? null : "It is no longer waiting; answer it in its terminal",
+    };
   }
 
   /** Forgets a dragged spot and edge-dock, back to the default corner. */

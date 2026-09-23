@@ -4,6 +4,9 @@ import type {
   PermissionMode,
   ProviderCapabilities,
   ProviderConfig,
+  TerminalActivity,
+  TerminalAttention,
+  TerminalAttentionResponse,
   TerminalMetrics,
 } from "@ai-workbench/shared";
 
@@ -133,6 +136,23 @@ export interface InteractiveTelemetry {
   readonly source: string;
   /** Starts watching; the returned function stops it and frees everything. */
   watch(onMetrics: (metrics: TerminalMetrics) => void): () => void;
+  /**
+   * Follows what the tool waits on the person for — a permission, a question
+   * — as the tool reports it (spec §99). Called with null once nothing waits.
+   * Absent when the tool has no such channel. Must never throw.
+   */
+  watchAttention?(onAttention: (attention: TerminalAttention | null) => void): () => void;
+  /**
+   * Follows whether the tool is working on a turn or idle at its prompt, as
+   * the tool reports it. Absent when the tool cannot say. Must never throw.
+   */
+  watchActivity?(onActivity: (activity: TerminalActivity | null) => void): () => void;
+  /**
+   * Answers the request the tool is waiting on, from outside its terminal.
+   * False when that request no longer waits or cannot take this answer; the
+   * tool's own prompt in the terminal stays usable either way.
+   */
+  respond?(attentionId: string, response: TerminalAttentionResponse): Promise<boolean>;
 }
 
 export interface InteractiveLaunch {

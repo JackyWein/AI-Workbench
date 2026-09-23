@@ -8,6 +8,9 @@ import {
   type AgentTerminal,
   type LaunchAgentTerminalInput,
   type Logger,
+  type TerminalActivity,
+  type TerminalAttention,
+  type TerminalAttentionResponse,
   type TerminalMetrics,
   type UpdateAgentTerminalInput,
 } from "@ai-workbench/shared";
@@ -58,6 +61,12 @@ interface Runtime {
   startedAt: Date | null;
   /** The last numbers the tool reported for this run. */
   metrics: TerminalMetrics | null;
+  /** What the tool waits on the person for; null when nothing, or not running. */
+  attention: TerminalAttention | null;
+  /** Working or idle, as the tool reported; null when it does not say. */
+  activity: TerminalActivity | null;
+  /** Answers the tool's waiting request; null when the tool takes no answers. */
+  respond: ((attentionId: string, response: TerminalAttentionResponse) => Promise<boolean>) | null;
   /** Stops following the tool's reports; null when nothing is followed. */
   stopTelemetry: (() => void) | null;
 }
@@ -182,6 +191,9 @@ export class AgentTerminalService {
       exitCode: null,
       startedAt: null,
       metrics,
+      attention: null,
+      activity: null,
+      respond: null,
       stopTelemetry: null,
     });
     const next = {
@@ -191,6 +203,8 @@ export class AgentTerminalService {
       exitCode: null,
       startedAt: null,
       metrics,
+      attention: null,
+      activity: null,
     };
     this.#publish(next);
     return next;
@@ -239,6 +253,59 @@ export class AgentTerminalService {
   }
 
   /**
+   * Answers what a running tile's tool is waiting on — a permission or a
+   * question — from outside its terminal. The tool decides whether it takes
+   * the answer; its own prompt in the terminal stays usable either way. False
+   * when the tile no longer waits on that request or the tool took no answer.
+   */
+  async respond(
+    id: string,
+    attentionId: string,
+    response: TerminalAttentionResponse,
+  ): Promise<boolean> {
+    const runtime = this.#runtime.get(id);
+    const attention = runtime?.attention;
+    if (
+      !runtime?.respond ||
+      runtime.state !== "running" ||
+      attention?.id !== attentionId ||
+      !attention.answerable
+    ) {
+      return false;
+    }
+    const fits =
+      "decision" in response
+        ? attention.kind === "permission"
+        : attention.kind === "question" &&
+          attention.choices.some((choice) => choice.id === response.choice);
+    if (!fits) {
+      return false;
+    }
+    let answered = false;
+    try {
+      answered = await runtime.respond(attentionId, response);
+    } catch {
+      answered = false;
+    }
+    this.#logger.info("Answered a terminal agent from outside its terminal", {
+      agentTerminalId: id,
+      kind: attention.kind,
+      answered,
+    });
+    if (answered && this.#runtime.get(id)?.attention?.id === attentionId) {
+      // Taken: it no longer waits, even before the tool's next report says so.
+      const current = this.#runtime.get(id);
+      if (current) {
+        current.attention = null;
+      }
+      void this.#require(id)
+        .then((terminal) => this.#publish(terminal))
+        .catch(() => undefined);
+    }
+    return answered;
+  }
+
+  /**
    * Opens the tool's own sign-in for one provider entry in a terminal, so the
    * person signs in with the tool itself (spec §14). The tile disappears once
    * the sign-in ends, and the provider is asked again who is signed in.
@@ -273,6 +340,8 @@ export class AgentTerminalService {
       exitCode: null,
       startedAt: null,
       metrics: null,
+      attention: null,
+      activity: null,
       createdAt: new Date(),
     };
     this.#transient.set(entry.id, entry);
@@ -288,7 +357,16 @@ export class AgentTerminalService {
     this.#byTerminal.delete(terminalId);
     const runtime = this.#runtime.get(id);
     if (runtime) {
-      this.#runtime.set(id, { ...runtime, terminalId: null, state: "exited", exitCode });
+      // A process that ended waits on nobody, whatever its last report said.
+      this.#runtime.set(id, {
+        ...runtime,
+        terminalId: null,
+        state: "exited",
+        exitCode,
+        attention: null,
+        activity: null,
+        respond: null,
+      });
       // The tool may write its last numbers while it shuts down.
       const stop = runtime.stopTelemetry;
       if (stop) {
@@ -327,7 +405,15 @@ export class AgentTerminalService {
       this.#byTerminal.delete(runtime.terminalId);
       this.#terminals.close(runtime.terminalId);
       runtime.stopTelemetry?.();
-      this.#runtime.set(id, { ...runtime, terminalId: null, state: "stopped", stopTelemetry: null });
+      this.#runtime.set(id, {
+        ...runtime,
+        terminalId: null,
+        state: "stopped",
+        attention: null,
+        activity: null,
+        respond: null,
+        stopTelemetry: null,
+      });
     }
   }
 
@@ -381,6 +467,9 @@ export class AgentTerminalService {
         exitCode: null,
         startedAt,
         metrics: null,
+        attention: null,
+        activity: null,
+        respond: null,
         stopTelemetry: null,
       });
       this.#byTerminal.set(created.id, terminal.id);
@@ -396,6 +485,8 @@ export class AgentTerminalService {
         exitCode: null,
         startedAt,
         metrics: null,
+        attention: null,
+        activity: null,
       };
       delete (next as { detail?: string }).detail;
       if (launch?.telemetry) {
@@ -439,6 +530,47 @@ export class AgentTerminalService {
       runtime.metrics = metrics;
       timer ??= setTimeout(flush, METRICS_THROTTLE_MS);
     });
+    // A tool waiting on the person is news at once, not at the metrics' pace:
+    // it is published as soon as it changes.
+    let lastAttention: string | null = null;
+    const stopAttention =
+      telemetry.watchAttention?.((attention) => {
+        const runtime = this.#runtime.get(id);
+        if (stopped || !runtime || runtime.state !== "running") {
+          return;
+        }
+        const signature = attention ? JSON.stringify(attention) : null;
+        if (signature === lastAttention) {
+          return;
+        }
+        lastAttention = signature;
+        runtime.attention = attention;
+        // Carries any metrics still waiting for their slot along with it.
+        if (timer) {
+          clearTimeout(timer);
+        }
+        flush();
+      }) ?? null;
+    // Working or idle changes what the island shows, so it is published at
+    // once as well.
+    let lastActivity: string | null = null;
+    const stopActivity =
+      telemetry.watchActivity?.((activity) => {
+        const runtime = this.#runtime.get(id);
+        if (stopped || !runtime || runtime.state !== "running") {
+          return;
+        }
+        const signature = activity ? JSON.stringify(activity) : null;
+        if (signature === lastActivity) {
+          return;
+        }
+        lastActivity = signature;
+        runtime.activity = activity;
+        if (timer) {
+          clearTimeout(timer);
+        }
+        flush();
+      }) ?? null;
     const stop = (): void => {
       stopped = true;
       if (timer) {
@@ -446,10 +578,13 @@ export class AgentTerminalService {
         timer = null;
       }
       stopWatching();
+      stopAttention?.();
+      stopActivity?.();
     };
     const runtime = this.#runtime.get(id);
     if (runtime) {
       runtime.stopTelemetry = stop;
+      runtime.respond = telemetry.respond ? telemetry.respond.bind(telemetry) : null;
     } else {
       stop();
     }
@@ -473,6 +608,9 @@ export class AgentTerminalService {
       detail,
       startedAt: null,
       metrics: null,
+      attention: null,
+      activity: null,
+      respond: null,
       stopTelemetry: null,
     });
     const next: AgentTerminal = {
@@ -481,6 +619,8 @@ export class AgentTerminalService {
       state: "failed",
       detail,
       metrics: null,
+      attention: null,
+      activity: null,
     };
     this.#publish(next);
     return next;
@@ -517,6 +657,8 @@ export class AgentTerminalService {
       ...(runtime?.detail ? { detail: runtime.detail } : {}),
       startedAt: runtime?.startedAt ?? null,
       metrics: runtime?.metrics ?? null,
+      attention: runtime?.attention ?? null,
+      activity: runtime?.activity ?? null,
       createdAt: row.createdAt,
     };
   }

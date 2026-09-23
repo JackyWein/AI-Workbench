@@ -4,6 +4,9 @@ import type {
   ModelInfo,
   ProviderEvent,
   ProviderUsageSnapshot,
+  TerminalActivity,
+  TerminalAttention,
+  TerminalAttentionResponse,
   TerminalMetrics,
 } from "@ai-workbench/shared";
 import type { ProviderImportables, ProviderToolAccess } from "@ai-workbench/provider-base";
@@ -65,6 +68,12 @@ export interface CliInteractiveTelemetry {
   readonly source: string;
   /** Starts watching; the returned function stops it. Must not throw. */
   watch(onMetrics: (metrics: TerminalMetrics) => void): () => void;
+  /** Follows what the tool waits on the person for; null once nothing waits. */
+  watchAttention?(onAttention: (attention: TerminalAttention | null) => void): () => void;
+  /** Follows whether the tool works on a turn or idles at its prompt. */
+  watchActivity?(onActivity: (activity: TerminalActivity | null) => void): () => void;
+  /** Answers the waiting request from outside the terminal; false when it cannot. */
+  respond?(attentionId: string, response: TerminalAttentionResponse): Promise<boolean>;
 }
 
 /** Per-turn memory for a custom line parser, e.g. to pair tool calls. */

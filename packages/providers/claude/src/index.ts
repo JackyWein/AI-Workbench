@@ -12,6 +12,7 @@ export { claudeCodeProfile } from "./profile.js";
 /** Claude Code's profile, parsed. */
 export const claudeCode = parseProfile(claudeCodeProfile);
 export * from "./telemetry.js";
+export * from "./attention.js";
 export { parseResetTime } from "./reset-time.js";
 
 /** What Claude Code needs beyond its profile data. */

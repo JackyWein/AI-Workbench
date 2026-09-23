@@ -40,12 +40,18 @@ interface AskResult {
   readonly reason: string | null;
 }
 
+interface RespondResult {
+  readonly answered: boolean;
+  readonly reason: string | null;
+}
+
 /** Structural bridge type so cards stay testable without the preload. */
 interface IslandBridge {
   onState(listener: (state: IslandState) => void): () => void;
   open(target: IslandTarget): Promise<void>;
   dismiss(): Promise<void>;
   ask(key: string, text: string): Promise<AskResult>;
+  respond(key: string, option: string): Promise<RespondResult>;
   cycle(direction: 1 | -1): Promise<void>;
   resetPosition(): Promise<void>;
   resize(width: number, height: number): Promise<void>;
@@ -550,14 +556,12 @@ function Island(): JSX.Element | null {
             fold();
             void bridge.dismiss();
           } else if (event.ctrlKey && /^[1-9]$/.test(event.key)) {
-            // Answering a visible question from the keyboard. Until the
-            // question backend lands, an option deep-links to its context.
+            // Answering a visible question from the keyboard.
             const question = derived.questions[0];
             const option = question?.options[Number(event.key) - 1];
-            const target = question?.action?.target;
-            if (option && target) {
+            if (question && option) {
               event.preventDefault();
-              void bridge.open(target);
+              answer(bridge, question, option.id);
             }
           }
         }}
@@ -1200,6 +1204,24 @@ function askerName(entry: IslandEntry | undefined): string {
   return (icon ? LOGOS[icon]?.title : undefined) ?? "Agent";
 }
 
+/**
+ * Answers an entry in place with one of its options. When the agent no
+ * longer takes the answer — it was answered in its terminal meanwhile — the
+ * main window opens where it can be seen instead.
+ */
+function answer(bridge: IslandBridge, entry: IslandEntry, option: string): void {
+  const fallback = (): void => {
+    if (entry.action) {
+      void bridge.open(entry.action.target);
+    }
+  };
+  void bridge.respond(entry.key, option).then((result) => {
+    if (!result.answered) {
+      fallback();
+    }
+  }, fallback);
+}
+
 function ApprovalActions({
   entry,
   bridge,
@@ -1207,6 +1229,26 @@ function ApprovalActions({
   readonly entry: IslandEntry;
   readonly bridge: IslandBridge;
 }): JSX.Element | null {
+  if (entry.options.length > 0) {
+    // Answered right here, e.g. Deny and Allow: the last option is the one
+    // the request is about, so it gets the colour.
+    return (
+      <div className="isl__actions">
+        {entry.options.map((option, index) => (
+          <button
+            key={option.id}
+            type="button"
+            className={
+              index === entry.options.length - 1 ? "isl__btn isl__btn--amber" : "isl__btn isl__btn--quiet"
+            }
+            onClick={() => answer(bridge, entry, option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
   const target = entry.action?.target;
   if (!target) {
     return null;
@@ -1345,11 +1387,7 @@ function QuestionCard({
                   key={option.id}
                   type="button"
                   className="isl__option"
-                  onClick={() => {
-                    if (target) {
-                      void bridge.open(target);
-                    }
-                  }}
+                  onClick={() => answer(bridge, entry, option.id)}
                 >
                   <span className="isl__optionlabel">{option.label}</span>
                   {option.hint ? <span className="isl__optionhint">{option.hint}</span> : null}

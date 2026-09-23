@@ -320,6 +320,67 @@ describe("the priority engine", () => {
   });
 });
 
+describe("an agent waiting on a person", () => {
+  it("shows the waiting tool's mark and the answers the island can give in place", () => {
+    const state = boot().update({
+      attention: [
+        {
+          key: "tile:t1:req-1",
+          title: "Claude Code wants to use Bash",
+          detail: "touch probe-created.txt",
+          icon: "claude-code",
+          target: { view: "chat" },
+          options: [
+            { id: "deny", label: "Deny" },
+            { id: "allow", label: "Allow" },
+          ],
+          at: NOW,
+        },
+      ],
+      now: NOW,
+    });
+    expect(state.current).toMatchObject({
+      widget: "needsAttention",
+      icon: "claude-code",
+      options: [
+        { id: "deny", label: "Deny" },
+        { id: "allow", label: "Allow" },
+      ],
+      action: { label: "Open", target: { view: "chat" } },
+    });
+  });
+
+  it("puts a question with its choices on the island, under the Needs attention switch", () => {
+    const question = {
+      key: "tile:t1:q-1",
+      title: "Tea or coffee?",
+      detail: "Claude Code",
+      icon: "claude-code",
+      options: [
+        { id: "0", label: "Tea" },
+        { id: "1", label: "Coffee" },
+      ],
+      target: { view: "chat" as const },
+      at: NOW,
+    };
+    const state = boot().update({ questions: [question], now: NOW });
+    expect(state.current).toMatchObject({
+      widget: "agentQuestion",
+      priority: ISLAND_PRIORITY.agentQuestion,
+      title: "Tea or coffee?",
+      icon: "claude-code",
+      options: question.options,
+      action: { label: "Answer", target: { view: "chat" } },
+    });
+
+    // A question is one more way to need attention, not its own switch.
+    const off = boot({
+      enabledWidgets: ["activeAgents", "providerUsage"],
+    }).update({ questions: [question], now: NOW });
+    expect(off.entries.some((entry) => entry.widget === "agentQuestion")).toBe(false);
+  });
+});
+
 describe("honest progress", () => {
   it("counts tasks instead of estimating", () => {
     const entry = teamProgressWidget.build({
@@ -336,6 +397,7 @@ describe("honest progress", () => {
       providers: [],
       sessions: [],
       attention: [],
+      questions: [],
       errors: [],
       brokenConnections: [],
       completed: [],
@@ -354,6 +416,7 @@ describe("honest progress", () => {
       providers: [],
       sessions: [],
       attention: [],
+      questions: [],
       errors: [],
       brokenConnections: [],
       completed: [],

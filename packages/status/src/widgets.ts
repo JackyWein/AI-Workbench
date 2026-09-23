@@ -2,6 +2,7 @@ import {
   ISLAND_PRIORITY,
   type AggregatedUsage,
   type IslandAgentRow,
+  type IslandOption,
   type IslandUsageRow,
   type IslandTarget,
   type UsageLimit,
@@ -61,6 +62,28 @@ export interface IslandSources {
     detail: string;
     runId?: string;
     sessionId?: string;
+    /** Where "Open" lands when it is neither a run nor a chat. */
+    target?: IslandTarget;
+    /** The mark of the tool that is waiting, when one is. */
+    icon?: string | null;
+    /**
+     * Answers the island can give in place, e.g. Allow and Deny. Empty when
+     * the only way to answer is where "Open" leads.
+     */
+    options?: readonly IslandOption[];
+    at: Date;
+  }>;
+  /** Questions an agent put to the person, with its choices, newest first. */
+  readonly questions: ReadonlyArray<{
+    key: string;
+    /** The question itself. */
+    title: string;
+    detail: string;
+    /** The mark of the tool that asks. */
+    icon?: string | null;
+    /** Choices the island can answer with in place; empty when it cannot. */
+    options: readonly IslandOption[];
+    target: IslandTarget;
     at: Date;
   }>;
   /** Failures worth surfacing, newest first. */
@@ -70,6 +93,8 @@ export interface IslandSources {
     detail: string;
     sessionId?: string;
     runId?: string;
+    /** The mark of the tool whose work failed, when one did. */
+    icon?: string | null;
     at: Date;
   }>;
   /** Connections the application knows are down. */
@@ -88,6 +113,11 @@ export interface IslandSources {
 export interface IslandWidget {
   readonly id: IslandWidgetId;
   readonly displayName: string;
+  /**
+   * The widget preference that switches this one on and off, when it has no
+   * toggle of its own; defaults to its own id.
+   */
+  readonly toggle?: IslandWidgetId;
   /** At most one entry, or null when this widget has nothing to report. */
   build(sources: IslandSources): IslandEntry | null;
 }
@@ -138,6 +168,8 @@ export const needsAttentionWidget: IslandWidget = {
     return {
       widget: "needsAttention",
       ...quietDefaults(),
+      icon: first.icon ?? null,
+      options: [...(first.options ?? [])],
       priority: ISLAND_PRIORITY.userActionRequired,
       title: first.title,
       detail:
@@ -147,12 +179,47 @@ export const needsAttentionWidget: IslandWidget = {
       progress: null,
       action: {
         label: "Open",
-        target: first.runId
-          ? { view: "teams", runId: first.runId }
-          : first.sessionId
-            ? { view: "chat", sessionId: first.sessionId }
-            : { view: "chat" },
+        target:
+          first.target ??
+          (first.runId
+            ? { view: "teams", runId: first.runId }
+            : first.sessionId
+              ? { view: "chat", sessionId: first.sessionId }
+              : { view: "chat" }),
       },
+      key: first.key,
+      at: first.at,
+    };
+  },
+};
+
+/**
+ * A question an agent is waiting on, with its choices. It belongs to the
+ * "Needs attention" preference: a question is one more way an agent waits on
+ * a person, not a separate thing to switch on.
+ */
+export const agentQuestionWidget: IslandWidget = {
+  id: "agentQuestion",
+  displayName: "Agent question",
+  toggle: "needsAttention",
+  build(sources) {
+    const first = sources.questions[0];
+    if (!first) {
+      return null;
+    }
+    return {
+      widget: "agentQuestion",
+      ...quietDefaults(),
+      icon: first.icon ?? null,
+      options: first.options.slice(0, 9),
+      priority: ISLAND_PRIORITY.agentQuestion,
+      title: first.title,
+      detail:
+        sources.questions.length > 1
+          ? [first.detail, `${sources.questions.length - 1} more waiting`].filter(Boolean).join(" · ")
+          : first.detail,
+      progress: null,
+      action: { label: "Answer", target: first.target },
       key: first.key,
       at: first.at,
     };
@@ -170,6 +237,7 @@ export const errorsWidget: IslandWidget = {
     return {
       widget: "errors",
       ...quietDefaults(),
+      icon: first.icon ?? null,
       priority: ISLAND_PRIORITY.agentBlocked,
       title: first.title,
       detail: first.detail,
@@ -448,6 +516,7 @@ export const idleWidget: IslandWidget = {
 /** Built in, in the order a tie is broken. Plugins may add to this later. */
 export const builtInWidgets: IslandWidget[] = [
   needsAttentionWidget,
+  agentQuestionWidget,
   errorsWidget,
   connectionHealthWidget,
   completedWorkWidget,

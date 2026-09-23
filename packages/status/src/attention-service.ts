@@ -173,7 +173,7 @@ export class StatusAttentionService {
 
     const entries: IslandEntry[] = [];
     for (const widget of this.#widgets.values()) {
-      if (widget.id !== "idle" && !enabled.has(widget.id)) {
+      if (widget.id !== "idle" && !enabled.has(widget.toggle ?? widget.id)) {
         continue;
       }
       const entry = widget.build(this.#sources);
@@ -286,6 +286,7 @@ function emptySources(now: Date): IslandSources {
     providers: [],
     sessions: [],
     attention: [],
+    questions: [],
     errors: [],
     brokenConnections: [],
     completed: [],
