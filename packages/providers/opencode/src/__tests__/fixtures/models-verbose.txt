@@ -1,0 +1,103 @@
+opencode/big-pickle
+{
+  "id": "big-pickle",
+  "providerID": "opencode",
+  "name": "Big Pickle",
+  "family": "big-pickle",
+  "api": {
+    "id": "big-pickle",
+    "url": "https://opencode.ai/zen/v1",
+    "npm": "@ai-sdk/openai-compatible"
+  },
+  "status": "active",
+  "headers": {},
+  "options": {},
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "limit": {
+    "context": 200000,
+    "input": 160000,
+    "output": 32000
+  },
+  "capabilities": {
+    "temperature": true,
+    "reasoning": true,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": {
+      "field": "reasoning_content"
+    }
+  },
+  "release_date": "2025-10-17",
+  "variants": {}
+}
+standin/standin-model
+{
+  "id": "standin-model",
+  "api": {
+    "id": "standin-model",
+    "npm": "@ai-sdk/openai-compatible",
+    "url": ""
+  },
+  "status": "active",
+  "name": "Stand-in model",
+  "providerID": "standin",
+  "capabilities": {
+    "temperature": false,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "options": {},
+  "limit": {
+    "context": 0,
+    "output": 0
+  },
+  "headers": {},
+  "family": "",
+  "release_date": "",
+  "variants": {}
+}

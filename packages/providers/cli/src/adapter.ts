@@ -726,11 +726,28 @@ export class CliProviderAdapter implements AIProviderAdapter {
 
   async #discoverModels(): Promise<void> {
     if (this.#extensions.discoverModels && this.#extensionContext) {
-      await this.#models.refresh(() =>
-        this.#runExtension("discoverModels", HOOK_TIMEOUT_MS.discoverModels, (extensions, context) =>
-          extensions.discoverModels?.(context) ?? Promise.resolve(null),
-        ),
-      );
+      await this.#models.refresh(async () => {
+        // An extension that fails says why by throwing; the reason is kept
+        // for the picker instead of an empty list without explanation.
+        let reason: string | null = null;
+        const models = await this.#runExtension(
+          "discoverModels",
+          HOOK_TIMEOUT_MS.discoverModels,
+          async (extensions, context) => {
+            try {
+              return (await extensions.discoverModels?.(context)) ?? null;
+            } catch (error) {
+              reason = error instanceof Error ? error.message : String(error);
+              return null;
+            }
+          },
+        );
+        this.#modelsNote =
+          models && models.length > 0
+            ? null
+            : (reason ?? `${this.metadata.displayName} did not report its models`);
+        return models && models.length > 0 ? models : null;
+      });
       return;
     }
     // Profile-driven discovery: the tool lists its own models, one id per

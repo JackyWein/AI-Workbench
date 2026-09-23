@@ -1691,6 +1691,16 @@ export async function runStartupCheck(
       answered: (printed) => (JSON.parse(printed) as { key?: string }).key === "y",
       screenshot: "island-approval-codex",
     });
+    await waitingAgent({
+      providerId: "opencode",
+      label: "OpenCode",
+      command: "opencode",
+      script: STAND_IN_OPENCODE,
+      summary: "touch island-opencode.txt",
+      // "once" is what OpenCode's own server takes for "allow this time".
+      answered: (printed) => (JSON.parse(printed) as { reply?: string }).reply === "once",
+      screenshot: "island-approval-opencode",
+    });
   }
 
   // The remote workspace is checked after the screenshots, so the screens
@@ -2045,6 +2055,90 @@ const toolInput = { command: "touch island-codex.txt" };
   });
 })();
 setInterval(() => undefined, 60000);
+`;
+
+/**
+ * Stands in for OpenCode in the startup check: started the way the
+ * application starts OpenCode's terminal interface — `--port` and
+ * `--hostname`, the password in `OPENCODE_SERVER_PASSWORD` — it serves the
+ * part of OpenCode's server the application reads: basic auth, the event
+ * stream with one turn asking to run a command, the list of waiting
+ * requests, and the reply route, whose answer it keeps. Everything else it
+ * is asked (a version probe, models, stats) gets a short answer. It stays
+ * running, like an interactive tool.
+ */
+const STAND_IN_OPENCODE = `#!/usr/bin/env node
+const http = require("node:http");
+const { writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  process.stdout.write("1.18.32\\n");
+  process.exit(0);
+}
+const at = args.indexOf("--port");
+if (at < 0) {
+  process.exit(0);
+}
+const port = Number(args[at + 1]);
+const auth = "Basic " + Buffer.from("opencode:" + (process.env.OPENCODE_SERVER_PASSWORD || "")).toString("base64");
+const request = {
+  id: "per_startupcheck",
+  sessionID: "ses_startupcheck",
+  permission: "bash",
+  patterns: ["touch island-opencode.txt"],
+  metadata: { command: "touch island-opencode.txt" },
+  always: ["touch *"],
+};
+let waiting = true;
+const streams = [];
+const send = (type, properties) => {
+  for (const stream of streams) {
+    stream.write("data: " + JSON.stringify({ id: "evt_" + Date.now(), type, properties }) + "\\n\\n");
+  }
+};
+const json = (response, value) => {
+  response.writeHead(200, { "content-type": "application/json" });
+  response.end(JSON.stringify(value));
+};
+http
+  .createServer((req, response) => {
+    if (req.headers.authorization !== auth) {
+      response.writeHead(401).end();
+      return;
+    }
+    if (req.url === "/event") {
+      response.writeHead(200, { "content-type": "text/event-stream" });
+      streams.push(response);
+      send("server.connected", {});
+      if (waiting) {
+        send("session.status", { sessionID: request.sessionID, status: { type: "busy" } });
+        send("permission.asked", request);
+      }
+      return;
+    }
+    if (req.url === "/permission") return json(response, waiting ? [request] : []);
+    if (req.url === "/question") return json(response, []);
+    if (req.url === "/session/status") {
+      return json(response, waiting ? { [request.sessionID]: { type: "busy" } } : {});
+    }
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      if (req.url !== "/permission/" + request.id + "/reply" || !waiting) {
+        return json(response, false);
+      }
+      waiting = false;
+      writeFileSync(join(__dirname, "answer.json"), body);
+      json(response, true);
+      send("permission.replied", { sessionID: request.sessionID, requestID: request.id, reply: JSON.parse(body).reply });
+      send("session.status", { sessionID: request.sessionID, status: { type: "idle" } });
+      send("session.idle", { sessionID: request.sessionID });
+    });
+  })
+  .listen(port, "127.0.0.1", () => {
+    process.stdout.write("Stand-in for OpenCode: asks to run touch island-opencode.txt\\r\\n");
+  });
 `;
 
 /**

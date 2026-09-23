@@ -146,11 +146,12 @@ describe("profile helpers", () => {
     );
     // Verified below against a recorded live stream.
     expect(byId.get("claude-code")?.unverified).toBe(false);
+    // Run against OpenCode itself (real-opencode-attention.test.ts).
+    expect(byId.get("opencode")?.unverified).toBe(false);
     // Not run against the real tools here, so the UI must say so.
     expect(byId.get("codex")?.unverified).toBe(true);
     expect(byId.get("gemini")?.unverified).toBe(true);
     expect(byId.get("antigravity")?.unverified).toBe(true);
-    expect(byId.get("opencode")?.unverified).toBe(true);
   });
 
   it("rejects a profile that is not valid", () => {

@@ -234,9 +234,12 @@ export const geminiProfile: CliProviderProfileInput = {
 /**
  * SST's OpenCode CLI (`opencode`), headless via `opencode run`.
  *
- * Unverified starting point like the other non-Claude profiles: flags from
- * `opencode --help` still need a run against the real tool, and the UI says
- * so. Plain stdout is the answer; no event format is assumed.
+ * Checked against OpenCode 1.18.32 with a local stand-in for the model:
+ * `run --format json` prints one JSON event per line (read by the OpenCode
+ * package; the rules below are the fallback without it), `--model` takes
+ * `provider/model`, `--variant` a model's reasoning effort, and `--session`
+ * continues a session. `run` also reads stdin while it is open, which the
+ * transport closes at once.
  */
 export const opencodeProfile: CliProviderProfileInput = {
   schemaVersion: 1,
@@ -254,23 +257,53 @@ export const opencodeProfile: CliProviderProfileInput = {
     authenticatedPattern: "stored",
     loginHint: "Run `opencode auth login` once in a terminal.",
   },
-  capabilities: ["chat", "streaming", "sessionResume", "modelSelection", "cliAuthentication", "usage"],
+  capabilities: [
+    "chat",
+    "streaming",
+    "sessionResume",
+    "modelSelection",
+    "reasoningModes",
+    "toolCalls",
+    "nativeTools",
+    "cliAuthentication",
+    "usage",
+  ],
   // Asked from the tool itself via `opencode models`; nothing is assumed here.
   models: [],
   modelsArgs: ["models"],
-  // Lifetime tokens and cost via `opencode stats --json`; no quota exists to
-  // deplete, so these render as consumed amounts (spec §55, §56).
+  // Today's and this week's tokens and cost via `opencode stats`; no quota
+  // exists to deplete, so these render as consumed amounts (spec §55, §56).
   usageArgs: ["stats", "--json"],
   usageFormat: "opencode-stats",
-  args: ["run"],
+  args: ["run", "--format", "json"],
   // The terminal interface starts in the working directory it is given.
   interactive: { args: [] },
   modelArgs: ["--model", "{model}"],
+  effortArgs: ["--variant", "{effort}"],
   resumeArgs: ["--session", "{providerSessionId}"],
+  // OpenCode's own permission configuration decides, except for "full":
+  // `--auto` approves whatever it does not explicitly deny. Its read-only
+  // "plan" agent still allows shell commands, so it is no "read only". A
+  // headless run turns every "ask" into a refusal, which shows as a failed
+  // tool call with OpenCode's own message.
+  permissionArgs: { full: ["--auto"] },
   promptVia: "arg",
   promptArgs: ["{prompt}"],
-  output: { format: "text" },
-  unverified: true,
+  output: {
+    format: "json-lines",
+    rules: [
+      { emit: "session", when: { type: "step_start" }, valueKey: "sessionID" },
+      { emit: "text_delta", when: { type: "text" }, valueKey: "part.text" },
+      {
+        emit: "usage",
+        when: { type: "step_finish" },
+        inputTokensKey: "part.tokens.input",
+        outputTokensKey: "part.tokens.output",
+        costKey: "part.cost",
+      },
+      { emit: "error", when: { type: "error" }, valueKey: "error.data.message" },
+    ],
+  },
 };
 
 export const builtInCliProfiles: CliProviderProfileInput[] = [
