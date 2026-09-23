@@ -14,68 +14,66 @@ Weighted contribution = weight x completion.
 | G1 | Functional desktop vertical slice | 15% | 20 | 19 | 95% | 14.25 |
 | G2 | Provider platform | 15% | 20 | 18 | 90% | 13.50 |
 | G3 | Workspace / developer tooling | 10% | 14 | 14 | 100% | 10.00 |
-| G4 | Skills, plugins & MCP | 10% | 15 | 14 | 93% | 9.33 |
+| G4 | Skills, plugins & MCP | 10% | 15 | 15 | 100% | 10.00 |
 | G5 | Autonomous team system | 20% | 28 | 27 | 96% | 19.29 |
 | G6 | Status Island & background runtime | 10% | 22 | 19 | 86% | 8.64 |
 | G7 | UX, security, reliability & performance | 10% | 19 | 13 | 68% | 6.84 |
 | G8 | Extensibility, SDK & packaging | 5% | 10 | 1 | 10% | 0.50 |
-| **TOTAL** | | **100%** | **160** | **137** | | **87.35%** |
+| **TOTAL** | | **100%** | **160** | **138** | | **88.02%** |
 
 ## Current focus
 
-**G7 — UX, security, reliability and performance.** The Status Island now
-holds up end to end: it is its own window, it keeps where it was put across a
-restart, every widget reports something real, an important event takes it for a
-moment and then settles back, and pinning, cycling and the deep link into the
-main window all do what they say. Both phases of `pnpm verify:app` are green,
-including the second start against the same database. What remains in G6 is the
-tray, multi-monitor handling and the idle-unobtrusiveness judgement. What
-remains in G5 is two real providers collaborating, and handing the Team MCP
-server to a provider that speaks MCP. What remains in G4 is remote MCP
-transports, and in G2 verifying the Codex and Antigravity profiles against
-those tools.
+**G7 — UX, security, reliability and performance.** As of 2026-09-23 the
+approved design rollout, the SSH remote workspaces and the move to bun are one
+branch, and `bun run verify` passes on it end to end: lockfile, lint,
+typecheck, 356 tests, the build and both startup phases (119 checks, none
+failing). What remains in G6 is the tray, multi-monitor handling and the
+idle-unobtrusiveness judgement; in G5, two real providers collaborating; in
+G2, running the Codex and Antigravity profiles against those tools.
 
-### Design rework (2026-09-23)
+### Design rollout (2026-09-23)
 
-Usage view, live terminal metrics, Settings, Providers and the Status Island
-were reworked to the approved design. Verified here: typecheck, lint (0
-errors), 307 tests, the production build, rendered screenshots of every island
-face against the mocks, and, in the running app, the following:
-- Claude Code telemetry (tokens, context, cost, 5-hour and weekly limits)
-  reached the tile, the Usage view and the island.
-- The island's prompt line typed into a running Claude Code terminal and got
-  an answer.
+The main window, Settings, Providers, the Usage view, live terminal metrics
+and the Status Island follow the approved design. It was merged without
+changing it: the rendered screens of the merged build were compared pixel by
+pixel with the design branch's own. Island, Providers (dark and light),
+Skills and Usage are identical; every other difference is data — times,
+paths, which runs the check left open — or the Settings scrollbar, because
+the SSH connections are a new group at the foot of that screen.
 
-Codex limits come from its session files and OpenCode amounts from its own
-CLI, both seen live. Gemini telemetry is written but was not run.
+The design branch's startup check had never run; on its own it failed eight
+checks. Two were real bugs, fixed: the island named an asking agent by its
+internal id, and the simulated provider's usage showed outside developer mode
+whenever no real tool was installed. The rest were checks that still
+described the old interface; they now assert what the design does.
 
-Island drag and dock now run on page pointer events instead of the OS drag
-region, which on Windows swallowed clicks, so the docked pill could not
-open. Main follows the cursor on an 8 ms beat. A docked pill slides along
-its rail, turns corners onto the next rail, gives a little when pulled and
-detaches past `detachPx`. A free blob dropped within `snapPx` of an edge
-settles onto that rail. The pill opens into its sheet and folds back
-through a clip-path morph from its own outline. The drag geometry is
-unit-tested and the animations were rendered headlessly. The real drag
-through the OS cursor has **not** been exercised yet. There is no dock
-ghost-slot or trailer; the blob instead shows a snap cue.
+Verified live on the design branch, not here: Claude Code telemetry reaching
+the tile, the Usage view and the island, and the island's prompt line typing
+into a running Claude Code terminal. Codex limits from its session files and
+OpenCode amounts from its CLI were seen live; Gemini telemetry was never run.
+Claude Code's status line bridge now also works on macOS and Linux (a POSIX
+bridge, tested through a real `/bin/sh`), where it used to be PowerShell only
+and took the person's own status line with it.
 
-`verify:app` was **not** re-run after these changes, and its island size
-expectations were adjusted to the new layout, so no criterion above was
-ticked or unticked on this basis.
+Not exercised anywhere yet: the island's real drag through the OS cursor.
+Not built yet: answering an agent's question or approving a permission from
+the island. Its Approve action opens the run that asked, and the
+`agentQuestion` widget is defined but nothing produces it, so an agent's
+question appears as a waiting entry to approve.
 
 ## How this file is verified
 
-Everything ticked below is proven by `pnpm verify`, which runs:
+Everything ticked below is proven by `bun run verify`, which runs:
 
-- `pnpm verify:lockfile` — the lockfile matches every `package.json`, so a
-  frozen install cannot fail only on a build machine
-- `pnpm lint` — ESLint over the workspace
-- `pnpm typecheck` — strict TypeScript over Node and web projects
-- `pnpm test` — 285 unit and integration tests (2 more are skipped by default
-  because they spend real provider quota; see below)
-- `pnpm build` — electron-vite production build
-- `pnpm verify:app` — starts the built application headlessly (Xvfb) and drives
+- `verify:lockfile` — `bun install --frozen-lockfile`: the lockfile matches
+  every `package.json`, so a frozen install cannot fail only on a build machine
+- `lint` — ESLint over the workspace
+- `typecheck` — strict TypeScript over Node and web projects
+- `test` — 356 unit and integration tests (4 more are skipped here: 2 spend
+  real provider quota, see below, and 2 exercise the Windows status line
+  bridge and only run on Windows)
+- `build` — electron-vite production build
+- `verify:app` — starts the built application headlessly (Xvfb) and drives
   the real renderer through the preload bridge: a streamed answer, a collapsed
   tool call, a real shell echoing back, the file browser, the git branch and
   changes, the command palette, the usage popover and the settings and
@@ -90,18 +88,29 @@ Everything ticked below is proven by `pnpm verify`, which runs:
   widget against what the application really knows, an important event taking
   it and settling back, pinning and cycling from the palette and from the
   island's own keyboard, and the deep link landing the main window on the run
-  the entry is about. It then runs a second time against the same database to
-  prove a conversation, its provider session and the island's preferences
-  survive a restart.
+  the entry is about — or, while an agent's question is waiting, that the
+  question keeps the island and opens the run that asked. It works in a
+  workspace on another machine over SSH: a real SSH server with a real SFTP
+  subsystem, started in the check, a connection whose host key is learned,
+  and a file listed, opened, edited and saved, the edit read back from the
+  served directory. It then runs a second time against the same database to
+  prove a conversation, its provider session, the island's preferences and
+  the remote workspace with its host key survive a restart.
 
 Additionally, and deliberately outside the default run:
 
-- `AI_WORKBENCH_REAL_PROVIDER=1 pnpm test` drives the installed Claude Code CLI
+- `AI_WORKBENCH_REAL_PROVIDER=1 bun run test` drives the installed Claude Code CLI
   through the whole stack. It was run once for this milestone: the tool was
   detected with its version, an answer streamed back, real account usage was
   reported by the provider, and a second turn resumed the same conversation.
 
-Last full run: all checks passed.
+Last full run: 2026-09-23, all checks passed (both startup phases, 119 checks).
+
+A packaged Linux build (`electron-builder --linux dir` under bun) was also
+started and ran the startup check: terminal, database and SSH worked from
+the package. That is evidence for G8's packaging criteria, not yet proof:
+the installers themselves and a clean install on another machine were not
+run.
 
 ## What is deliberately not ticked
 
@@ -131,13 +140,18 @@ Last full run: all checks passed.
 - **G7** items left open are the judgment and performance ones (polish,
   virtualized chats and logs, full keyboard pass). They belong to the dedicated
   hardening pass, not to this stage.
-- **remote MCP transports (G4)** are not implemented. The configuration model
-  accepts them, and the manager reports such a server as `unsupported` with the
-  reason, rather than failing silently or pretending to connect.
+- **remote MCP (G4)** is ticked from the tests against a real MCP server over
+  streamable HTTP: connecting, reading the tool list, calling a tool, and the
+  credential arriving as an `Authorization` header. The legacy SSE transport is
+  implemented but not exercised by any test.
+- **OpenAI-compatible provider (G8)** is implemented, and model listing with
+  an authorization header, error mapping, timeouts and secret redaction are
+  tested. A streamed turn through it is not, so the criterion stays open.
 
 ## G0 — Repository / Foundation — 5%
 
-- [x] pnpm workspace configured
+- [x] pnpm workspace configured — met by a bun workspace since 2026-09-23, by
+      the owner's decision; the specification still names pnpm
 - [x] Electron app launches
 - [x] React + TypeScript renderer launches
 - [x] TypeScript strict mode enabled
@@ -260,7 +274,7 @@ can, through the file browser.
 - [x] CredentialManager works
 - [x] MCPManager works
 - [x] local MCP stdio server can connect
-- [ ] remote MCP config supported
+- [x] remote MCP config supported
 - [x] session MCP selection works
 - [x] ToolBridge abstraction works
 - [x] plugin/provider separation remains intact
