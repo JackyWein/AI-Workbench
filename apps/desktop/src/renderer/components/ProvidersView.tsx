@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
 import { ChevronRight, Plus, RefreshCw, Trash2 } from "lucide-react";
 import {
   modelInfoSchema,
@@ -361,11 +361,19 @@ function ProviderEntry({
 
 /** Further sign-ins of one tool, each kept in its own home (spec §39). */
 function AccountsSection({ family }: { readonly family: string }): JSX.Element {
-  const accounts = useWorkbench((state) =>
-    state.accounts.filter((account) => account.family === family),
+  // The store's own arrays, filtered here: a selector that returns a new
+  // array on every read never settles, and React gives up on the screen
+  // ("Maximum update depth exceeded"), which took Providers down whenever a
+  // tool had a further account.
+  const allAccounts = useWorkbench((state) => state.accounts);
+  const allDetected = useWorkbench((state) => state.detectedAccounts);
+  const accounts = useMemo(
+    () => allAccounts.filter((account) => account.family === family),
+    [allAccounts, family],
   );
-  const detected = useWorkbench((state) =>
-    state.detectedAccounts.filter((candidate) => candidate.family === family),
+  const detected = useMemo(
+    () => allDetected.filter((candidate) => candidate.family === family),
+    [allDetected, family],
   );
   const addAccount = useWorkbench((state) => state.addAccount);
   const removeAccount = useWorkbench((state) => state.removeAccount);

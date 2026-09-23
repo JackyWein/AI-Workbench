@@ -573,6 +573,13 @@ export class IslandController {
     }
     const state = this.#services.attention.setPreferences(settings.statusIsland);
     this.#window.apply(settings.statusIsland);
+    // Choosing whether the island makes way for a focused main window, or
+    // stays when it is hidden, is a decision about now: it applies at once,
+    // launch grace or not.
+    if (patch.hideWhenMainFocused !== undefined || patch.stayVisibleWhenHidden !== undefined) {
+      this.#startupGraceUntil = 0;
+      this.#applyFocusRule();
+    }
     this.#tray.refresh();
     return state;
   }
@@ -765,11 +772,18 @@ export class IslandController {
     if (!preferences.enabled || this.#manualHidden || this.#hiddenWithMain) {
       return;
     }
-    if (!this.#window.visible) {
-      this.#window.show();
-      this.#tray.refresh();
-      this.#services.logger.info("Island was not visible and was shown again");
+    if (Date.now() < this.#startupGraceUntil) {
+      if (!this.#window.visible) {
+        this.#window.show();
+        this.#tray.refresh();
+        this.#services.logger.info("Island was not visible and was shown again");
+      }
+      return;
     }
+    // The same rule as a focus change, not a blind show: an island the rule
+    // hid (main focused with hideWhenMainFocused, main minimised without
+    // stayVisibleWhenHidden) would otherwise come back every two seconds.
+    this.#applyFocusRule();
   }
 
   #applyFocusRule(): void {

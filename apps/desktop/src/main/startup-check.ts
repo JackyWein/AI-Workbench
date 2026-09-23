@@ -275,6 +275,13 @@ export async function runStartupCheck(
     );
   });
 
+  // By default the island stays on screen from launch, focused app or not.
+  await checkMain("the island stays on while the main window is focused", async () => {
+    focusWindow(window);
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    return island.visible;
+  });
+
   await checkMain("the island hides while the main window is focused", async () => {
     // Opt-in behavior (hideWhenMainFocused): only asserted when enabled.
     await island.setPreferences({
@@ -548,6 +555,39 @@ export async function runStartupCheck(
        rows.find(row => row.textContent?.includes('Providers'))?.click();
        return new Promise(resolve => setTimeout(
          () => resolve(document.querySelectorAll('.provider-entry').length), 120));
+     })()`,
+  );
+
+  // A tool with a further account shows an accounts section. On a person's
+  // own machine that is common (any ~/.codex-* or ~/.claude-* home counts),
+  // in a fresh check it never is, which is how a render loop there went
+  // unnoticed and left the whole screen unusable.
+  await check(
+    "the providers view stays up for a tool with a further account",
+    `(async () => {
+       const account = await window.workbench.invoke('account.add', {
+         family: 'codex',
+         label: 'Startup check',
+       });
+       const open = async (name) => {
+         const rows = [...document.querySelectorAll('.sidebar__foot .row')];
+         rows.find(row => row.textContent?.includes(name))?.click();
+         await new Promise(resolve => setTimeout(resolve, 150));
+       };
+       try {
+         // Opened afresh, so the screen reads the accounts again.
+         await open('Settings');
+         await open('Providers');
+         await new Promise(resolve => setTimeout(resolve, 1500));
+         const entries = document.querySelectorAll('.provider-entry').length;
+         const broken = [...document.querySelectorAll('.view__title')]
+           .some(node => node.textContent?.includes('unavailable'));
+         const accounts = [...document.querySelectorAll('.provider-row__subtitle')]
+           .some(node => node.textContent === 'Accounts');
+         return entries > 0 && !broken && accounts;
+       } finally {
+         await window.workbench.invoke('account.remove', { id: account.id });
+       }
      })()`,
   );
 
