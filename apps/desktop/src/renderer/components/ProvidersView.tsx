@@ -1,12 +1,15 @@
 import { useEffect, useState, type JSX } from "react";
-import { Plus, RefreshCw, Trash2 } from "lucide-react";
-import type {
-  ModelInfo,
-  ProviderSummary,
-  StoredProviderConfig,
+import { ChevronRight, Plus, RefreshCw, Trash2 } from "lucide-react";
+import {
+  modelInfoSchema,
+  type ModelInfo,
+  type ProviderSummary,
+  type StoredProviderConfig,
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { formatIn, meterTone, tightestLimit, useNow } from "../lib/usage.js";
 import { Logo } from "./Logo.js";
+import { SettingDisclosure, SettingGroup, Switch } from "./Controls.js";
 import { familyOf } from "../lib/provider-label.js";
 // Relative on purpose: the custom-provider package joins the workspace aliases
 // when it is promoted to a first-class dependency, and until then this slice
@@ -23,10 +26,10 @@ interface ProvidersViewProps {
 }
 
 /**
- * Central provider screen (spec §19). Everything shown comes from the adapter
- * itself — installation, authentication, models, capabilities — and what a
- * user needs to make a command line provider work is editable here: where its
- * executable lives, extra arguments, and the models it may use.
+ * Central provider screen (spec §19). Each tool is one line — its mark, its
+ * version, whether it is signed in, how much of its limit is used, and a
+ * switch — that opens onto everything the adapter reported and what a user
+ * edits to make a command line tool work. Nothing here is guessed.
  */
 export function ProvidersView({ providers, configs }: ProvidersViewProps): JSX.Element {
   const refreshProviders = useWorkbench((state) => state.refreshProviders);
@@ -58,41 +61,65 @@ export function ProvidersView({ providers, configs }: ProvidersViewProps): JSX.E
     }
   };
 
+  const installed = providers.filter((provider) => provider.installation.state === "installed");
+  const missing = providers.filter((provider) => provider.installation.state !== "installed");
+  const entry = (provider: ProviderSummary): JSX.Element => (
+    <ProviderEntry
+      key={provider.metadata.id}
+      provider={provider}
+      config={configs[provider.metadata.id]}
+      showAccounts={!provider.metadata.account && multiAccountFamilies.has(familyOf(provider))}
+    />
+  );
+
   return (
     <div className="view">
-      <div className="view__inner">
-        <div className="view__header">
-          <h1 className="view__title">Providers</h1>
+      <div className="view__inner view__inner--narrow">
+        <header className="view__header">
+          <div className="view__heading">
+            <h1 className="view__title">Providers</h1>
+            <p className="view__lede">
+              What each tool reports about itself. Unverified stays unverified.
+            </p>
+          </div>
           <button
             type="button"
-            className="quiet-button"
+            className="ghost-button"
             onClick={() => void refresh()}
             disabled={refreshing}
           >
-            <RefreshCw size={13} strokeWidth={1.75} aria-hidden="true" />
-            {refreshing ? "Checking" : "Check again"}
-          </button>
-        </div>
-
-        <section>
-          {providers.map((provider) => (
-            <ProviderEntry
-              key={provider.metadata.id}
-              provider={provider}
-              config={configs[provider.metadata.id]}
-              showAccounts={
-                !provider.metadata.account &&
-                multiAccountFamilies.has(familyOf(provider))
-              }
+            <RefreshCw
+              size={13}
+              strokeWidth={1.75}
+              aria-hidden="true"
+              className={refreshing ? "spin" : undefined}
             />
-          ))}
-        </section>
+            {refreshing ? "Checking…" : "Check again"}
+          </button>
+        </header>
+
+        {installed.length > 0 ? <div className="entry-list">{installed.map(entry)}</div> : null}
+
+        {missing.length > 0 ? (
+          <section className="setting-group" aria-label="Not installed">
+            <header className="setting-group__header">
+              <h2 className="setting-group__title">Not installed</h2>
+              <p className="setting-group__lede">
+                Install the tool, or point to its executable, then check again.
+              </p>
+            </header>
+            <div className="entry-list">{missing.map(entry)}</div>
+          </section>
+        ) : null}
 
         <CustomProviderSection configs={configs} />
       </div>
     </div>
   );
 }
+
+/** Capabilities shown before the rest are folded behind "+N". */
+const CAPABILITY_PREVIEW = 6;
 
 function ProviderEntry({
   provider,
@@ -104,21 +131,31 @@ function ProviderEntry({
   readonly showAccounts: boolean;
 }): JSX.Element {
   const saveProviderConfig = useWorkbench((state) => state.saveProviderConfig);
+  const usage = useWorkbench((state) => state.usage);
+  const setView = useWorkbench((state) => state.setView);
+  const now = useNow(60_000);
+  const [open, setOpen] = useState(false);
+  const [allCapabilities, setAllCapabilities] = useState(false);
   const [path, setPath] = useState(config?.executablePath ?? "");
   const [args, setArgs] = useState((config?.arguments ?? []).join(" "));
   const [models, setModels] = useState(formatModels(provider.models));
   const [saving, setSaving] = useState(false);
 
+  const id = provider.metadata.id;
+  const detailsId = `provider-${id}-details`;
   const configurable = provider.metadata.transportTypes.includes("cli");
-  const configuredModels = Array.isArray(config?.settings["models"])
-    ? (config.settings["models"] as ModelInfo[])
-    : [];
+  const configuredModels = modelsOf(config);
+  const tightest = tightestLimit(usage, new Set([id]), now);
+  const capabilities = provider.capabilities.supported;
+  const shownCapabilities = allCapabilities
+    ? capabilities
+    : capabilities.slice(0, CAPABILITY_PREVIEW);
 
   const save = async (): Promise<void> => {
     setSaving(true);
     try {
       await saveProviderConfig({
-        providerId: provider.metadata.id,
+        providerId: id,
         executablePath: path.trim().length > 0 ? path.trim() : null,
         arguments: args.trim().length > 0 ? args.trim().split(/\s+/) : [],
         models: parseModels(models),
@@ -129,140 +166,170 @@ function ProviderEntry({
   };
 
   return (
-    <article className="provider-entry">
-      <div className="provider-entry__head">
-        <span className="logo-well">
-          <Logo
-            name={provider.metadata.icon}
-            label={provider.metadata.displayName}
-            size={18}
+    <article className="provider-entry provider-row" data-enabled={provider.enabled}>
+      <div className="provider-row__head">
+        <button
+          type="button"
+          className="provider-entry__toggle provider-row__toggle"
+          aria-expanded={open}
+          aria-controls={detailsId}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <ChevronRight
+            size={13}
+            strokeWidth={1.75}
+            aria-hidden="true"
+            className="provider-entry__chevron"
+            data-open={open}
           />
-        </span>
-        <span className="provider-entry__name">{provider.metadata.displayName}</span>
-        <span className="row__meta">{installationLabel(provider)}</span>
-        <span className="agents-bar__spacer" />
-        <span className={`pill ${authTone(provider)}`}>
-          {authPillLabel(provider)}
-        </span>
-        <input
-          type="checkbox"
-          className="mini-switch"
+          <span className="logo-well logo-well--sm" aria-hidden="true">
+            <Logo name={provider.metadata.icon} label={provider.metadata.displayName} size={14} />
+          </span>
+          <span className="provider-row__name">{provider.metadata.displayName}</span>
+          <span className="row__meta">{installationLabel(provider)}</span>
+        </button>
+
+        {tightest ? (
+          <button
+            type="button"
+            className="provider-row__usage"
+            data-tone={meterTone(tightest.percentUsed)}
+            onClick={() => setView("usage")}
+            title={`${tightest.limit.label}: ${tightest.percentUsed}% used${
+              tightest.limit.resetsAt ? `, resets ${formatIn(tightest.limit.resetsAt, now)}` : ""
+            }`}
+          >
+            <span className="mini-meter" aria-hidden="true">
+              <span className="mini-meter__fill" style={{ width: `${tightest.percentUsed}%` }} />
+            </span>
+            {tightest.percentUsed}%
+          </button>
+        ) : null}
+        {provider.installation.state === "installed" ? (
+          <span className={`pill ${authTone(provider)}`}>{authPillLabel(provider)}</span>
+        ) : null}
+        <Switch
+          label={provider.enabled ? `Hide ${provider.metadata.displayName}` : `Show ${provider.metadata.displayName}`}
           checked={provider.enabled}
-          onChange={() =>
-            void saveProviderConfig({
-              providerId: provider.metadata.id,
-              enabled: !provider.enabled,
-            })
-          }
-          title={
-            provider.enabled
-              ? "Hide this provider from pickers (existing sessions keep working)"
-              : "Show this provider in pickers again"
-          }
-          aria-label={
-            provider.enabled
-              ? `Hide ${provider.metadata.displayName}`
-              : `Show ${provider.metadata.displayName}`
-          }
+          onChange={(enabled) => void saveProviderConfig({ providerId: id, enabled })}
         />
       </div>
 
-      {provider.metadata.description ? (
-        <p className="field__description">{provider.metadata.description}</p>
-      ) : null}
+      <div className="provider-entry__details provider-row__details" id={detailsId} hidden={!open}>
+        {provider.metadata.description ? (
+          <p className="provider-row__description">{provider.metadata.description}</p>
+        ) : null}
 
-      {provider.metadata.notice ? (
-        <p className="notice" role="note">
-          {provider.metadata.notice}
-        </p>
-      ) : null}
+        {provider.metadata.notice ? (
+          <p className="notice" role="note">
+            {provider.metadata.notice}
+          </p>
+        ) : null}
 
-      <dl className="detail-list">
-        <div className="detail">
-          <dt className="detail__label">Authentication</dt>
-          <dd className="detail__value">{authLabel(provider)}</dd>
-        </div>
-        <div className="detail">
-          <dt className="detail__label">Transport</dt>
-          <dd className="detail__value">{provider.metadata.transportTypes.join(", ")}</dd>
-        </div>
-        {provider.installation.executablePath ? (
+        <dl className="detail-list">
           <div className="detail">
-            <dt className="detail__label">Executable</dt>
-            <dd className="detail__value">{provider.installation.executablePath}</dd>
+            <dt className="detail__label">Account</dt>
+            <dd className="detail__value">{authLabel(provider)}</dd>
+          </div>
+          <div className="detail">
+            <dt className="detail__label">Runs as</dt>
+            <dd className="detail__value">{provider.metadata.transportTypes.join(", ")}</dd>
+          </div>
+          {provider.installation.executablePath ? (
+            <div className="detail">
+              <dt className="detail__label">Executable</dt>
+              <dd className="detail__value detail__value--path">
+                {provider.installation.executablePath}
+              </dd>
+            </div>
+          ) : null}
+          <div className="detail">
+            <dt className="detail__label">Models</dt>
+            <dd className="detail__value">
+              {modelsLabel(provider, configuredModels)}
+              {/* Why a tool's own list is missing, when it is (spec §56). */}
+              {provider.modelsNote ? (
+                <span className="detail__note">{provider.modelsNote}</span>
+              ) : null}
+            </dd>
+          </div>
+          <div className="detail">
+            <dt className="detail__label">Usage</dt>
+            <dd className="detail__value">{usageLabel(provider)}</dd>
+          </div>
+        </dl>
+
+        {capabilities.length > 0 ? (
+          <div className="tag-list" aria-label="Capabilities">
+            {shownCapabilities.map((capability) => (
+              <span className="tag" key={capability}>
+                {capabilityLabel(capability)}
+              </span>
+            ))}
+            {capabilities.length > CAPABILITY_PREVIEW ? (
+              <button
+                type="button"
+                className="tag tag--more"
+                onClick={() => setAllCapabilities((value) => !value)}
+              >
+                {allCapabilities ? "Less" : `+${capabilities.length - CAPABILITY_PREVIEW}`}
+              </button>
+            ) : null}
           </div>
         ) : null}
-        <div className="detail">
-          <dt className="detail__label">Models</dt>
-          <dd className="detail__value">
-            {modelsLabel(provider, configuredModels)}
-            {/* Why a tool's own list is missing, when it is (spec §56). */}
-            {provider.modelsNote ? (
-              <span className="detail__note">{provider.modelsNote}</span>
-            ) : null}
-          </dd>
-        </div>
-        <div className="detail">
-          <dt className="detail__label">Usage</dt>
-          <dd className="detail__value">{usageLabel(provider)}</dd>
-        </div>
-      </dl>
 
-      <div className="tag-list">
-        {provider.capabilities.supported.map((capability) => (
-          <span className="tag" key={capability}>
-            {capability}
-          </span>
-        ))}
+        {showAccounts ? <AccountsSection family={familyOf(provider)} /> : null}
+
+        {configurable ? (
+          <div className="provider-row__config">
+            <p className="provider-row__subtitle">Command line</p>
+            <div className="form-grid">
+              <label className="stacked-field">
+                <span className="field__description">Executable path</span>
+                <input
+                  className="text-input"
+                  value={path}
+                  placeholder="Leave empty to search PATH"
+                  spellCheck={false}
+                  onChange={(event) => setPath(event.target.value)}
+                />
+              </label>
+              <label className="stacked-field">
+                <span className="field__description">Extra arguments</span>
+                <input
+                  className="text-input"
+                  value={args}
+                  placeholder="Optional, separated by spaces"
+                  spellCheck={false}
+                  onChange={(event) => setArgs(event.target.value)}
+                />
+              </label>
+              <label className="stacked-field form-grid__full">
+                <span className="field__description">
+                  Models, one per line as <code>id</code> or <code>id = Name</code>. What
+                  you enter here is what the session picker offers.
+                </span>
+                <textarea
+                  className="text-input text-input--multiline"
+                  value={models}
+                  rows={3}
+                  spellCheck={false}
+                  placeholder={"gpt-5.5 = GPT-5.5\ngpt-5.4-mini"}
+                  onChange={(event) => setModels(event.target.value)}
+                />
+              </label>
+            </div>
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => void save()}
+              disabled={saving}
+            >
+              {saving ? "Saving…" : "Save and re-check"}
+            </button>
+          </div>
+        ) : null}
       </div>
-
-      {showAccounts ? <AccountsSection family={familyOf(provider)} /> : null}
-
-      {configurable ? (
-        <div className="provider-entry__config">
-          <label className="stacked-field">
-            <span className="field__description">Executable path</span>
-            <input
-              className="text-input"
-              value={path}
-              placeholder="Leave empty to search PATH"
-              onChange={(event) => setPath(event.target.value)}
-            />
-          </label>
-          <label className="stacked-field">
-            <span className="field__description">Extra arguments</span>
-            <input
-              className="text-input"
-              value={args}
-              placeholder="Optional, separated by spaces"
-              onChange={(event) => setArgs(event.target.value)}
-            />
-          </label>
-          <label className="stacked-field">
-            <span className="field__description">
-              Models, one per line as <code>id</code> or <code>id = Name</code>.
-              These tools have no command that lists them, so what you enter
-              here is what the session picker offers.
-            </span>
-            <textarea
-              className="text-input text-input--multiline"
-              value={models}
-              rows={4}
-              spellCheck={false}
-              placeholder={"gpt-5.5 = GPT-5.5\ngpt-5.4-mini"}
-              onChange={(event) => setModels(event.target.value)}
-            />
-          </label>
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={() => void save()}
-            disabled={saving}
-          >
-            {saving ? "Saving" : "Save and re-check"}
-          </button>
-        </div>
-      ) : null}
     </article>
   );
 }
@@ -302,50 +369,52 @@ function AccountsSection({ family }: { readonly family: string }): JSX.Element {
   };
 
   return (
-    <div className="section">
-      <p className="section__label">Accounts</p>
-      {accounts.length === 0 ? (
+    <div className="provider-row__config">
+      <p className="provider-row__subtitle">Accounts</p>
+      {accounts.length === 0 && detected.length === 0 ? (
         <p className="field__description">
-          The tool&apos;s own sign-in, plus every account below as its own entry.
+          The tool&apos;s own sign-in, plus every account added here as its own entry.
         </p>
       ) : null}
-      {accounts.map((account) => (
-        <div className="row" key={account.id} title={account.home}>
-          <span className="row__text">{account.label}</span>
-          <span className="row__meta">{account.home}</span>
-          <button
-            type="button"
-            className="quiet-button"
-            aria-label={`Disconnect ${account.label}`}
-            onClick={() => void removeAccount(account.id)}
-          >
-            <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
-            Disconnect
-          </button>
+      {accounts.length + detected.length > 0 ? (
+        <div className="account-list">
+          {accounts.map((account) => (
+            <div className="account-row" key={account.id} title={account.home}>
+              <span className="account-row__label">{account.label}</span>
+              <span className="account-row__home">{account.home}</span>
+              <button
+                type="button"
+                className="quiet-button"
+                aria-label={`Disconnect ${account.label}`}
+                onClick={() => void removeAccount(account.id)}
+              >
+                <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
+                Disconnect
+              </button>
+            </div>
+          ))}
+          {detected.map((candidate) => (
+            <div className="account-row" key={candidate.home} title={candidate.home}>
+              <span className="account-row__label">{candidate.suggestedLabel}</span>
+              <span className="account-row__home">detected · {candidate.home}</span>
+              <button
+                type="button"
+                className="quiet-button"
+                disabled={busy}
+                onClick={() =>
+                  void add({ label: candidate.suggestedLabel, home: candidate.home })
+                }
+              >
+                <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
+                Connect
+              </button>
+            </div>
+          ))}
         </div>
-      ))}
-      {detected.map((candidate) => (
-        <div className="row" key={candidate.home} title={candidate.home}>
-          <span className="row__text">{candidate.suggestedLabel}</span>
-          <span className="row__meta">{candidate.home}</span>
-          <button
-            type="button"
-            className="quiet-button"
-            disabled={busy}
-            onClick={() =>
-              void add({ label: candidate.suggestedLabel, home: candidate.home })
-            }
-          >
-            <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
-            Connect
-          </button>
-        </div>
-      ))}
-      <div className="provider-entry__config">
+      ) : null}
+      <div className="form-grid">
         <label className="stacked-field">
-          <span className="field__description">
-            Label for a further account; signing in happens in the tool itself.
-          </span>
+          <span className="field__description">Label for a further account</span>
           <input
             className="text-input"
             value={label}
@@ -354,9 +423,7 @@ function AccountsSection({ family }: { readonly family: string }): JSX.Element {
           />
         </label>
         <label className="stacked-field">
-          <span className="field__description">
-            Existing home to use, or empty for a fresh one.
-          </span>
+          <span className="field__description">Existing home, or empty for a fresh one</span>
           <input
             className="text-input"
             value={home}
@@ -365,23 +432,36 @@ function AccountsSection({ family }: { readonly family: string }): JSX.Element {
             onChange={(event) => setHome(event.target.value)}
           />
         </label>
-        <button
-          type="button"
-          className="ghost-button"
-          disabled={busy || label.trim().length === 0}
-          onClick={() =>
-            void add({
-              label,
-              ...(home.trim().length > 0 ? { home: home.trim() } : {}),
-            })
-          }
-        >
-          <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
-          {busy ? "Adding" : "Add account"}
-        </button>
       </div>
+      <p className="field__description">Signing in happens in the tool itself.</p>
+      <button
+        type="button"
+        className="ghost-button"
+        disabled={busy || label.trim().length === 0}
+        onClick={() =>
+          void add({
+            label,
+            ...(home.trim().length > 0 ? { home: home.trim() } : {}),
+          })
+        }
+      >
+        <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
+        {busy ? "Adding…" : "Add account"}
+      </button>
     </div>
   );
+}
+
+/** The models a stored configuration holds; anything malformed is skipped. */
+function modelsOf(config: StoredProviderConfig | undefined): ModelInfo[] {
+  const raw: unknown = config?.settings["models"];
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.flatMap((entry: unknown) => {
+    const parsed = modelInfoSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
 }
 
 /** "id = Display name" per line, which is how the field round-trips. */
@@ -436,16 +516,19 @@ function modelsLabel(
   return `${names} · ${provenance}`;
 }
 
+/** "sessionResume" → "session resume": the capability's own words, spaced. */
+function capabilityLabel(capability: string): string {
+  return capability.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+}
+
 function installationLabel(provider: ProviderSummary): string {
   switch (provider.installation.state) {
     case "installed":
-      return provider.installation.version
-        ? `Installed · ${provider.installation.version}`
-        : "Installed";
+      return provider.installation.version ?? "Installed";
     case "notInstalled":
       return "Not installed";
     case "unsupported":
-      return "Unsupported on this platform";
+      return "Unsupported here";
     default:
       return "Unknown";
   }
@@ -460,7 +543,7 @@ function accountWording(label: string): string {
   return spaced.length === 0 ? label : spaced;
 }
 
-/** Card-head pill: state first, honest about the unknown. */
+/** Row pill: state first, honest about the unknown. */
 function authTone(provider: ProviderSummary): string {
   switch (provider.auth.state) {
     case "authenticated":
@@ -490,7 +573,8 @@ function authPillLabel(provider: ProviderSummary): string {
   }
 }
 
-function authLabel(provider: ProviderSummary): string {  switch (provider.auth.state) {
+function authLabel(provider: ProviderSummary): string {
+  switch (provider.auth.state) {
     case "authenticated": {
       const account = provider.auth.accountLabel;
       const plan = provider.auth.plan;
@@ -532,7 +616,7 @@ function usageLabel(provider: ProviderSummary): string {
 function usageStateLabel(state: string): string {
   switch (state) {
     case "available":
-      return "Reported by the provider";
+      return "Reported by the tool";
     case "partial":
       return "Partially reported";
     case "estimated":
@@ -616,83 +700,88 @@ function CustomProviderSection({
   };
 
   return (
-    <section aria-label="Custom providers">
-      <p className="section__label">Custom providers</p>
-      <p className="field__description">
-        An OpenAI-compatible server of your own. The secret itself is never
-        pasted here: keep it in the operating system&apos;s keychain and enter
-        only its credential reference, or leave it empty for servers that need
-        no key.
-      </p>
-      <div className="provider-entry__config">
-        <label className="stacked-field">
-          <span className="field__description">Name</span>
-          <input
-            className="text-input"
-            value={name}
-            placeholder="Local Llama"
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label className="stacked-field">
-          <span className="field__description">OpenAI base URL</span>
-          <input
-            className="text-input"
-            value={baseUrl}
-            placeholder="http://localhost:11434/v1"
-            spellCheck={false}
-            onChange={(event) => setBaseUrl(event.target.value)}
-          />
-        </label>
-        <label className="stacked-field">
-          <span className="field__description">API key reference, if the server needs one</span>
-          <input
-            className="text-input"
-            value={keyReference}
-            placeholder="Optional credential reference"
-            spellCheck={false}
-            onChange={(event) => setKeyReference(event.target.value)}
-          />
-        </label>
-        <label className="stacked-field">
-          <span className="field__description">
-            Models, one per line as <code>id</code> or <code>id = Name</code>.
-          </span>
-          <textarea
-            className="text-input text-input--multiline"
-            value={models}
-            rows={3}
-            spellCheck={false}
-            placeholder={"llama3.1 = Llama 3.1\nqwen2.5"}
-            onChange={(event) => setModels(event.target.value)}
-          />
-        </label>
-        {problem ? (
-          <p className="notice" role="alert">
-            {problem}
-          </p>
-        ) : null}
-        {notice ? (
-          <p className="field__description" role="status">
-            {notice}
-          </p>
-        ) : null}
-        <button
-          type="button"
-          className="ghost-button"
-          onClick={() => void save()}
-          disabled={saving}
-        >
-          {saving ? "Saving" : "Save custom provider"}
-        </button>
-      </div>
+    <SettingGroup
+      title="Custom providers"
+      lede="An OpenAI-compatible server of your own: Ollama, llama.cpp, vLLM, a company gateway."
+    >
       {saved.map((config) => (
-        <div className="row" key={config.providerId} title={config.baseUrl ?? ""}>
-          <span className="row__text">{config.providerId}</span>
-          <span className="row__meta">{storedCustomLabel(config, activeIds)}</span>
+        <div className="setting" key={config.providerId} title={config.baseUrl ?? ""}>
+          <div className="setting__text">
+            <p className="setting__label">{config.providerId}</p>
+            <p className="setting__description">{storedCustomLabel(config, activeIds)}</p>
+          </div>
         </div>
       ))}
-    </section>
+      <SettingDisclosure label="Add a server">
+        <div className="provider-row__config provider-row__config--inset">
+          <div className="form-grid">
+            <label className="stacked-field">
+              <span className="field__description">Name</span>
+              <input
+                className="text-input"
+                value={name}
+                placeholder="Local Llama"
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            <label className="stacked-field">
+              <span className="field__description">OpenAI base URL</span>
+              <input
+                className="text-input"
+                value={baseUrl}
+                placeholder="http://localhost:11434/v1"
+                spellCheck={false}
+                onChange={(event) => setBaseUrl(event.target.value)}
+              />
+            </label>
+            <label className="stacked-field form-grid__full">
+              <span className="field__description">
+                API key reference, if the server needs one. The key itself stays in the
+                system keychain and is never pasted here.
+              </span>
+              <input
+                className="text-input"
+                value={keyReference}
+                placeholder="Optional credential reference"
+                spellCheck={false}
+                onChange={(event) => setKeyReference(event.target.value)}
+              />
+            </label>
+            <label className="stacked-field form-grid__full">
+              <span className="field__description">
+                Models, one per line as <code>id</code> or <code>id = Name</code>.
+              </span>
+              <textarea
+                className="text-input text-input--multiline"
+                value={models}
+                rows={3}
+                spellCheck={false}
+                placeholder={"llama3.1 = Llama 3.1\nqwen2.5"}
+                onChange={(event) => setModels(event.target.value)}
+              />
+            </label>
+          </div>
+          {problem ? (
+            <p className="notice" role="alert">
+              {problem}
+            </p>
+          ) : null}
+          {notice ? (
+            <p className="field__description" role="status">
+              {notice}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => void save()}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save custom provider"}
+          </button>
+        </div>
+      </SettingDisclosure>
+    </SettingGroup>
   );
 }
 
@@ -701,9 +790,7 @@ function storedCustomLabel(
   config: StoredProviderConfig,
   activeIds: ReadonlySet<string>,
 ): string {
-  const models = Array.isArray(config.settings["models"])
-    ? (config.settings["models"] as ModelInfo[]).length
-    : 0;
-  const state = activeIds.has(config.providerId) ? "active" : "stored";
-  return `${models} model${models === 1 ? "" : "s"} · ${state}`;
+  const models = modelsOf(config).length;
+  const state = activeIds.has(config.providerId) ? "active" : "stored, loads at startup";
+  return `${config.baseUrl ?? "No URL"} · ${models} model${models === 1 ? "" : "s"} · ${state}`;
 }

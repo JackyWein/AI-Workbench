@@ -3309,3 +3309,230 @@ button.sidebar__user[aria-current="true"] {
   display: inline-flex;
   gap: 3px;
 }
+
+/* ------------------------------------------------------------ entry list -- */
+
+/*
+ * A run of collapsible entries as one panel: each entry is a line, the lines
+ * are separated by hairlines, and an open entry grows in place.
+ */
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.entry-list > .provider-entry {
+  margin: 0;
+  padding: 0;
+  gap: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+}
+
+.entry-list > .provider-entry + .provider-entry {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.provider-row__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 52px;
+  padding: 0 var(--space-5) 0 var(--space-4);
+}
+
+.provider-row__toggle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  align-self: stretch;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.provider-row__toggle:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+}
+
+.provider-row__name {
+  font-size: var(--text-md);
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.provider-row[data-enabled="false"] .provider-row__name,
+.provider-row[data-enabled="false"] .logo-well {
+  opacity: 0.5;
+}
+
+.provider-row__head .row__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.provider-row:hover .provider-entry__chevron,
+.provider-row__toggle[aria-expanded="true"] .provider-entry__chevron {
+  color: var(--text-secondary);
+}
+
+.provider-row__usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.provider-row__usage:hover {
+  color: var(--text-primary);
+}
+
+.provider-row__usage[data-tone="warn"] {
+  color: var(--warning);
+}
+
+.provider-row__usage[data-tone="warn"] .mini-meter__fill {
+  background: var(--warning);
+}
+
+.provider-row__usage[data-tone="full"] {
+  color: var(--danger);
+}
+
+.provider-row__usage[data-tone="full"] .mini-meter__fill {
+  background: var(--danger);
+}
+
+.provider-row__details {
+  gap: var(--space-4);
+  padding: 2px var(--space-5) var(--space-5) 44px;
+}
+
+.provider-row__description {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.provider-row__details .detail-list {
+  background: var(--surface-sunken);
+}
+
+.detail__value--path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+
+.tag--more {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  background: none;
+  border: 1px dashed var(--border-subtle);
+  cursor: pointer;
+}
+
+.tag--more:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.provider-row__config {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.provider-row__config--inset {
+  padding: var(--space-4) 0 var(--space-5);
+}
+
+.provider-row__subtitle {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3) var(--space-4);
+  width: 100%;
+}
+
+.form-grid__full {
+  grid-column: 1 / -1;
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-height: 34px;
+  font-size: var(--text-sm);
+}
+
+.account-row + .account-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.account-row__label {
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.account-row__home {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* In the sidebar the panel takes the row's width, so nothing spills or scrolls. */
+.sidebar .popover__panel {
+  left: 0;
+  right: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.setting-group__panel > .setting-disclosure:first-child {
+  border-top: none;
+}
