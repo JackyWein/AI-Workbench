@@ -199,8 +199,11 @@ export function App(): JSX.Element {
                 busy={busy}
                 disabled={false}
                 modelName={
+                  // A model the list does not know is still the one chosen.
                   provider?.models.find((entry) => entry.id === session.modelId)
-                    ?.displayName ?? null
+                    ?.displayName ??
+                  session.modelId ??
+                  null
                 }
                 onSend={(text) => void state.sendMessage(text)}
                 onCancel={() => void state.cancel()}

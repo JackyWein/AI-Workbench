@@ -91,7 +91,8 @@ export function Composer({
             onClick={() => setPaletteOpen(true)}
             title="Change model (Ctrl+K, then a model)"
           >
-            {modelName ?? "No model"} ▾
+            {/* No model chosen: the tool runs its own default. */}
+            {modelName ?? "Default model"} ▾
           </button>
           {busy ? (
             <button type="button" className="ghost-button" onClick={onCancel}>

@@ -171,7 +171,8 @@ interface WorkbenchState {
     id: string;
     name?: string;
     providerId?: string;
-    modelId?: string;
+    /** Null clears it: the tool then runs its own default model. */
+    modelId?: string | null;
   }): Promise<void>;
   deleteSession(id: string): Promise<void>;
 

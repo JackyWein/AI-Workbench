@@ -105,7 +105,7 @@ export function SessionHeader({
           onClick={() => setPaletteOpen(true)}
           title="Change model (Ctrl+K, then a model)"
         >
-          {model?.displayName ?? provider?.metadata.displayName ?? "No model"} ▾
+          {model?.displayName ?? session.modelId ?? provider?.metadata.displayName ?? "No model"} ▾
         </button>
 
         <UsageIndicator

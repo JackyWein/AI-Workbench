@@ -274,6 +274,23 @@ export function CommandPalette(): JSX.Element | null {
             }
           },
         });
+        if (!provider.capabilities.supported.includes("modelSelection")) {
+          continue;
+        }
+        // Always one choice, even when the tool reported no models: its own
+        // default, which is what runs when no model is named.
+        list.push({
+          id: `model.${provider.metadata.id}.default`,
+          label: `Use model: ${provider.metadata.displayName} default`,
+          group: "Models",
+          run: () => {
+            const state = store.getState();
+            const id = state.activeSessionId;
+            if (id) {
+              void state.updateSession({ id, providerId: provider.metadata.id, modelId: null });
+            }
+          },
+        });
         for (const model of provider.models) {
           list.push({
             id: `model.${provider.metadata.id}.${model.id}`,
@@ -292,6 +309,21 @@ export function CommandPalette(): JSX.Element | null {
             },
           });
         }
+        // Why the list is short, said where the list is used, and a way to
+        // ask the tool again — for tools that report their models at all.
+        const discovers =
+          provider.modelsNote !== null || provider.models.some((model) => model.source === "provider");
+        if (!discovers) {
+          continue;
+        }
+        list.push({
+          id: `models.rescan.${provider.metadata.id}`,
+          label: provider.modelsNote
+            ? `Detect models again: ${provider.metadata.displayName} (${provider.modelsNote.slice(0, 90)})`
+            : `Detect models again: ${provider.metadata.displayName}`,
+          group: "Models",
+          run: () => store.getState().rescanModels(provider.metadata.id),
+        });
       }
     }
 

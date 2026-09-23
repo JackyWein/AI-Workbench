@@ -210,7 +210,18 @@ export const geminiProfile: CliProviderProfileInput = {
     loginHint: "Run `gemini` once and complete the sign-in.",
   },
   capabilities: ["chat", "streaming", "modelSelection", "cliAuthentication"],
-  models: [],
+  // The tool has no command that lists models, but it names its own aliases
+  // and resolves them to whatever models are current (GEMINI_MODEL_ALIAS_* in
+  // Gemini CLI 0.60, and its `/model` dialog). Offering those names guesses
+  // nothing, and they stay right when Google moves to newer models: run on
+  // 2026-09-23, `pro` asked the API for gemini-3.1-pro-preview and `flash`
+  // for gemini-3.5-flash, not the names its own source constants still carry.
+  models: [
+    { id: "auto", displayName: "Auto", isDefault: true },
+    { id: "pro", displayName: "Pro" },
+    { id: "flash", displayName: "Flash" },
+    { id: "flash-lite", displayName: "Flash Lite" },
+  ],
   args: [],
   modelArgs: ["--model", "{model}"],
   promptVia: "arg",
