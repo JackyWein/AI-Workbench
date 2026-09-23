@@ -19,6 +19,7 @@ import {
   downloadUpdate,
   getUpdateState,
   installUpdate,
+  openReleasePage,
 } from "./updater.js";
 
 type Handler<C extends IpcChannel> = (
@@ -498,6 +499,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "update.download": () => downloadUpdate(),
     "update.install": () => installUpdate(),
     "update.getStatus": () => getUpdateState(),
+    "update.openReleasePage": () => openReleasePage(),
   };
 
   for (const channel of Object.keys(handlers) as IpcChannel[]) {

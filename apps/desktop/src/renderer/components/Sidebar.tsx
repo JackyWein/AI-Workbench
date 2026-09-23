@@ -1,5 +1,6 @@
 import { type JSX, useMemo, useState } from "react";
 import {
+  ArrowUpCircle,
   FolderPlus,
   Gauge,
   MessageSquarePlus,
@@ -52,6 +53,7 @@ export function Sidebar({
   const mcpServers = useWorkbench((state) => state.mcpServers);
   const providers = useWorkbench((state) => state.providers);
   const teams = useWorkbench((state) => state.teams);
+  const update = useWorkbench((state) => state.update);
   const usage = useWorkbench((state) => state.usage);
   const developerMode = useWorkbench((state) => state.settings.developerMode);
   const now = useNow(30_000);
@@ -245,6 +247,20 @@ export function Sidebar({
       </div>
 
       <div className="sidebar__foot">
+        {update?.availableVersion &&
+        (update.status === "available" || update.status === "downloaded") ? (
+          <button
+            type="button"
+            className="row row--notice"
+            onClick={() => setView("settings")}
+            title="See what's new and update in Settings"
+          >
+            <ArrowUpCircle size={14} strokeWidth={1.75} aria-hidden="true" />
+            <span className="row__text">
+              {update.status === "downloaded" ? "Restart to update" : `Update ${update.availableVersion}`}
+            </span>
+          </button>
+        ) : null}
         <button
           type="button"
           className="row"

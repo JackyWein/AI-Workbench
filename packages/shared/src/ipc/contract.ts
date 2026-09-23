@@ -601,6 +601,8 @@ export const ipcContract = {
     output: z.object({ installing: z.boolean() }),
   },
   "update.getStatus": { input: z.void(), output: updateStateSchema },
+  /** Opens the available version's release page in the browser. */
+  "update.openReleasePage": { input: z.void(), output: z.object({ opened: z.boolean() }) },
 } as const;
 
 export type IpcContract = typeof ipcContract;

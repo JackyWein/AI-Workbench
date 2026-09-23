@@ -1,6 +1,7 @@
 import { useEffect, useState, type JSX } from "react";
 import type { UpdateState } from "@ai-workbench/shared";
-import { describeError, invoke, onAppEvent } from "../lib/client.js";
+import { describeError, invoke } from "../lib/client.js";
+import { useWorkbench } from "../store/workbench.js";
 import { SettingRow } from "./Controls.js";
 
 interface UpdateSectionProps {
@@ -30,11 +31,7 @@ function statusText(state: UpdateState): string {
   }
 }
 
-/**
- * Shown before the first status arrives, so event handlers and the view
- * never deal with a missing object; early events update it instead of
- * being dropped.
- */
+/** Shown before the first status arrives. */
 const DEFAULT_STATUS: UpdateState = {
   status: "idle",
   currentVersion: "",
@@ -42,85 +39,25 @@ const DEFAULT_STATUS: UpdateState = {
   releaseNotes: null,
   error: null,
   progress: null,
+  installsItself: true,
+  manualReason: null,
+  releaseUrl: null,
 };
 
 /**
- * Updates over GitHub Releases, as rows of the About group. The app only
- * ever checks on its own; the
- * download and the install each wait for an explicit confirmation here, so
- * there is no silent fetch and no silent restart.
+ * Updates over GitHub Releases, as rows of the About group. The app checks
+ * on its own, at start and every few hours; the download and the install
+ * each wait for the person. A build that cannot replace itself says why and
+ * opens the release page instead.
  */
 export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Element {
-  const [status, setStatus] = useState<UpdateState>(DEFAULT_STATUS);
+  const status = useWorkbench((state) => state.update) ?? DEFAULT_STATUS;
+  const refreshUpdate = useWorkbench((state) => state.refreshUpdate);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    void invoke("update.getStatus", undefined).then(
-      (next) => {
-        if (!cancelled) {
-          setStatus(next);
-        }
-      },
-      (error: unknown) => {
-        if (!cancelled) {
-          setActionError(describeError(error));
-        }
-      },
-    );
-    const detach = onAppEvent((event) => {
-      switch (event.type) {
-        case "update.checking":
-          setStatus((previous) => ({ ...previous, status: "checking", error: null }));
-          break;
-        case "update.available":
-          setStatus((previous) => ({
-            ...previous,
-            status: "available",
-            availableVersion: event.version,
-            releaseNotes: event.releaseNotes,
-            error: null,
-            progress: null,
-          }));
-          break;
-        case "update.progress":
-          setStatus((previous) => ({
-            ...previous,
-            status: "downloading",
-            progress: event.percent,
-          }));
-          break;
-        case "update.downloaded":
-          setStatus((previous) => ({
-            ...previous,
-            status: "downloaded",
-            availableVersion: event.version,
-            progress: 100,
-            error: null,
-          }));
-          break;
-        case "update.not-available":
-          setStatus((previous) => ({
-            ...previous,
-            status: "not-available",
-            availableVersion: null,
-            releaseNotes: null,
-            error: null,
-            progress: null,
-          }));
-          break;
-        case "update.error":
-          setStatus((previous) => ({ ...previous, status: "error", error: event.message }));
-          break;
-        default:
-          break;
-      }
-    });
-    return () => {
-      cancelled = true;
-      detach();
-    };
-  }, []);
+    void refreshUpdate();
+  }, [refreshUpdate]);
 
   const busy = status.status === "checking" || status.status === "downloading";
 
@@ -133,6 +70,13 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Eleme
 
   const handleDownload = (): void => {
     if (status.availableVersion === null) {
+      return;
+    }
+    if (!status.installsItself) {
+      setActionError(null);
+      void invoke("update.openReleasePage", undefined).catch((error: unknown) => {
+        setActionError(describeError(error));
+      });
       return;
     }
     const confirmed = window.confirm(
@@ -179,7 +123,19 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Eleme
       {status.status === "available" && status.availableVersion ? (
         <SettingRow
           label={`Version ${status.availableVersion} is available`}
-          description={status.releaseNotes ?? "Nothing is downloaded until you say so."}
+          description={
+            <>
+              {status.installsItself ? null : (
+                <>
+                  {status.manualReason}
+                  <br />
+                </>
+              )}
+              <span className="update-notes">
+                {status.releaseNotes ?? "Nothing is downloaded until you say so."}
+              </span>
+            </>
+          }
         >
           <button
             type="button"
@@ -187,7 +143,7 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Eleme
             disabled={busy}
             onClick={handleDownload}
           >
-            Download
+            {status.installsItself ? "Download" : "Open download page"}
           </button>
         </SettingRow>
       ) : null}

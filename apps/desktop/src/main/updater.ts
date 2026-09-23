@@ -1,4 +1,6 @@
-import { app } from "electron";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { app, net, shell } from "electron";
 import type { AppEvent, Logger, UpdateState } from "@ai-workbench/shared";
 
 export interface UpdaterDeps {
@@ -32,7 +34,63 @@ let state: UpdateState = {
   releaseNotes: null,
   error: null,
   progress: null,
+  installsItself: true,
+  manualReason: null,
+  releaseUrl: null,
 };
+
+/**
+ * Whether this build can replace itself. electron-updater installs over the
+ * Windows setup version and the AppImage. It cannot touch the portable
+ * Windows file, macOS installs only updates signed like the running app (this
+ * build is not signed), and a Linux archive has nothing to install into — so
+ * for those a new version is fetched from its release page instead.
+ */
+export function selfInstall(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): { installsItself: boolean; reason: string | null } {
+  if (platform === "win32" && env["PORTABLE_EXECUTABLE_FILE"]) {
+    return {
+      installsItself: false,
+      reason:
+        "The portable version can't replace itself. Download the new one, or install the setup version once to update in place from then on.",
+    };
+  }
+  if (platform === "darwin") {
+    return {
+      installsItself: false,
+      reason:
+        "macOS only installs updates signed by a developer account, which this build isn't. Download the new version and move it to Applications.",
+    };
+  }
+  if (platform === "linux" && !env["APPIMAGE"]) {
+    return {
+      installsItself: false,
+      reason: "Only the AppImage updates itself. Download the new version from its release page.",
+    };
+  }
+  return { installsItself: true, reason: null };
+}
+
+/** Where releases are published, as the packaged build records it. */
+function releaseSource(): { owner: string; repo: string } | null {
+  try {
+    const text = readFileSync(join(process.resourcesPath, "app-update.yml"), "utf8");
+    const owner = /^owner:\s*(\S+)/m.exec(text)?.[1];
+    const repo = /^repo:\s*(\S+)/m.exec(text)?.[1];
+    return owner && repo ? { owner, repo } : null;
+  } catch {
+    return null;
+  }
+}
+
+function releasePage(version: string): string | null {
+  const source = releaseSource();
+  return source
+    ? `https://github.com/${source.owner}/${source.repo}/releases/tag/v${version}`
+    : null;
+}
 
 /**
  * Remembers the main-process dependencies. Warming up the loader here keeps
@@ -41,6 +99,7 @@ let state: UpdateState = {
  */
 export function initUpdater(next: UpdaterDeps): void {
   deps = next;
+  const mode = selfInstall(process.platform, process.env);
   state = {
     status: "idle",
     currentVersion: next.currentVersion,
@@ -48,6 +107,9 @@ export function initUpdater(next: UpdaterDeps): void {
     releaseNotes: null,
     error: null,
     progress: null,
+    installsItself: mode.installsItself,
+    manualReason: mode.reason,
+    releaseUrl: null,
   };
   setupPromise = null;
   if (app.isPackaged) {
@@ -76,6 +138,9 @@ export async function checkForUpdates(): Promise<{ started: boolean }> {
     publish({ type: "update.error", message: "Updates are only available in the installed app, not in development." });
     return { started: false };
   }
+  if (!state.installsItself) {
+    return checkReleasePage(current);
+  }
   const updater = await ensureSetup();
   if (!updater) {
     const message = "The updater module could not be loaded. Reinstall the app from GitHub Releases.";
@@ -87,7 +152,15 @@ export async function checkForUpdates(): Promise<{ started: boolean }> {
   try {
     setState({ status: "checking", error: null, progress: null });
     publish({ type: "update.checking" });
-    await updater.checkForUpdates();
+    const result = await updater.checkForUpdates();
+    if (result === null || result === undefined) {
+      // electron-updater answers nothing, and emits nothing, for a build it
+      // cannot update; "checking" must not stay on screen forever.
+      const message = "This build can't check for updates. Download new versions from GitHub Releases.";
+      setState({ status: "error", error: message });
+      publish({ type: "update.error", message });
+      return { started: false };
+    }
     return { started: true };
   } catch (error) {
     const message = describeError(error);
@@ -96,6 +169,72 @@ export async function checkForUpdates(): Promise<{ started: boolean }> {
     publish({ type: "update.error", message });
     return { started: false };
   }
+}
+
+/**
+ * The check for a build that cannot update itself: the latest release, read
+ * from GitHub's public API, compared with this version. Nothing is fetched
+ * but that one answer; the download is the person's, from the release page.
+ */
+async function checkReleasePage(current: UpdaterDeps): Promise<{ started: boolean }> {
+  const source = releaseSource();
+  if (!source) {
+    const message = "This build doesn't say where its releases are published.";
+    setState({ status: "error", error: message });
+    publish({ type: "update.error", message });
+    return { started: false };
+  }
+  setState({ status: "checking", error: null, progress: null });
+  publish({ type: "update.checking" });
+  try {
+    const response = await net.fetch(
+      `https://api.github.com/repos/${source.owner}/${source.repo}/releases/latest`,
+      { headers: { accept: "application/vnd.github+json" } },
+    );
+    if (!response.ok) {
+      throw new Error(`GitHub answered ${response.status}`);
+    }
+    const release = (await response.json()) as {
+      tag_name?: unknown;
+      body?: unknown;
+      html_url?: unknown;
+    };
+    const version = typeof release.tag_name === "string" ? release.tag_name.replace(/^v/, "") : "";
+    if (!version || !isNewerVersion(version, state.currentVersion)) {
+      setState({ status: "not-available", availableVersion: null, releaseNotes: null, releaseUrl: null });
+      publish({ type: "update.not-available", version: state.currentVersion });
+      return { started: true };
+    }
+    const releaseNotes = normalizeReleaseNotes(release.body);
+    setState({
+      status: "available",
+      availableVersion: version,
+      releaseNotes,
+      releaseUrl: typeof release.html_url === "string" ? release.html_url : releasePage(version),
+      error: null,
+    });
+    publish({ type: "update.available", version, releaseNotes });
+    return { started: true };
+  } catch (error) {
+    const message = describeError(error);
+    current.logger.warn("Release check failed", { error: message });
+    setState({ status: "error", error: message });
+    publish({ type: "update.error", message });
+    return { started: false };
+  }
+}
+
+/**
+ * Opens the available version's release page in the browser. Only a GitHub
+ * release page is ever opened from here.
+ */
+export async function openReleasePage(): Promise<{ opened: boolean }> {
+  const url = state.releaseUrl;
+  if (!url || !/^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\//.test(url)) {
+    return { opened: false };
+  }
+  await shell.openExternal(url);
+  return { opened: true };
 }
 
 /**
@@ -115,6 +254,9 @@ export async function downloadUpdate(): Promise<{ started: boolean }> {
   if (state.availableVersion === null || state.status === "downloaded") {
     current.logger.debug("Skipping update download: no update is available");
     return { started: false };
+  }
+  if (!state.installsItself) {
+    return { started: (await openReleasePage()).opened };
   }
   const updater = await ensureSetup();
   if (!updater) {
@@ -312,6 +454,7 @@ function attachListeners(updater: AutoUpdaterLike, current: UpdaterDeps): void {
         status: "available",
         availableVersion: parsed.version,
         releaseNotes: parsed.releaseNotes,
+        releaseUrl: releasePage(parsed.version),
         error: null,
         progress: null,
       });

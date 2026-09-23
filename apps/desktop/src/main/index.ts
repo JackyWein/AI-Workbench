@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow } from "electron";
 import { createServices, type AppServices } from "./services.js";
-import { checkForUpdates, initUpdater } from "./updater.js";
+import { checkForUpdates, getUpdateState, initUpdater } from "./updater.js";
 import { registerIpcHandlers, removeIpcHandlers } from "./ipc.js";
 import { IslandController } from "./island-controller.js";
 import { runStartupCheck } from "./startup-check.js";
@@ -12,6 +12,9 @@ import { hideToTray } from "./tray.js";
 import { createMainWindow, resolveRendererFile } from "./window.js";
 
 const isDevelopment = !app.isPackaged;
+
+/** How often a running app asks whether a newer version was released. */
+const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 /** Set by `bun run verify:app`, which starts the app headlessly and exits. */
 const startupCheckOnly = process.env["AI_WORKBENCH_STARTUP_CHECK"] === "1";
@@ -96,6 +99,14 @@ async function bootstrap(): Promise<void> {
     // the update.* domain events, and the current state stays readable
     // through update.getStatus.
     void checkForUpdates();
+    // Still only a check: people leave the app open for days, and a new
+    // version should show up without a restart.
+    setInterval(() => {
+      const status = getUpdateState().status;
+      if (status !== "downloading" && status !== "downloaded") {
+        void checkForUpdates();
+      }
+    }, UPDATE_CHECK_INTERVAL_MS).unref();
   }
 
   if (startupCheckOnly) {

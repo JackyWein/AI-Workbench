@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainReleaseNotes, resolveAutoUpdater } from "../updater.js";
+import { plainReleaseNotes, resolveAutoUpdater, selfInstall } from "../updater.js";
 
 function fakeUpdater(): Record<string, unknown> {
   return {
@@ -55,5 +55,20 @@ describe("release notes", () => {
     expect(plainReleaseNotes(html)).toBe(
       "Every agent on the island\n\n- Codex & OpenCode\n- Gemini CLI\n\nKnown limits",
     );
+  });
+});
+
+describe("which builds update themselves", () => {
+  it("installs over the Windows setup version and the AppImage", () => {
+    expect(selfInstall("win32", {}).installsItself).toBe(true);
+    expect(selfInstall("linux", { APPIMAGE: "/home/me/AI-Workbench.AppImage" }).installsItself).toBe(true);
+  });
+
+  it("sends the portable version, the unsigned Mac build and a Linux archive to the release page", () => {
+    const portable = selfInstall("win32", { PORTABLE_EXECUTABLE_FILE: "D:\\AI-Workbench.exe" });
+    expect(portable.installsItself).toBe(false);
+    expect(portable.reason).toMatch(/portable/);
+    expect(selfInstall("darwin", {}).reason).toMatch(/signed/);
+    expect(selfInstall("linux", {}).reason).toMatch(/AppImage/);
   });
 });

@@ -4118,3 +4118,17 @@ button.sidebar__user[aria-current="true"] {
 .setting__description[data-tone="error"] {
   color: var(--danger, #e5484d);
 }
+
+/* -------------------------------------------------------------- updates -- */
+
+.update-notes {
+  white-space: pre-line;
+}
+
+.row.row--notice {
+  color: var(--accent);
+}
+
+.row.row--notice .row__text {
+  color: var(--accent);
+}

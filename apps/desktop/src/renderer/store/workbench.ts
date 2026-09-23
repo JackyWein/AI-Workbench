@@ -12,6 +12,7 @@ import type {
   AppSettings,
   ChatMessage,
   MessageAttachment,
+  UpdateState,
   McpServerConfig,
   McpServerStatus,
   PluginAccount,
@@ -129,6 +130,8 @@ interface WorkbenchState {
   connections: SshConnection[];
   /** The last result of testing a connection, by connection id. */
   connectionTests: Record<string, SshConnectionTest>;
+  /** Where the app's own updates stand; null until first read. */
+  update: UpdateState | null;
   mcpStatuses: McpServerStatus[];
   /** MCP servers the active session may use (spec §38). */
   sessionMcpServerIds: string[];
@@ -347,6 +350,7 @@ interface WorkbenchState {
   updateSettings(input: Partial<AppSettings>): Promise<void>;
 
   applyEvent(event: AppEvent): void;
+  refreshUpdate(): Promise<void>;
   appendDeltas(deltas: Map<string, { sessionId: string; text: string }>): void;
 }
 
@@ -396,6 +400,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   mcpServers: [],
   connections: [],
   connectionTests: {},
+  update: null,
   mcpStatuses: [],
   sessionMcpServerIds: [],
 
@@ -448,6 +453,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         bootError: null,
       });
 
+      void get().refreshUpdate();
       const firstWorkspace = workspaces[0];
       if (firstWorkspace) {
         await get().selectWorkspace(firstWorkspace.id);
@@ -1586,9 +1592,31 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         }
         break;
       }
+      case "update.progress":
+        set((state) => ({
+          update: state.update
+            ? { ...state.update, status: "downloading", progress: event.percent }
+            : state.update,
+        }));
+        break;
+      case "update.checking":
+      case "update.available":
+      case "update.downloaded":
+      case "update.not-available":
+      case "update.error":
+        void get().refreshUpdate();
+        break;
       case "message.delta":
       case "provider.event":
         break;
+    }
+  },
+
+  async refreshUpdate() {
+    try {
+      set({ update: await invoke("update.getStatus", undefined) });
+    } catch {
+      // The update state is a convenience; the app works without it.
     }
   },
 
