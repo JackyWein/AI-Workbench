@@ -1108,7 +1108,8 @@ export async function runStartupCheck(
         "[...document.querySelectorAll('.isl__actions button')].map(node => node.textContent)",
       );
       if (
-        bounds.width === 340 &&
+        // The card opens beside the circle, so the window holds both.
+        bounds.width >= 340 &&
         bounds.height > 90 &&
         Array.isArray(actions) &&
         actions.some((label) => typeof label === "string" && label.includes("Open"))
@@ -1151,7 +1152,8 @@ export async function runStartupCheck(
     if (!target) {
       return false;
     }
-    // Same async settle in reverse: the circle measures 42px, reported back.
+    // Same async settle in reverse: the circle (42px plus the room for its
+    // ring and badge) measures back.
     const deadline = Date.now() + 8_000;
     while (Date.now() < deadline) {
       const bounds = target.getBounds();
@@ -1160,8 +1162,8 @@ export async function runStartupCheck(
       );
       const state = await island.refresh();
       if (
-        bounds.width <= 64 &&
-        bounds.height <= 64 &&
+        bounds.width <= 72 &&
+        bounds.height <= 72 &&
         actions === 0 &&
         state.expanded === false
       ) {

@@ -451,6 +451,14 @@ export const ipcContract = {
     output: z.object({ opened: z.boolean() }),
   },
   "statusIsland.dismiss": { input: z.void(), output: islandStateSchema },
+  /**
+   * Types a prompt into an agent the island lists, by its row key. Only a
+   * running agent terminal can take one mid-work; the reason says why not.
+   */
+  "statusIsland.ask": {
+    input: z.object({ key: z.string().min(1).max(200), text: z.string().trim().min(1).max(4000) }),
+    output: z.object({ sent: z.boolean(), to: z.string().nullable(), reason: z.string().nullable() }),
+  },
   /** Returns the island to its default corner and forgets a dragged spot. */
   "statusIsland.resetPosition": { input: z.void(), output: islandStateSchema },
   /** Lets the island page report the size its current face needs. */

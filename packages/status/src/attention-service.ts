@@ -4,6 +4,7 @@ import {
   islandPreferencesSchema,
   type IslandEntry,
   type IslandPreferences,
+  type IslandSessionSummary,
   type IslandState,
   type IslandWidgetId,
   type Logger,
@@ -209,6 +210,7 @@ export class StatusAttentionService {
       expanded: Boolean(holding && this.#preferences.autoExpand),
       entries,
       preferences: this.#preferences,
+      sessions: summarizeSessions(this.#sources.sessions, now),
     };
   }
 
@@ -249,11 +251,40 @@ export class StatusAttentionService {
   }
 }
 
+/** Sessions active within this window count as "recent" for the idle face. */
+const RECENT_MS = 24 * 60 * 60 * 1000;
+
+/** Counts the resting sessions from what they last did, nothing more. */
+export function summarizeSessions(
+  sessions: IslandSources["sessions"],
+  now: Date,
+): IslandSessionSummary {
+  const resting = sessions.filter((session) => !session.busy);
+  const recent = resting.filter(
+    (session) => now.getTime() - session.lastActiveAt.getTime() <= RECENT_MS,
+  );
+  const oldest = recent.reduce<(typeof recent)[number] | null>(
+    (best, session) => (!best || session.lastActiveAt < best.lastActiveAt ? session : best),
+    null,
+  );
+  const newest = resting.reduce<(typeof resting)[number] | null>(
+    (best, session) => (!best || session.lastActiveAt > best.lastActiveAt ? session : best),
+    null,
+  );
+  const ref = (
+    session: (typeof resting)[number] | null,
+  ): IslandSessionSummary["last"] =>
+    session ? { name: session.name.slice(0, 120), icon: session.icon, at: session.lastActiveAt } : null;
+  return { recent: recent.length, longestIdle: ref(oldest), last: ref(newest) };
+}
+
 function emptySources(now: Date): IslandSources {
   return {
     usage: null,
     runs: [],
     busySessions: [],
+    providers: [],
+    sessions: [],
     attention: [],
     errors: [],
     brokenConnections: [],

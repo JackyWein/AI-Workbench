@@ -392,6 +392,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "statusIsland.cycle": (input) => island.cycle(input.direction),
     "statusIsland.open": (input) => ({ opened: island.open(input) }),
     "statusIsland.dismiss": () => island.dismiss(),
+    "statusIsland.ask": (input) => island.ask(input.key, input.text),
     "statusIsland.resetPosition": () => island.resetPosition(),
     "statusIsland.resize": (input) => ({ visible: island.resize(input.width, input.height) }),
 

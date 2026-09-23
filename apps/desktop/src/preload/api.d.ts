@@ -26,6 +26,8 @@ export interface WorkbenchIslandApi {
   open(target: IslandTarget): Promise<void>;
   /** Lets the island settle back to its compact state (spec §97). */
   dismiss(): Promise<void>;
+  /** Types a prompt into the agent listed under this key. */
+  ask(key: string, text: string): Promise<{ sent: boolean; to: string | null; reason: string | null }>;
   /** Steps through the widgets that currently have something to say. */
   cycle(direction: 1 | -1): Promise<void>;
   /** Forgets a dragged spot and edge-dock, back to the default corner. */

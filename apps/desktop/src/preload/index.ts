@@ -89,6 +89,17 @@ const islandApi = {
     await ipcRenderer.invoke("statusIsland.dismiss", undefined);
   },
 
+  async ask(
+    key: string,
+    text: string,
+  ): Promise<{ sent: boolean; to: string | null; reason: string | null }> {
+    return (await ipcRenderer.invoke("statusIsland.ask", { key, text })) as {
+      sent: boolean;
+      to: string | null;
+      reason: string | null;
+    };
+  },
+
   async cycle(direction: 1 | -1): Promise<void> {
     await ipcRenderer.invoke("statusIsland.cycle", { direction });
   },

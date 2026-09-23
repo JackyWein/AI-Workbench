@@ -10,9 +10,12 @@ import {
 import { createRoot } from "react-dom/client";
 import {
   ISLAND_TIMING,
+  type IslandAgentRow,
   type IslandEntry,
+  type IslandSessionSummary,
   type IslandState,
   type IslandTarget,
+  type IslandUsageRow,
 } from "@ai-workbench/shared";
 import { LOGOS, resolveTheme } from "@ai-workbench/ui";
 import "./island.css";
@@ -20,22 +23,45 @@ import "./island.css";
 type HoverMode = "agents" | "usage";
 type Face = "approval" | "question" | "working" | "idle" | "none";
 
+interface AskResult {
+  readonly sent: boolean;
+  readonly to: string | null;
+  readonly reason: string | null;
+}
+
 /** Structural bridge type so cards stay testable without the preload. */
 interface IslandBridge {
   onState(listener: (state: IslandState) => void): () => void;
   open(target: IslandTarget): Promise<void>;
   dismiss(): Promise<void>;
+  ask(key: string, text: string): Promise<AskResult>;
   cycle(direction: 1 | -1): Promise<void>;
   resetPosition(): Promise<void>;
   resize(width: number, height: number): Promise<void>;
+}
+
+/** True when an event started on something that handles its own clicks. */
+function onControl(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest("button, input, textarea") !== null;
+}
+
+/** A clock that ticks once a second, so elapsed times move on their own. */
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
 }
 
 /**
  * The Status Island's own renderer (spec §95–§97, island-guide §§2–4).
  *
  * It renders what the attention service decided and nothing more: no priority
- * logic here, and no number it was not given. All state below is
- * presentation-local (hover intent, pinned card, expanded dock, hover mode).
+ * logic here, and no number it was not given. Docked, the unit is a pill that
+ * opens in place into its card; free, it is a circle whose card opens beside
+ * it on hover. All state below is presentation-local.
  */
 function Island(): JSX.Element | null {
   const bridge = window.workbenchIsland ?? null;
@@ -55,6 +81,7 @@ function Island(): JSX.Element | null {
   const [hiding, setHiding] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  const now = useNow();
   const dragFrom = useRef<{ x: number; y: number } | null>(null);
   const peekTimer = useRef<number | null>(null);
   const hideTimer = useRef<number | null>(null);
@@ -83,12 +110,11 @@ function Island(): JSX.Element | null {
   // Every hook runs on every render, unconditionally: the null-guards below
   // return early, and an early return above a hook is what unmounted this
   // component with "Rendered more hooks than during the previous render".
-  // A new picture collapses nothing the user opened: the expanded dock and
-  // hover mode survive refreshes. Only a face change, or an emptied queue,
-  // settles local state back.
+  // A new picture collapses nothing the user opened: the open card and hover
+  // mode survive refreshes. Only a face change settles local state back.
   const derived = useMemo(() => (state ? deriveFace(state) : null), [state]);
   const faceKey = derived
-    ? `${derived.face}:${derived.approvals.length}:${derived.questions.length}:${derived.working.length}`
+    ? `${derived.face}:${derived.approvals.length}:${derived.questions.length}:${derived.agents.length}`
     : null;
   useEffect(() => {
     if (!derived || faceKey === prevFaceKey.current) {
@@ -106,7 +132,7 @@ function Island(): JSX.Element | null {
     setExpanded(false);
   }, [derived, faceKey]);
 
-  // The window fits the face: report what the content measures so main can
+  // The window fits the unit: report what the content measures so main can
   // size the window to it. Reports only on real change, never in a loop.
   useEffect(() => {
     const root = rootRef.current;
@@ -149,12 +175,10 @@ function Island(): JSX.Element | null {
   }
 
   const docked = state.preferences.dockedEdge;
-  const serviceCard = state.expanded && state.current.action !== null;
   const attentionFace = derived.face === "approval" || derived.face === "question";
-  const showHover =
-    hovering && !pinned && !expanded && !(serviceCard && !attentionFace);
-  const showAttention = pinned || (expanded && attentionFace);
-  const showGeneric = !attentionFace && (pinned || serviceCard) && state.current.action !== null;
+  // News the service holds the island for (an error, a finished run) opens
+  // its card on its own when the user allowed that.
+  const serviceCard = state.expanded && state.current.action !== null && !attentionFace;
 
   const clearHoverTimers = (): void => {
     if (peekTimer.current !== null) {
@@ -173,7 +197,7 @@ function Island(): JSX.Element | null {
   };
   const endHover = (): void => {
     clearHoverTimers();
-    // Grace to reach the layer, then a short fade instead of a hard cut.
+    // Grace to reach the card, then a short fade instead of a hard cut.
     peekTimer.current = window.setTimeout(() => {
       peekTimer.current = null;
       setHiding(true);
@@ -184,13 +208,13 @@ function Island(): JSX.Element | null {
       }, ISLAND_TIMING.hideFadeMs);
     }, ISLAND_TIMING.peekGraceMs);
   };
-  // Grabbing the unit starts an OS drag; no hover layer may follow it.
+  // Grabbing the unit starts an OS drag; no card may follow it.
   const killHover = (): void => {
     clearHoverTimers();
     setHiding(false);
     setHovering(false);
   };
-  const collapseCards = (): void => {
+  const collapse = (): void => {
     setPinned(false);
     setExpanded(false);
   };
@@ -206,23 +230,29 @@ function Island(): JSX.Element | null {
     return Math.hypot(event.clientX - from.x, event.clientY - from.y) > 5;
   };
   const onCardClick = (event: ReactMouseEvent): void => {
-    // An open card collapses back on plain background clicks, never on
-    // buttons — and never on a drag release.
-    const target = event.target as HTMLElement | null;
-    if (target?.closest("button")) {
+    // An open card collapses on plain background clicks, never on its
+    // controls — and never on a drag release.
+    if (onControl(event.target) || releasedFromDrag(event)) {
       return;
     }
-    if (releasedFromDrag(event)) {
-      return;
-    }
-    collapseCards();
+    collapse();
   };
   const resetAll = (): void => {
     setHoverMode("agents");
-    setPinned(false);
-    setExpanded(false);
+    collapse();
     setHovering(false);
     void bridge.resetPosition().catch(() => undefined);
+  };
+  const toggleMode = (): void => {
+    setHoverMode((mode) => {
+      const next = mode === "agents" ? "usage" : "agents";
+      try {
+        window.localStorage.setItem("ai-workbench.island-hover", next);
+      } catch {
+        // A choice that cannot be remembered is not worth an error.
+      }
+      return next;
+    });
   };
 
   const onCircleClick = (event: ReactMouseEvent): void => {
@@ -230,27 +260,19 @@ function Island(): JSX.Element | null {
       return;
     }
     if (derived.face === "working") {
-      setHoverMode((mode) => {
-        const next = mode === "agents" ? "usage" : "agents";
-        try {
-          window.localStorage.setItem("ai-workbench.island-hover", next);
-        } catch {
-          // A choice that cannot be remembered is not worth an error.
-        }
-        return next;
-      });
+      toggleMode();
       return;
     }
-    if (derived.face === "approval" || derived.face === "question") {
+    if (attentionFace) {
       setPinned((value) => !value);
     }
   };
 
-  const onPillToggle = (event: ReactMouseEvent): void => {
+  const onPillClick = (event: ReactMouseEvent): void => {
     if (releasedFromDrag(event)) {
       return;
     }
-    if (derived.face === "approval" || derived.face === "question") {
+    if (attentionFace) {
       setPinned((value) => !value);
     } else {
       setExpanded((value) => !value);
@@ -261,26 +283,85 @@ function Island(): JSX.Element | null {
   // pulse plays without touching root state (hover, timers, focus).
   const morphKey = `${derived.face}:${docked ?? "free"}`;
 
+  const faceCard = (): JSX.Element => {
+    if (serviceCard) {
+      return <GenericCard entry={state.current} bridge={bridge} now={now} />;
+    }
+    switch (derived.face) {
+      case "approval":
+        return <ApprovalCard entries={derived.approvals} bridge={bridge} now={now} />;
+      case "question":
+        return <QuestionCard entries={derived.questions} bridge={bridge} now={now} />;
+      case "working":
+        return <WorkingSheet derived={derived} bridge={bridge} now={now} />;
+      case "idle":
+        return <IdleSheet derived={derived} sessions={state.sessions} now={now} />;
+      case "none":
+        return <NoneSheet derived={derived} sessions={state.sessions} now={now} />;
+    }
+  };
+
+  const open = docked ? pinned || expanded || serviceCard : false;
+
+  // The free circle's side card: pinned attention, held news, or hover.
+  const blobCard = ((): JSX.Element | null => {
+    if (docked) {
+      return null;
+    }
+    if (serviceCard) {
+      return <GenericCard entry={state.current} bridge={bridge} now={now} />;
+    }
+    if (pinned && attentionFace) {
+      return faceCard();
+    }
+    if (!hovering) {
+      return null;
+    }
+    switch (derived.face) {
+      case "approval": {
+        const first = derived.approvals[0];
+        return first ? <ApprovalPeek entry={first} bridge={bridge} now={now} /> : null;
+      }
+      case "question": {
+        const first = derived.questions[0];
+        return first ? <QuestionCard entries={[first]} bridge={bridge} now={now} /> : null;
+      }
+      case "working":
+        return hoverMode === "agents" ? (
+          <AgentsCard agents={derived.agents} bridge={bridge} now={now} />
+        ) : (
+          <UsageCard derived={derived} now={now} />
+        );
+      default:
+        return <UsageCard derived={derived} now={now} />;
+    }
+  })();
+
   return (
     <div
       ref={rootRef}
       className="isl"
       data-face={derived.face}
       data-docked={docked ?? "free"}
-      onMouseEnter={startHover}
-      onMouseLeave={endHover}
+      data-open={open}
+      onMouseEnter={docked ? undefined : startHover}
+      onMouseLeave={docked ? undefined : endHover}
       onMouseDown={(event) => {
         dragFrom.current = { x: event.clientX, y: event.clientY };
-        killHover();
+        if (!onControl(event.target)) {
+          killHover();
+        }
       }}
       onDoubleClick={(event) => {
-        const target = event.target as HTMLElement | null;
-        if (target?.closest("button")) {
+        if (onControl(event.target)) {
           return;
         }
         resetAll();
       }}
       onKeyDown={(event) => {
+        if (event.target instanceof HTMLInputElement) {
+          return;
+        }
         if (event.key === "ArrowRight") {
           event.preventDefault();
           void bridge.cycle(1);
@@ -288,36 +369,39 @@ function Island(): JSX.Element | null {
           event.preventDefault();
           void bridge.cycle(-1);
         } else if (event.key === "Enter") {
-          const target = event.target as HTMLElement | null;
-          if (target?.closest(".isl__actions")) {
+          if (onControl(event.target)) {
             return;
           }
           event.preventDefault();
-          const first = derived.approvals[0] ?? derived.questions[0] ?? derived.working[0];
-          if (first?.action) {
-            void bridge.open(first.action.target);
+          const target =
+            derived.approvals[0]?.action?.target ??
+            derived.questions[0]?.action?.target ??
+            derived.agents[0]?.target ??
+            null;
+          if (target) {
+            void bridge.open(target);
           }
         } else if (event.key === "Escape") {
-          setPinned(false);
-          setExpanded(false);
+          collapse();
           void bridge.dismiss();
-        } else if ((event.metaKey || event.ctrlKey) && /^[1-9]$/.test(event.key)) {
+        } else if (event.ctrlKey && /^[1-9]$/.test(event.key)) {
           // Answering a visible question from the keyboard. Until the
           // question backend lands, an option deep-links to its context.
-          const option = derived.questions[0]?.options[Number(event.key) - 1];
-          const action = derived.questions[0]?.action;
-          if (option && action) {
+          const question = derived.questions[0];
+          const option = question?.options[Number(event.key) - 1];
+          const target = question?.action?.target;
+          if (option && target) {
             event.preventDefault();
-            void bridge.open(action.target);
+            void bridge.open(target);
           }
         }
       }}
       onWheel={(event) => {
-        const now = Date.now();
-        if (now - wheelAt.current < ISLAND_TIMING.wheelThrottleMs) {
+        const stamp = Date.now();
+        if (stamp - wheelAt.current < ISLAND_TIMING.wheelThrottleMs) {
           return;
         }
-        wheelAt.current = now;
+        wheelAt.current = stamp;
         void bridge.cycle(event.deltaY > 0 ? 1 : -1);
       }}
       onContextMenu={(event) => {
@@ -329,195 +413,169 @@ function Island(): JSX.Element | null {
       aria-label={`Status Island: ${derived.unitTitle}`}
     >
       {docked ? (
-        <EdgePill
-          derived={derived}
-          edge={docked}
-          expanded={expanded}
-          morphKey={morphKey}
-          onToggle={onPillToggle}
-        />
+        open ? (
+          <div className="isl__sheet" key={morphKey} onClick={onCardClick}>
+            {faceCard()}
+          </div>
+        ) : (
+          <Pill derived={derived} edge={docked} now={now} morphKey={morphKey} onClick={onPillClick} />
+        )
       ) : (
-        <button
-          type="button"
-          className="isl__circle"
-          onClick={onCircleClick}
-          aria-label={derived.label}
-          title={circleHint(derived.face, hoverMode)}
-        >
-          <span className="isl__morph" key={morphKey}>
-            <IslandMark icon={derived.markIcon} label={derived.label} size={22} />
-          </span>
-          {derived.badge !== null ? (
-            <span className="isl__badge">{derived.badge}</span>
+        <>
+          <button
+            type="button"
+            className="isl__circle"
+            onClick={onCircleClick}
+            aria-label={derived.label}
+            title={circleHint(derived.face, hoverMode)}
+          >
+            <span className="isl__blobin">
+              <span className="isl__morph" key={morphKey}>
+                <FaceMark derived={derived} size={17} />
+              </span>
+            </span>
+            {derived.badge !== null ? <span className="isl__badge">{derived.badge}</span> : null}
+          </button>
+          {blobCard ? (
+            <div
+              className="isl__side"
+              data-hiding={hiding && !pinned && !serviceCard}
+              onClick={onCardClick}
+              onMouseEnter={startHover}
+              onMouseLeave={endHover}
+            >
+              {blobCard}
+            </div>
           ) : null}
-        </button>
+        </>
       )}
-
-      {showHover ? (
-        <div
-          className="isl__hover"
-          data-hiding={hiding}
-          onMouseEnter={startHover}
-          onMouseLeave={endHover}
-        >
-          <HoverLayer derived={derived} hoverMode={hoverMode} bridge={bridge} />
-        </div>
-      ) : null}
-
-      {showAttention ? (
-        <div
-          className="isl__card"
-          onClick={onCardClick}
-          onMouseEnter={startHover}
-          onMouseLeave={endHover}
-        >
-          {derived.face === "approval" ? (
-            <ApprovalCard entries={derived.approvals} bridge={bridge} />
-          ) : (
-            <QuestionCard entries={derived.questions} bridge={bridge} />
-          )}
-        </div>
-      ) : null}
-
-      {showGeneric && state.current.action ? (
-        <div
-          className="isl__card"
-          onClick={onCardClick}
-          onMouseEnter={startHover}
-          onMouseLeave={endHover}
-        >
-          <GenericCard entry={state.current} bridge={bridge} />
-        </div>
-      ) : null}
-
-      {expanded && derived.face !== "approval" && derived.face !== "question" ? (
-        <div
-          className="isl__card"
-          onClick={onCardClick}
-          onMouseEnter={startHover}
-          onMouseLeave={endHover}
-        >
-          <ExpandedPanel derived={derived} />
-        </div>
-      ) : null}
     </div>
   );
 }
 
 interface Derived {
   readonly face: Face;
+  /** What the unit says about itself, for its accessible name. */
   readonly label: string;
-  /** What the unit itself is about: a single entry's title, else the face. */
+  /** What the unit is about: an entry's own title, else the face. */
   readonly unitTitle: string;
   readonly markIcon: string | null;
   readonly badge: number | null;
   readonly approvals: IslandEntry[];
   readonly questions: IslandEntry[];
-  readonly working: IslandEntry[];
-  readonly usageRows: Array<{
-    readonly providerId: string;
-    readonly name: string;
-    readonly window: string;
-    readonly percentLeft: number | null;
-  }>;
+  /** Every agent at work, one row apiece: sessions, terminals and teams. */
+  readonly agents: IslandAgentRow[];
+  readonly usageRows: IslandUsageRow[];
   readonly usageAt: Date | null;
+  readonly recent: number;
 }
 
 function deriveFace(state: IslandState): Derived {
   const approvals = state.entries.filter((entry) => entry.widget === "needsAttention");
   const questions = state.entries.filter((entry) => entry.widget === "agentQuestion");
-  const working = state.entries.filter(
-    (entry) => entry.widget === "activeAgents" || entry.widget === "teamProgress",
-  );
+  const teams = state.entries.filter((entry) => entry.widget === "teamProgress");
+  const active = state.entries.filter((entry) => entry.widget === "activeAgents");
+  // Tools first, teams after: the lead is the agent a person watches.
+  const agents = [...active, ...teams].flatMap((entry) => entry.agents);
+  // An entry that came without rows still gets one, so nothing at work is
+  // left off the list.
+  const rows =
+    agents.length > 0
+      ? agents
+      : [...active, ...teams].map(
+          (entry): IslandAgentRow => ({
+            key: entry.key,
+            title: entry.title,
+            detail: entry.detail,
+            icon: entry.icon,
+            startedAt: null,
+            target: entry.action?.target ?? null,
+          }),
+        );
   const usageEntries = state.entries.filter((entry) => entry.usage.length > 0);
   const usageRows = usageEntries.flatMap((entry) => entry.usage);
   const usageAt = usageEntries.reduce<Date | null>(
     (latest, entry) => (!latest || entry.at > latest ? entry.at : latest),
     null,
   );
+  const base = {
+    approvals,
+    questions,
+    agents: rows,
+    usageRows,
+    usageAt,
+    recent: state.sessions.recent,
+  };
 
   if (approvals.length > 0) {
     const first = approvals[0];
     return {
+      ...base,
       face: "approval",
       label: `${approvals.length} approval${approvals.length === 1 ? "" : "s"} pending`,
-      unitTitle: approvals.length === 1 ? (first?.title ?? "Approval pending") : `${approvals.length} approvals pending`,
-      markIcon: first?.icon ?? null,
+      unitTitle:
+        approvals.length === 1
+          ? (first?.title ?? "Approval pending")
+          : `${approvals.length} approvals pending`,
+      markIcon: first?.icon ?? rows[0]?.icon ?? null,
       badge: approvals.length,
-      approvals,
-      questions,
-      working,
-      usageRows,
-      usageAt,
     };
   }
   if (questions.length > 0) {
     const first = questions[0];
     return {
+      ...base,
       face: "question",
       label: `${questions.length} question${questions.length === 1 ? "" : "s"} waiting`,
-      unitTitle: questions.length === 1 ? (first?.title ?? "Question waiting") : `${questions.length} questions waiting`,
+      unitTitle:
+        questions.length === 1
+          ? (first?.title ?? "Question waiting")
+          : `${questions.length} questions waiting`,
       markIcon: first?.icon ?? null,
       badge: questions.length,
-      approvals,
-      questions,
-      working,
-      usageRows,
-      usageAt,
     };
   }
-  if (working.length > 0) {
-    const first = working[0];
-    const label =
-      working.length === 1 ? (first?.title ?? "Working") : `${working.length} agents active`;
+  if (rows.length > 0) {
+    const first = rows[0];
     return {
+      ...base,
       face: "working",
-      label,
-      unitTitle: working.length === 1 ? (first?.title ?? "Working") : label,
+      label: rows.length === 1 ? (first?.title ?? "Working") : `${rows.length} agents active`,
+      unitTitle: active[0]?.title ?? teams[0]?.title ?? "Working",
       markIcon: first?.icon ?? null,
       badge: null,
-      approvals,
-      questions,
-      working,
-      usageRows,
-      usageAt,
     };
   }
-  const onlyIdle = state.entries.length === 0 || state.entries.every((entry) => entry.widget === "idle");
-  if (onlyIdle) {
+  if (state.sessions.recent === 0) {
     return {
+      ...base,
       face: "none",
       label: "No agents",
       unitTitle: "No agents",
       markIcon: null,
       badge: null,
-      approvals,
-      questions,
-      working,
-      usageRows,
-      usageAt,
     };
   }
   return {
+    ...base,
     face: "idle",
-    label: state.current.title,
+    label: `Idle · ${plural(state.sessions.recent, "session")}`,
     unitTitle: state.current.title,
-    markIcon: state.current.icon,
+    markIcon: state.sessions.last?.icon ?? null,
     badge: null,
-    approvals,
-    questions,
-    working,
-    usageRows,
-    usageAt,
   };
+}
+
+function plural(count: number, one: string): string {
+  return `${count} ${one}${count === 1 ? "" : "s"}`;
 }
 
 function circleHint(face: Face, hoverMode: HoverMode): string {
   switch (face) {
     case "approval":
-      return "Approval pending — click to pin the card";
+      return "Approval pending — click to keep the card open";
     case "question":
-      return "Question waiting — click to pin the card";
+      return "Question waiting — click to keep the card open";
     case "working":
       return hoverMode === "agents" ? "Click for usage" : "Click for agents";
     case "idle":
@@ -527,25 +585,40 @@ function circleHint(face: Face, hoverMode: HoverMode): string {
   }
 }
 
-function IslandMark({
+/** The unit's own mark: the app's "W" when nothing runs, else the tool's. */
+function FaceMark({ derived, size }: { readonly derived: Derived; readonly size: number }): JSX.Element {
+  if (derived.face === "none" || (derived.face === "idle" && !derived.markIcon)) {
+    return (
+      <span className="isl__app" style={{ fontSize: Math.round(size * 0.75) }} aria-hidden="true">
+        W
+      </span>
+    );
+  }
+  return <Mark icon={derived.markIcon} label={derived.label} size={size} />;
+}
+
+function Mark({
   icon,
   label,
   size,
+  team = false,
 }: {
   readonly icon: string | null;
   readonly label: string;
   readonly size: number;
+  /** Teams get a lettered tile rather than any one tool's mark. */
+  readonly team?: boolean;
 }): JSX.Element {
   const definition = icon ? LOGOS[icon] : undefined;
   if (!definition) {
-    const letter = icon === null && label === "No agents" ? "W" : label.trim().charAt(0).toUpperCase() || "?";
     return (
       <span
         className="isl__letter"
-        style={{ width: size, height: size, fontSize: Math.round(size * 0.55) }}
+        data-team={team}
+        style={{ width: size, height: size, fontSize: Math.round(size * (team ? 0.42 : 0.6)) }}
         aria-hidden="true"
       >
-        {letter}
+        {team ? "TM" : label.trim().charAt(0).toUpperCase() || "?"}
       </span>
     );
   }
@@ -559,154 +632,374 @@ function IslandMark({
   );
 }
 
-function EdgePill({
+function rowMark(row: IslandAgentRow, size: number): JSX.Element {
+  return <Mark icon={row.icon} label={row.title} size={size} team={row.key.startsWith("run:")} />;
+}
+
+/** The docked unit at rest: one line, the face's clock or number, a badge. */
+function Pill({
   derived,
   edge,
-  expanded,
+  now,
   morphKey,
-  onToggle,
+  onClick,
 }: {
   readonly derived: Derived;
   readonly edge: string;
-  readonly expanded: boolean;
+  readonly now: number;
   readonly morphKey: string;
-  readonly onToggle: (event: ReactMouseEvent) => void;
+  readonly onClick: (event: ReactMouseEvent) => void;
 }): JSX.Element {
   const vertical = edge === "left" || edge === "right";
-  const elapsed = derived.working[0] ? elapsedSince(derived.working[0].at) : null;
-  // Idle faces show the top real usage remainder, or nothing at all.
-  const idlePct =
-    derived.face === "idle" || derived.face === "none"
-      ? (derived.usageRows.find((row) => row.percentLeft !== null)?.percentLeft ?? null)
-      : null;
+  const lead = derived.agents[0];
+  const firstQuestion = derived.questions[0];
+  // The idle pill's number is the tightest remainder across all tools.
+  const topLeft = derived.usageRows.reduce<number | null>(
+    (lowest, row) =>
+      row.percentLeft !== null && (lowest === null || row.percentLeft < lowest)
+        ? row.percentLeft
+        : lowest,
+    null,
+  );
+
+  const text = ((): string => {
+    switch (derived.face) {
+      case "working":
+      case "approval":
+        if (derived.face === "approval" && !lead) {
+          return derived.approvals[0]?.title ?? "Approval pending";
+        }
+        return lead ? [lead.title, lead.detail].filter(Boolean).join(" · ") : "Working";
+      case "question":
+        return `${askerName(firstQuestion)} asks`;
+      case "idle":
+        return `Idle · ${plural(derived.recent, "session")}`;
+      case "none":
+        return "No agents";
+    }
+  })();
+
+  const meta = ((): { text: string; tone?: "accent" } | null => {
+    switch (derived.face) {
+      case "working":
+      case "approval": {
+        const since = lead?.startedAt ?? longestRunning(derived.agents);
+        if (since) {
+          return { text: clock(since, now) };
+        }
+        const waiting = derived.approvals[0]?.at;
+        return derived.face === "approval" && waiting ? { text: clock(waiting, now) } : null;
+      }
+      case "question":
+        return { text: `${derived.questions.length} new`, tone: "accent" };
+      case "idle":
+      case "none":
+        return topLeft === null ? null : { text: `${Math.round(topLeft)}%` };
+    }
+  })();
+
   return (
     <button
       type="button"
       className="isl__pill"
       data-vertical={vertical}
-      aria-expanded={expanded}
+      aria-expanded={false}
       aria-label={derived.label}
-      onClick={onToggle}
+      onClick={onClick}
     >
       <span className="isl__morph" key={morphKey}>
-        <IslandMark icon={derived.markIcon} label={derived.label} size={18} />
+        <FaceMark derived={derived} size={17} />
       </span>
-      {vertical ? (
-        elapsed ? (
-          <span className="isl__elapsed">{elapsed}</span>
-        ) : idlePct !== null ? (
-          <span className="isl__elapsed">{Math.round(idlePct)}%</span>
-        ) : null
-      ) : (
-        <span className="isl__pilltext">{pillText(derived)}</span>
-      )}
-      {elapsed && !vertical ? <span className="isl__elapsed">{elapsed}</span> : null}
-      {!elapsed && !vertical && idlePct !== null ? (
-        <span className="isl__elapsed">{Math.round(idlePct)}%</span>
+      {vertical ? null : <span className="isl__pilltext">{text}</span>}
+      {!vertical && (derived.face === "working" || derived.face === "approval") && derived.agents.length > 1 ? (
+        <span className="isl__pillmore" title={`${derived.agents.length} agents at work`}>
+          +{derived.agents.length - 1}
+        </span>
       ) : null}
-      {derived.badge !== null ? <span className="isl__badge">{derived.badge}</span> : null}
+      {meta ? (
+        <span className="isl__pillmeta" data-tone={meta.tone}>
+          {meta.text}
+        </span>
+      ) : null}
+      {derived.badge !== null ? <span className="isl__count">{derived.badge}</span> : null}
     </button>
   );
 }
 
-function pillText(derived: Derived): string {
-  switch (derived.face) {
-    case "approval":
-      return `${derived.approvals.length} approval${derived.approvals.length === 1 ? "" : "s"}`;
-    case "question":
-      return `${derived.questions.length} question${derived.questions.length === 1 ? "" : "s"}`;
-    case "working":
-      return derived.working.length === 1
-        ? (derived.working[0]?.title ?? "Working")
-        : `${derived.working.length} agents active`;
-    case "idle":
-      return "Idle";
-    case "none":
-      return "No agents";
-  }
-}
-
-function HoverLayer({
+/** Docked, open, working: every agent, a prompt line, then usage. */
+function WorkingSheet({
   derived,
-  hoverMode,
   bridge,
+  now,
 }: {
   readonly derived: Derived;
-  readonly hoverMode: HoverMode;
   readonly bridge: IslandBridge;
+  readonly now: number;
 }): JSX.Element {
-  if (derived.face === "approval") {
-    return <ApprovalCard entries={derived.approvals} bridge={bridge} />;
-  }
-  if (derived.face === "question") {
-    return <QuestionCard entries={derived.questions} bridge={bridge} />;
-  }
-  if (derived.face === "working" && hoverMode === "agents") {
-    if (derived.working.length === 1) {
-      const entry = derived.working[0];
-      return (
-        <div className="isl__compact">
-          <IslandMark icon={entry?.icon ?? null} label={entry?.title ?? ""} size={16} />
-          <span className="isl__compacttitle">{entry?.title}</span>
-          {entry ? <span className="isl__elapsed">{elapsedSince(entry.at)}</span> : null}
-        </div>
-      );
-    }
-    return <AgentList entries={derived.working} />;
-  }
-  return <UsagePanel derived={derived} />;
+  const since = derived.agents[0]?.startedAt ?? longestRunning(derived.agents);
+  return (
+    <div className="isl__x">
+      <div className="isl__xh">
+        <span className="isl__live">LIVE</span>
+        <span>{plural(derived.agents.length, "agent")}</span>
+        {since ? <span className="isl__el">{clock(since, now)}</span> : null}
+      </div>
+      {derived.agents.map((row) => (
+        <AgentRow key={row.key} row={row} bridge={bridge} now={now} className="isl__xrow" />
+      ))}
+      <AskBox agents={derived.agents} bridge={bridge} />
+      <div className="isl__xuse">
+        <p className="isl__xl">Usage</p>
+        <UsageRows rows={derived.usageRows} />
+      </div>
+    </div>
+  );
 }
 
-function AgentList({ entries }: { readonly entries: IslandEntry[] }): JSX.Element {
+/** Docked, open, resting: how many sessions rest, the longest, and usage. */
+function IdleSheet({
+  derived,
+  sessions,
+  now,
+}: {
+  readonly derived: Derived;
+  readonly sessions: IslandSessionSummary;
+  readonly now: number;
+}): JSX.Element {
   return (
-    <div className="isl__agents">
-      {entries.map((entry) => (
-        <div className="isl__agentrow" key={entry.key}>
-          <IslandMark icon={entry.icon} label={entry.title} size={16} />
-          <span className="isl__agenttext">
-            <span className="isl__agentname">{entry.title}</span>
-            {entry.detail ? <span className="isl__agentsub">{entry.detail}</span> : null}
+    <div className="isl__x">
+      <div className="isl__xh">
+        <span>Idle</span>
+        <span className="isl__el">{plural(sessions.recent, "session")}</span>
+      </div>
+      {sessions.longestIdle ? (
+        <div className="isl__xstat">
+          <span>Longest idle</span>
+          <span className="isl__xstatvalue">
+            {sessions.longestIdle.name} · {span(sessions.longestIdle.at, now)}
           </span>
-          <span className="isl__elapsed">{elapsedSince(entry.at)}</span>
         </div>
+      ) : null}
+      <UsageRows rows={derived.usageRows} />
+    </div>
+  );
+}
+
+/** Docked, open, nothing at all: the last session and usage. */
+function NoneSheet({
+  derived,
+  sessions,
+  now,
+}: {
+  readonly derived: Derived;
+  readonly sessions: IslandSessionSummary;
+  readonly now: number;
+}): JSX.Element {
+  return (
+    <div className="isl__x">
+      <div className="isl__xh">
+        <span>Nothing running</span>
+      </div>
+      {sessions.last ? (
+        <div className="isl__xstat">
+          <span>Last session</span>
+          <span className="isl__xstatvalue">
+            {sessions.last.name} · {span(sessions.last.at, now)} ago
+          </span>
+        </div>
+      ) : null}
+      <UsageRows rows={derived.usageRows} />
+    </div>
+  );
+}
+
+function AgentRow({
+  row,
+  bridge,
+  now,
+  className,
+}: {
+  readonly row: IslandAgentRow;
+  readonly bridge: IslandBridge;
+  readonly now: number;
+  readonly className: string;
+}): JSX.Element {
+  const target = row.target;
+  return (
+    <button
+      type="button"
+      className={className}
+      title={target ? `Open ${row.title}` : row.title}
+      onClick={() => {
+        if (target) {
+          void bridge.open(target);
+        }
+      }}
+    >
+      {rowMark(row, 16)}
+      <span className="isl__rowtext">
+        <span className="isl__rowname">{row.title}</span>
+        {row.detail ? <span className="isl__rowsub">{row.detail}</span> : null}
+      </span>
+      {row.startedAt ? <span className="isl__el">{clock(row.startedAt, now)}</span> : null}
+    </button>
+  );
+}
+
+/**
+ * A prompt for the agents at work. It types into the first running agent
+ * terminal; a chat that is mid-answer cannot take one, and the line says so.
+ */
+function AskBox({
+  agents,
+  bridge,
+}: {
+  readonly agents: readonly IslandAgentRow[];
+  readonly bridge: IslandBridge;
+}): JSX.Element {
+  const [text, setText] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const lead = agents.find((row) => row.key.startsWith("tile:")) ?? agents[0];
+
+  const send = async (): Promise<void> => {
+    const prompt = text.trim();
+    if (!prompt || sending) {
+      return;
+    }
+    setSending(true);
+    try {
+      const result = await bridge.ask(lead?.key ?? "none", prompt);
+      if (result.sent) {
+        setText("");
+        setNote(result.to ? `Sent to ${result.to}` : "Sent");
+      } else {
+        setNote(result.reason ?? "Could not send");
+      }
+    } catch {
+      setNote("Could not send");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="isl__askwrap">
+      <label className="isl__ask">
+        <input
+          className="isl__askinput"
+          value={text}
+          placeholder="Ask anything…"
+          aria-label={lead ? `Ask ${lead.title}` : "Ask anything"}
+          disabled={sending}
+          onChange={(event) => {
+            setText(event.target.value);
+            setNote(null);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              void send();
+            } else if (event.key === "Escape") {
+              setText("");
+            }
+          }}
+        />
+        <kbd className="isl__kbd">↵</kbd>
+      </label>
+      {note ? <p className="isl__asknote">{note}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * One row per tool: its tightest window, the one that runs out first. The
+ * other windows stay in the Usage view; the island shows what matters now.
+ */
+function tightestPerProvider(rows: readonly IslandUsageRow[]): IslandUsageRow[] {
+  const byProvider = new Map<string, IslandUsageRow>();
+  for (const row of rows) {
+    const known = byProvider.get(row.providerId);
+    if (
+      !known ||
+      (row.percentLeft !== null &&
+        (known.percentLeft === null || row.percentLeft < known.percentLeft))
+    ) {
+      byProvider.set(row.providerId, row);
+    }
+  }
+  return [...byProvider.values()];
+}
+
+/** "5-hour window" reads "5-hour" in the island's short rows. */
+function shortWindow(label: string): string {
+  return label.replace(/\s+window$/i, "");
+}
+
+function UsageRows({ rows: all }: { readonly rows: readonly IslandUsageRow[] }): JSX.Element {
+  const rows = tightestPerProvider(all);
+  if (rows.length === 0) {
+    return <p className="isl__na isl__urow">Usage unavailable</p>;
+  }
+  return (
+    <>
+      {rows.map((row, index) => (
+        <div className="isl__urow" key={`${row.providerId}-${row.window}-${index}`}>
+          <div className="isl__uline">
+            <Mark icon={row.icon ?? logoKeyFor(row.providerId)} label={row.name} size={14} />
+            <span className="isl__uname">{row.name}</span>
+            {row.percentLeft === null ? (
+              <span className="isl__na">{row.note || "Usage unavailable"}</span>
+            ) : (
+              <>
+                {row.window ? <span className="isl__uwindow">{shortWindow(row.window)}</span> : null}
+                <span className="isl__upct">{Math.round(row.percentLeft)}% left</span>
+              </>
+            )}
+          </div>
+          {row.percentLeft === null ? null : (
+            <div className="isl__ubar">
+              <i
+                data-low={row.percentLeft < 20}
+                style={{ width: `${Math.round(row.percentLeft)}%` }}
+              />
+            </div>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+/** The free circle's agents card: name, what it reported, its clock. */
+function AgentsCard({
+  agents,
+  bridge,
+  now,
+}: {
+  readonly agents: readonly IslandAgentRow[];
+  readonly bridge: IslandBridge;
+  readonly now: number;
+}): JSX.Element {
+  return (
+    <div className="isl__card isl__card--list">
+      {agents.map((row) => (
+        <AgentRow key={row.key} row={row} bridge={bridge} now={now} className="isl__arow" />
       ))}
     </div>
   );
 }
 
-function UsagePanel({ derived }: { readonly derived: Derived }): JSX.Element {
+function UsageCard({ derived, now }: { readonly derived: Derived; readonly now: number }): JSX.Element {
   return (
-    <div className="isl__usage">
-      <div className="isl__usagehead">
-        <span>Usage</span>
+    <div className="isl__card">
+      <div className="isl__uh">
+        <span className="isl__uhtitle">Usage</span>
         {derived.usageAt ? (
-          <span className="isl__usagetime">updated {relativeSince(derived.usageAt)}</span>
+          <span className="isl__uhtime">updated {relative(derived.usageAt, now)}</span>
         ) : null}
       </div>
-      {derived.usageRows.length === 0 ? (
-        <p className="isl__unavailable">Usage unavailable</p>
-      ) : (
-        derived.usageRows.map((row, index) => (
-          <div className="isl__usagerow" key={`${row.providerId}-${row.window}-${index}`}>
-            <div className="isl__usageline">
-              <IslandMark icon={logoKeyFor(row.providerId)} label={row.name} size={14} />
-              <span className="isl__usagename">{row.name}</span>
-              {row.window ? <span className="isl__usagewindow">{row.window}</span> : null}
-              <span className="isl__usagepct">
-                {row.percentLeft === null ? "—" : `${Math.round(row.percentLeft)}% left`}
-              </span>
-            </div>
-            {row.percentLeft === null ? null : (
-              <div className="isl__usagebar">
-                <i
-                  data-low={row.percentLeft < 20}
-                  style={{ width: `${Math.round(row.percentLeft)}%` }}
-                />
-              </div>
-            )}
-          </div>
-        ))
-      )}
+      <UsageRows rows={derived.usageRows} />
     </div>
   );
 }
@@ -716,25 +1009,88 @@ function logoKeyFor(providerId: string): string | null {
   return providerId in LOGOS ? providerId : null;
 }
 
+/** Who asks, by the mark the question carries; "Agent" when it has none. */
+function askerName(entry: IslandEntry | undefined): string {
+  const icon = entry?.icon;
+  return (icon ? LOGOS[icon]?.title : undefined) ?? "Agent";
+}
+
+function ApprovalActions({
+  entry,
+  bridge,
+}: {
+  readonly entry: IslandEntry;
+  readonly bridge: IslandBridge;
+}): JSX.Element | null {
+  const target = entry.action?.target;
+  if (!target) {
+    return null;
+  }
+  return (
+    <div className="isl__actions">
+      <button type="button" className="isl__btn isl__btn--quiet" onClick={() => void bridge.dismiss()}>
+        Dismiss
+      </button>
+      <button
+        type="button"
+        className="isl__btn isl__btn--amber"
+        onClick={() => void bridge.open(target)}
+      >
+        {/* True approve/dismiss lands with the permission backend; until
+            then this deep-links to where approval happens. */}
+        Approve
+      </button>
+    </div>
+  );
+}
+
+function approvalDetail(entry: IslandEntry, now: number): string {
+  return [entry.detail, `waiting ${clock(entry.at, now)}`].filter(Boolean).join(" · ");
+}
+
+/** Hovering an approval circle: who needs what, and the two answers. */
+function ApprovalPeek({
+  entry,
+  bridge,
+  now,
+}: {
+  readonly entry: IslandEntry;
+  readonly bridge: IslandBridge;
+  readonly now: number;
+}): JSX.Element {
+  return (
+    <div className="isl__card isl__card--wide">
+      <div className="isl__at">
+        <Mark icon={entry.icon} label={entry.title} size={15} />
+        <span className="isl__attitle">{entry.title}</span>
+      </div>
+      <p className="isl__ad">{approvalDetail(entry, now)}</p>
+      <ApprovalActions entry={entry} bridge={bridge} />
+    </div>
+  );
+}
+
 function ApprovalCard({
   entries,
   bridge,
+  now,
 }: {
   readonly entries: IslandEntry[];
   readonly bridge: IslandBridge;
+  readonly now: number;
 }): JSX.Element {
-  const firstAction = entries.find((entry) => entry.action)?.action ?? null;
+  const firstTarget = entries.find((entry) => entry.action)?.action?.target ?? null;
   return (
     <div className="isl__attn" data-tone="amber">
-      <div className="isl__attnhead">
+      <div className="isl__ahead">
         <span>
           {entries.length} approval{entries.length === 1 ? "" : "s"}
         </span>
-        {firstAction ? (
+        {firstTarget && entries.length > 1 ? (
           <button
             type="button"
             className="isl__approveall"
-            onClick={() => void bridge.open(firstAction.target)}
+            onClick={() => void bridge.open(firstTarget)}
           >
             {/* Same interim as Approve below: deep-links until the permission
                 backend gives this a real call. */}
@@ -743,48 +1099,27 @@ function ApprovalCard({
         ) : null}
       </div>
       <div className="isl__items">
-        {entries.map((entry) => (
+        {entries.map((entry, index) => (
           <div className="isl__item" key={entry.key}>
-            <div className="isl__itemhead">
-              <IslandMark icon={entry.icon} label={entry.title} size={14} />
-              <span className="isl__itemtitle">{entry.title}</span>
-              <span className="isl__elapsed">{elapsedSince(entry.at)}</span>
+            <div className="isl__at">
+              <Mark icon={entry.icon} label={entry.title} size={15} />
+              <span className="isl__attitle">{entry.title}</span>
+              {index > 0 ? <span className="isl__el">{clock(entry.at, now)}</span> : null}
             </div>
-            {entry.detail ? <p className="isl__itemdetail">{entry.detail}</p> : null}
+            <p className="isl__ad">{approvalDetail(entry, now)}</p>
             {entry.diff ? (
               <div className="isl__diff">
                 <p className="isl__diffhead">
                   {entry.diff.file} · {entry.diff.stat}
                 </p>
-                <pre className="isl__diffpre">
-                  {entry.diff.lines.map((line, index) => (
-                    <span key={index} className="isl__diffline" data-kind={line.kind}>
-                      {line.text || " "}
-                    </span>
-                  ))}
-                </pre>
+                {entry.diff.lines.map((line, lineIndex) => (
+                  <span key={lineIndex} className="isl__diffline" data-kind={line.kind}>
+                    {line.text || " "}
+                  </span>
+                ))}
               </div>
             ) : null}
-            {entry.action ? (
-              <div className="isl__actions">
-                <button
-                  type="button"
-                  className="isl__btn isl__btn--quiet"
-                  onClick={() => void bridge.dismiss()}
-                >
-                  Dismiss
-                </button>
-                <button
-                  type="button"
-                  className="isl__btn isl__btn--amber"
-                  onClick={() => void bridge.open(entry.action!.target)}
-                >
-                  {/* True approve/dismiss lands with the permission backend;
-                      until then this deep-links to where approval happens. */}
-                  Approve
-                </button>
-              </div>
-            ) : null}
+            <ApprovalActions entry={entry} bridge={bridge} />
           </div>
         ))}
       </div>
@@ -795,55 +1130,64 @@ function ApprovalCard({
 function QuestionCard({
   entries,
   bridge,
+  now,
 }: {
   readonly entries: IslandEntry[];
   readonly bridge: IslandBridge;
+  readonly now: number;
 }): JSX.Element {
   return (
     <div className="isl__attn" data-tone="blue">
-      <div className="isl__attnhead">
-        <span>
-          {entries.length} question{entries.length === 1 ? "" : "s"}
-        </span>
-      </div>
+      {entries.length > 1 ? (
+        <div className="isl__ahead">
+          <span>{entries.length} questions</span>
+        </div>
+      ) : null}
       <div className="isl__items">
-        {entries.map((entry) => (
-          <div className="isl__item" key={entry.key}>
-            <div className="isl__itemhead">
-              <IslandMark icon={entry.icon} label={entry.title} size={14} />
-              <span className="isl__itemtitle">{entry.title}</span>
-              <span className="isl__elapsed">{askedWhen(entry.at)}</span>
-            </div>
-            {entry.detail ? <p className="isl__itemdetail">{entry.detail}</p> : null}
-            {entry.options.map((option, index) => (
-              <button
-                key={option.id}
-                type="button"
-                className="isl__option"
-                onClick={() => {
-                  if (entry.action) {
-                    void bridge.open(entry.action.target);
-                  }
-                }}
-              >
-                <span className="isl__optionlabel">{option.label}</span>
-                {option.hint ? <span className="isl__optionhint">{option.hint}</span> : null}
-                <kbd className="isl__kbd">Ctrl {index + 1}</kbd>
-              </button>
-            ))}
-            {entry.action ? (
-              <div className="isl__actions">
-                <button
-                  type="button"
-                  className="isl__btn isl__btn--quiet"
-                  onClick={() => void bridge.dismiss()}
-                >
-                  Answer later
-                </button>
+        {entries.map((entry) => {
+          const target = entry.action?.target;
+          return (
+            <div className="isl__item" key={entry.key}>
+              <div className="isl__qh">
+                <Mark icon={entry.icon} label={entry.title} size={14} />
+                <span>{askerName(entry)} asks</span>
+                <span className="isl__el">{askedWhen(entry.at, now)}</span>
               </div>
-            ) : null}
-          </div>
-        ))}
+              <p className="isl__qtitle">{entry.title}</p>
+              {entry.detail ? <p className="isl__qsub">{entry.detail}</p> : null}
+              {entry.options.map((option, index) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className="isl__option"
+                  onClick={() => {
+                    if (target) {
+                      void bridge.open(target);
+                    }
+                  }}
+                >
+                  <span className="isl__optionlabel">{option.label}</span>
+                  {option.hint ? <span className="isl__optionhint">{option.hint}</span> : null}
+                  <kbd className="isl__kbd">Ctrl {index + 1}</kbd>
+                </button>
+              ))}
+              {target && entry.options.length === 0 ? (
+                <div className="isl__actions">
+                  <button
+                    type="button"
+                    className="isl__btn isl__btn--quiet"
+                    onClick={() => void bridge.dismiss()}
+                  >
+                    Answer later
+                  </button>
+                  <button type="button" className="isl__btn" onClick={() => void bridge.open(target)}>
+                    Answer
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -857,61 +1201,56 @@ function QuestionCard({
 function GenericCard({
   entry,
   bridge,
+  now,
 }: {
   readonly entry: IslandEntry;
   readonly bridge: IslandBridge;
+  readonly now: number;
 }): JSX.Element {
+  const action = entry.action;
   return (
-    <div className="isl__attn">
-      <div className="isl__items">
-        <div className="isl__item">
-          <div className="isl__itemhead">
-            <IslandMark icon={entry.icon} label={entry.title} size={14} />
-            <span className="isl__itemtitle">{entry.title}</span>
-            <span className="isl__elapsed">{elapsedSince(entry.at)}</span>
-          </div>
-          {entry.detail ? <p className="isl__itemdetail">{entry.detail}</p> : null}
-          {entry.action ? (
-            <div className="isl__actions">
-              <button
-                type="button"
-                className="isl__btn isl__btn--quiet"
-                onClick={() => void bridge.dismiss()}
-              >
-                Dismiss
-              </button>
-              <button
-                type="button"
-                className="isl__btn"
-                onClick={() => void bridge.open(entry.action!.target)}
-              >
-                {entry.action.label}
-              </button>
-            </div>
-          ) : null}
-        </div>
+    <div className="isl__card">
+      <div className="isl__at">
+        <Mark icon={entry.icon} label={entry.title} size={15} />
+        <span className="isl__attitle">{entry.title}</span>
+        <span className="isl__el">{clock(entry.at, now)}</span>
       </div>
+      {entry.detail ? <p className="isl__ad">{entry.detail}</p> : null}
+      {action ? (
+        <div className="isl__actions">
+          <button
+            type="button"
+            className="isl__btn isl__btn--quiet"
+            onClick={() => void bridge.dismiss()}
+          >
+            Dismiss
+          </button>
+          <button type="button" className="isl__btn" onClick={() => void bridge.open(action.target)}>
+            {action.label}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function ExpandedPanel({ derived }: { readonly derived: Derived }): JSX.Element {  return (
-    <div className="isl__panel">
-      {derived.working.length > 0 ? <AgentList entries={derived.working} /> : null}
-      <UsagePanel derived={derived} />
-    </div>
+/** The start of the longest-running agent, or null when none has a clock. */
+function longestRunning(agents: readonly IslandAgentRow[]): Date | null {
+  return agents.reduce<Date | null>(
+    (earliest, row) =>
+      row.startedAt && (!earliest || row.startedAt < earliest) ? row.startedAt : earliest,
+    null,
   );
 }
 
 /** A fresh question reads "now"; older ones show their age. */
-function askedWhen(at: Date): string {
-  if (Date.now() - at.getTime() < 60_000) {
-    return "now";
-  }
-  return elapsedSince(at);
+function askedWhen(at: Date, now: number): string {
+  return now - at.getTime() < 60_000 ? "now" : clock(at, now);
 }
 
-function elapsedSince(at: Date): string {  const seconds = Math.max(0, Math.round((Date.now() - at.getTime()) / 1000));
+/** Elapsed time as a clock: 04:12, or 1:04:12 past the hour. */
+function clock(at: Date, now: number): string {
+  const seconds = Math.max(0, Math.floor((now - at.getTime()) / 1000));
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   if (hours > 0) {
@@ -920,19 +1259,29 @@ function elapsedSince(at: Date): string {  const seconds = Math.max(0, Math.roun
   return `${String(minutes).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-function relativeSince(at: Date): string {
-  const minutes = Math.max(0, Math.round((Date.now() - at.getTime()) / 60000));
+/** A resting span in words: 42m, 3h, 2d. */
+function span(at: Date, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - at.getTime()) / 60_000));
+  if (minutes < 1) {
+    return "<1m";
+  }
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
+}
+
+function relative(at: Date, now: number): string {
+  const minutes = Math.max(0, Math.round((now - at.getTime()) / 60_000));
   if (minutes < 1) {
     return "just now";
-  }
-  if (minutes === 1) {
-    return "1m ago";
   }
   if (minutes < 60) {
     return `${minutes}m ago`;
   }
   const hours = Math.floor(minutes / 60);
-  return hours === 1 ? "1h ago" : `${hours}h ago`;
+  return `${hours}h ago`;
 }
 
 const container = document.getElementById("island");

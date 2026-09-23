@@ -95,6 +95,22 @@ export const islandOptionSchema = z.object({
 });
 export type IslandOption = z.infer<typeof islandOptionSchema>;
 
+/**
+ * One agent at work, for the island's agent list. The clock runs from
+ * `startedAt`, which is when the work really began; null shows no clock
+ * rather than one that restarts on every refresh.
+ */
+export const islandAgentRowSchema = z.object({
+  key: z.string().min(1),
+  title: z.string().min(1).max(120),
+  /** What it reported so far (tokens, context), or its state; never invented. */
+  detail: z.string().max(160).default(""),
+  icon: z.string().max(120).nullable().default(null),
+  startedAt: z.date().nullable().default(null),
+  target: islandTargetSchema.nullable().default(null),
+});
+export type IslandAgentRow = z.infer<typeof islandAgentRowSchema>;
+
 /** One provider usage row, from real snapshots only — never estimated. */
 export const islandUsageRowSchema = z.object({
   providerId: z.string().min(1),
@@ -103,6 +119,10 @@ export const islandUsageRowSchema = z.object({
   window: z.string().max(60).default(""),
   /** Percent remaining, or null when the provider did not report a number. */
   percentLeft: z.number().min(0).max(100).nullable(),
+  /** Provider mark key; null falls back to a letter. */
+  icon: z.string().max(120).nullable().default(null),
+  /** Why there is no number, when there is none ("Usage unavailable"). */
+  note: z.string().max(80).default(""),
 });
 export type IslandUsageRow = z.infer<typeof islandUsageRowSchema>;
 
@@ -141,8 +161,29 @@ export const islandEntrySchema = z.object({
   icon: z.string().max(120).nullable().default(null),
   /** Structured usage rows for the usage panel; empty when nothing reported. */
   usage: z.array(islandUsageRowSchema).max(24).default([]),
+  /** Each agent behind a working entry, one row apiece; empty otherwise. */
+  agents: z.array(islandAgentRowSchema).max(24).default([]),
 });
 export type IslandEntry = z.infer<typeof islandEntrySchema>;
+
+/** A session the island can name: what it is and when it last did something. */
+const islandSessionRefSchema = z.object({
+  name: z.string().min(1).max(120),
+  icon: z.string().max(120).nullable().default(null),
+  at: z.date(),
+});
+
+/**
+ * The quiet picture, counted from real sessions: how many were active in the
+ * last day and are resting now, which one has rested longest, and the last
+ * one that did anything at all.
+ */
+export const islandSessionSummarySchema = z.object({
+  recent: z.number().int().nonnegative(),
+  longestIdle: islandSessionRefSchema.nullable(),
+  last: islandSessionRefSchema.nullable(),
+});
+export type IslandSessionSummary = z.infer<typeof islandSessionSummarySchema>;
 
 export const islandStateSchema = z.object({
   /** What the island is showing right now. */
@@ -152,6 +193,7 @@ export const islandStateSchema = z.object({
   /** Everything currently worth showing, highest priority first. */
   entries: z.array(islandEntrySchema),
   preferences: islandPreferencesSchema,
+  sessions: islandSessionSummarySchema.default({ recent: 0, longestIdle: null, last: null }),
 });
 export type IslandState = z.infer<typeof islandStateSchema>;
 

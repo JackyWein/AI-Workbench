@@ -8,6 +8,7 @@ import {
   type IslandState,
   type Logger,
 } from "@ai-workbench/shared";
+import { anchorResize } from "./island-helpers.js";
 
 /**
  * The floating companion window (spec §95).
@@ -144,7 +145,8 @@ export class StatusIslandWindow {
       return;
     }
     const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
-    const [left, top] = clampToDisplay({ x: bounds.x, y: bounds.y }, { width, height }, display);
+    const anchored = anchorResize(bounds, { width, height }, this.#preferences?.dockedEdge ?? null);
+    const [left, top] = clampToDisplay(anchored, { width, height }, display);
     this.#placing = true;
     try {
       window.setBounds({ x: left, y: top, width, height }, false);
