@@ -19,6 +19,7 @@ import {
   settleEase,
   type Point,
   type Rect,
+  type Size,
 } from "./island-helpers.js";
 
 /**
@@ -74,7 +75,7 @@ interface Settling {
   readonly from: Point;
   readonly startedAt: number;
   /** Recomputed every frame, so a size change mid-flight still lands true. */
-  readonly target: () => Point;
+  readonly target: (size: Size) => Point;
 }
 
 export class StatusIslandWindow {
@@ -192,14 +193,14 @@ export class StatusIslandWindow {
       return;
     }
     const size = { width, height };
+    // Mid-drag or mid-settle the new size and its position land together,
+    // so the unit never sits off its rail inside a window of the old size.
     if (this.#drag) {
-      window.setSize(width, height, false);
-      this.#dragTick();
+      this.#dragTick(size);
       return;
     }
     if (this.#settling) {
-      window.setSize(width, height, false);
-      this.#settleTick();
+      this.#settleTick(size);
       return;
     }
     const display = displayUnder(bounds);
@@ -288,10 +289,7 @@ export class StatusIslandWindow {
     const railT = railOf(edge, bounds, area);
     this.#adopt({ dockedEdge: edge, railT, displayId: display.id });
     this.#sendDrag({ active: false, edge, snap: null });
-    this.#settleTo(() => {
-      const current = window.isDestroyed() ? bounds : window.getBounds();
-      return dockPoint(edge, railT, current, area);
-    });
+    this.#settleTo((size) => dockPoint(edge, railT, size, area));
     this.#options.onSettle({
       dockedEdge: edge,
       railT,
@@ -413,7 +411,7 @@ export class StatusIslandWindow {
     return window;
   }
 
-  #dragTick(): void {
+  #dragTick(resized?: Size): void {
     const window = this.#window;
     const drag = this.#drag;
     if (!window || window.isDestroyed() || !drag) {
@@ -427,10 +425,11 @@ export class StatusIslandWindow {
     const pointer = screen.getCursorScreenPoint();
     const area = screen.getDisplayNearestPoint(pointer).workArea;
     const bounds = window.getBounds();
+    const size = resized ?? { width: bounds.width, height: bounds.height };
     const frame = dragFrame({
       pointer,
       grab: drag.grab,
-      size: bounds,
+      size,
       area,
       edge: drag.edge,
       depth: drag.depth,
@@ -440,9 +439,7 @@ export class StatusIslandWindow {
       drag.grab = { x: 0.5, y: 0.5 };
     }
     drag.depth = frame.depth;
-    if (frame.x !== bounds.x || frame.y !== bounds.y) {
-      window.setPosition(frame.x, frame.y, false);
-    }
+    moveWindow(window, bounds, { x: frame.x, y: frame.y, ...size });
     if (frame.edge !== drag.edge || frame.snap !== drag.snap) {
       drag.edge = frame.edge;
       drag.snap = frame.snap;
@@ -450,7 +447,7 @@ export class StatusIslandWindow {
     }
   }
 
-  #settleTo(target: () => Point): void {
+  #settleTo(target: (size: Size) => Point): void {
     const window = this.#window;
     if (!window || window.isDestroyed()) {
       return;
@@ -461,7 +458,7 @@ export class StatusIslandWindow {
     this.#settleTimer = setInterval(() => this.#settleTick(), FRAME_MS);
   }
 
-  #settleTick(): void {
+  #settleTick(resized?: Size): void {
     const window = this.#window;
     const settling = this.#settling;
     if (!window || window.isDestroyed() || !settling) {
@@ -470,10 +467,12 @@ export class StatusIslandWindow {
     }
     const t = Math.min(1, (Date.now() - settling.startedAt) / SETTLE_MS);
     const eased = settleEase(t);
-    const to = settling.target();
+    const bounds = window.getBounds();
+    const size = resized ?? { width: bounds.width, height: bounds.height };
+    const to = settling.target(size);
     const x = px(settling.from.x + (to.x - settling.from.x) * eased);
     const y = px(settling.from.y + (to.y - settling.from.y) * eased);
-    window.setPosition(x, y, false);
+    moveWindow(window, bounds, { x, y, ...size });
     if (t >= 1) {
       this.#stopSettling();
     }
@@ -569,6 +568,19 @@ export class StatusIslandWindow {
     const [left, top] = clampToDisplay(position, bounds, display);
     window.setPosition(left, top);
   }
+}
+
+/** Moves (and resizes) the window in one step, only when something changed. */
+function moveWindow(window: BrowserWindow, bounds: Rect, next: Rect): void {
+  if (
+    next.x === bounds.x &&
+    next.y === bounds.y &&
+    next.width === bounds.width &&
+    next.height === bounds.height
+  ) {
+    return;
+  }
+  window.setBounds(next, false);
 }
 
 /** The display a window mostly sits on, judged by its center. */

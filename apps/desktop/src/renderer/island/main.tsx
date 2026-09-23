@@ -492,7 +492,8 @@ function Island(): JSX.Element | null {
   })();
 
   return (
-    <div className="isl-stage" data-edge={docked ?? "free"}>
+    // A blob drawn onto a rail hangs from that rail like the pill it becomes.
+    <div className="isl-stage" data-edge={docked ?? snapping ?? "free"}>
       <div
         ref={rootRef}
         className="isl"
