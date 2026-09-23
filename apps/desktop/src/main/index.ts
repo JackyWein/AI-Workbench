@@ -51,12 +51,7 @@ async function bootstrap(): Promise<void> {
   });
 
   const preloadFile = join(__dirname, "../preload/index.js");
-  const window = createMainWindow({
-    devServerUrl: process.env["ELECTRON_RENDERER_URL"],
-    rendererFile: resolveRendererFile(__dirname),
-    preloadFile,
-  });
-  mainWindow = window;
+  const window = openAppWindow();
 
   // The island and the tray keep the runtime reachable with no window on
   // screen (spec §104), so they exist as soon as the services do.
@@ -65,18 +60,7 @@ async function bootstrap(): Promise<void> {
     islandFile: resolveIslandFile(__dirname),
     preloadFile,
     devServerUrl: process.env["ELECTRON_RENDERER_URL"],
-    focusMainWindow: () => {
-      const existing = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-      if (existing) {
-        if (existing.isMinimized()) {
-          existing.restore();
-        }
-        existing.show();
-        existing.focus();
-        island?.setMainVisible(true);
-      }
-      return existing;
-    },
+    focusMainWindow: () => revealMainWindow(),
     // Pure read for visibility/focus checks: focusing here would un-minimize
     // the window on every background tick that asks whether it is visible.
     getMainWindow: () => {
@@ -94,10 +78,6 @@ async function bootstrap(): Promise<void> {
     userDataPath,
     island,
   });
-
-  // Closing the main window may leave the runtime going (spec §104).
-  attachMainWindowCloseBehavior(window);
-  attachMainWindowFocusTracking(window);
 
   // The island starts in check mode too: `verify:app` proves the companion
   // window, the tray and the attention service in the running application,
@@ -152,6 +132,39 @@ async function shutdown(): Promise<void> {
   }
 }
 
+/** Creates the main window with its close and focus behaviour attached. */
+function openAppWindow(): BrowserWindow {
+  const window = createMainWindow({
+    devServerUrl: process.env["ELECTRON_RENDERER_URL"],
+    rendererFile: resolveRendererFile(__dirname),
+    preloadFile: join(__dirname, "../preload/index.js"),
+  });
+  mainWindow = window;
+  // Closing the main window may leave the runtime going (spec §104).
+  attachMainWindowCloseBehavior(window);
+  attachMainWindowFocusTracking(window);
+  return window;
+}
+
+/**
+ * Brings the main window forward from the tray, the island or a second
+ * launch: restored when minimized, shown when hidden to the tray, and made
+ * anew when it was closed while the runtime kept going.
+ */
+function revealMainWindow(): BrowserWindow | null {
+  if (!services || shuttingDown) {
+    return null;
+  }
+  const window = mainWindow && !mainWindow.isDestroyed() ? mainWindow : openAppWindow();
+  if (window.isMinimized()) {
+    window.restore();
+  }
+  window.show();
+  window.focus();
+  island?.setMainVisible(true);
+  return window;
+}
+
 /**
  * The island hides while the main window is focused and returns when focus
  * leaves it. Kept as a function so windows created later — for example on
@@ -167,30 +180,29 @@ function attachMainWindowFocusTracking(window: BrowserWindow): void {
  * function so windows created later — for example on macOS activate — behave
  * the same as the first one.
  */
-function attachMainWindowCloseBehavior(window: BrowserWindow): void {  window.on("close", (event) => {
+function attachMainWindowCloseBehavior(window: BrowserWindow): void {
+  window.on("close", (event) => {
     if (quitting || startupCheckOnly) {
       return;
     }
-    const preferences = services?.attention.preferences;
-    if (preferences?.closeToTray) {
-      event.preventDefault();
+    event.preventDefault();
+    if (services?.attention.preferences.closeToTray) {
       hideToTray(window);
       island?.setMainVisible(false);
+      return;
     }
+    // Without the tray, the main window is the app: closing it quits, even
+    // though the island's own window is still open and would otherwise keep
+    // a windowless runtime alive that nothing can bring back.
+    quitting = true;
+    app.quit();
   });
 }
 
 app.on("second-instance", () => {
   // Only the main window is brought forward: the first window in the list may
   // be the island, which must never steal focus from a second launch.
-  const existing = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
-  if (existing) {
-    if (existing.isMinimized()) {
-      existing.restore();
-    }
-    existing.show();
-    existing.focus();
-  }
+  revealMainWindow();
 });
 
 // The startup check runs headlessly against its own user-data directory, so it
@@ -219,15 +231,8 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0 && services) {
-    mainWindow = createMainWindow({
-      devServerUrl: process.env["ELECTRON_RENDERER_URL"],
-      rendererFile: resolveRendererFile(__dirname),
-      preloadFile: join(__dirname, "../preload/index.js"),
-    });
-    attachMainWindowCloseBehavior(mainWindow);
-    attachMainWindowFocusTracking(mainWindow);
-    island?.setMainVisible(true);
+  if (BrowserWindow.getAllWindows().length === 0) {
+    revealMainWindow();
   }
 });
 

@@ -623,7 +623,12 @@ export class IslandController {
       }
       return;
     }
+    // A hidden window is not in front any more, but hiding it does not blur
+    // it on Windows: without this the island would still think the app is
+    // focused and stay hidden after closing to the tray.
+    this.#mainFocused = false;
     if (this.#services.attention.preferences.stayVisibleWhenHidden) {
+      this.#applyFocusRule();
       return;
     }
     if (this.#window.visible) {
