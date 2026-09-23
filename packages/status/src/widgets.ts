@@ -73,6 +73,15 @@ function plural(count: number, one: string, many = `${one}s`): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
+/**
+ * New entry fields default to quiet: no options, no diff, no mark override,
+ * no usage rows. Builders spread this so the schema can grow without every
+ * widget naming every field.
+ */
+function quietDefaults(): Pick<IslandEntry, "options" | "usage" | "icon" | "diff"> {
+  return { options: [], usage: [], icon: null, diff: null };
+}
+
 /** How much of a limit is used, or null when the provider did not say. */
 function usedPercent(limit: UsageLimit): number | null {
   if (limit.unit === "percent") {
@@ -105,6 +114,7 @@ export const needsAttentionWidget: IslandWidget = {
     }
     return {
       widget: "needsAttention",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.userActionRequired,
       title: first.title,
       detail:
@@ -136,6 +146,7 @@ export const errorsWidget: IslandWidget = {
     }
     return {
       widget: "errors",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.agentBlocked,
       title: first.title,
       detail: first.detail,
@@ -164,6 +175,7 @@ export const connectionHealthWidget: IslandWidget = {
     }
     return {
       widget: "connectionHealth",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.connectionFailure,
       title: first.title,
       detail: first.detail,
@@ -194,6 +206,7 @@ export const completedWorkWidget: IslandWidget = {
     }
     return {
       widget: "completedWork",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.workCompleted,
       title: first.title,
       detail: first.detail,
@@ -221,6 +234,7 @@ export const teamProgressWidget: IslandWidget = {
 
     return {
       widget: "teamProgress",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.activeProgress,
       title: snapshot.run.goal,
       // Counted, never estimated. With no tasks yet there is no percentage to
@@ -262,6 +276,7 @@ export const activeAgentsWidget: IslandWidget = {
 
     return {
       widget: "activeAgents",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.agentActivity,
       title,
       // A solo session has no task graph, so it gets its state, not a number.
@@ -295,18 +310,30 @@ export const providerUsageWidget: IslandWidget = {
 
     // Only what the providers themselves reported (spec §55). A limit whose
     // numbers do not add up to a percentage is left out rather than guessed.
-    const parts = reported.flatMap((snapshot) =>
-      snapshot.limits
-        .map((limit) => ({ limit, used: usedPercent(limit) }))
-        .filter((entry): entry is { limit: UsageLimit; used: number } => entry.used !== null)
-        .map((entry) => `${snapshot.providerId} ${entry.used}%`),
+    const rows = reported.flatMap((snapshot) =>
+      snapshot.limits.flatMap((limit) => {
+        const used = usedPercent(limit);
+        if (used === null) {
+          return [];
+        }
+        return [
+          {
+            providerId: snapshot.providerId,
+            name: snapshot.providerId,
+            window: limit.label,
+            percentLeft: Math.min(100, Math.max(0, 100 - used)),
+          },
+        ];
+      }),
     );
+    const parts = rows.map((row) => `${row.providerId} ${100 - row.percentLeft}%`);
     if (parts.length === 0) {
       return null;
     }
 
     return {
       widget: "providerUsage",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.providerUsage,
       title: parts.slice(0, 2).join("   "),
       detail: parts.length > 2 ? parts.slice(2).join("   ") : "",
@@ -314,6 +341,7 @@ export const providerUsageWidget: IslandWidget = {
       action: { label: "Open", target: { view: "providers" } },
       key: "usage",
       at: sources.now,
+      usage: rows,
     };
   },
 };
@@ -324,6 +352,7 @@ export const idleWidget: IslandWidget = {
   build(sources) {
     return {
       widget: "idle",
+      ...quietDefaults(),
       priority: ISLAND_PRIORITY.idle,
       title: "AI Workbench · Idle",
       detail: "",

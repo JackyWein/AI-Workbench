@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type JSX } from "react";
 import type { ChatMessage } from "@ai-workbench/shared";
+import { useWorkbench } from "../store/workbench.js";
 import { MessageItem } from "./MessageItem.js";
 
 interface ChatViewProps {
@@ -51,6 +52,24 @@ export function ChatView({ messages }: ChatViewProps): JSX.Element {
 
   const hiddenCount = Math.max(0, messages.length - visibleCount);
   const visible = hiddenCount === 0 ? messages : messages.slice(hiddenCount);
+  const sendMessage = useWorkbench((state) => state.sendMessage);
+  const dayLabel = visible[0] ? dayLabelFor(visible[0].createdAt) : null;
+
+  const retry = (message: ChatMessage): void => {
+    if (message.role === "user" && message.content.trim().length > 0) {
+      void sendMessage(message.content);
+      return;
+    }
+    // A failed assistant turn retries the user turn before it, when there is one.
+    const index = messages.findIndex((entry) => entry.id === message.id);
+    for (let position = index - 1; position >= 0; position -= 1) {
+      const candidate = messages[position];
+      if (candidate?.role === "user" && candidate.content.trim().length > 0) {
+        void sendMessage(candidate.content);
+        return;
+      }
+    }
+  };
 
   return (
     <div
@@ -78,6 +97,7 @@ export function ChatView({ messages }: ChatViewProps): JSX.Element {
       }}
     >
       <div className="chat__inner">
+        {dayLabel ? <div className="day">{dayLabel}</div> : null}
         {hiddenCount > 0 ? (
           <button
             type="button"
@@ -95,9 +115,26 @@ export function ChatView({ messages }: ChatViewProps): JSX.Element {
             key={message.id}
             message={message}
             streaming={message.status === "streaming"}
+            onRetry={() => retry(message)}
           />
         ))}
       </div>
     </div>
   );
+}
+
+/** Day divider from a real timestamp: Today, Yesterday, or the date. */
+function dayLabelFor(date: Date): string {
+  const startOf = (value: Date): Date =>
+    new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const days = Math.round(
+    (startOf(new Date()).getTime() - startOf(date).getTime()) / 86_400_000,
+  );
+  if (days <= 0) {
+    return "Today";
+  }
+  if (days === 1) {
+    return "Yesterday";
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" });
 }

@@ -129,7 +129,16 @@ export function FilesView({ sessionId, onError }: FilesViewProps): JSX.Element {
               {selected.path}
               {selected.truncated ? " · showing the beginning only" : ""}
             </p>
-            <pre className="files__code">{selected.content}</pre>
+            <pre className="files__code files__code--numbered">
+              {selected.content.split("\n").map((line, index) => (
+                <span key={index} className="codeblock__line">
+                  <span className="codeblock__no" aria-hidden="true">
+                    {index + 1}
+                  </span>
+                  <span>{line || " "}</span>
+                </span>
+              ))}
+            </pre>
           </>
         )}
       </div>

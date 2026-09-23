@@ -165,8 +165,8 @@ function IslandSettings({ settings }: { readonly settings: AppSettings }): JSX.E
 
   return (
     <>
-      {toggle("enabled", "Enabled", "Show the island.")}
-      {toggle("startWithApp", "Start with AI Workbench", "Appear as soon as the app opens.")}
+      {toggle("enabled", "Enabled", "Show the island when the app is in the background.")}
+      {toggle("startWithApp", "Start with AI Workbench", "There from launch; hidden while the main window is focused.")}
       {toggle(
         "stayVisibleWhenHidden",
         "Stay visible when the main window is hidden",

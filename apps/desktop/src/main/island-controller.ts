@@ -25,6 +25,11 @@ export interface IslandControllerOptions {
   readonly devServerUrl?: string | undefined;
   readonly focusMainWindow: () => BrowserWindow | null;
   readonly quit: () => void;
+  /**
+   * Side-effect-free read of the main window for visibility/focus checks.
+   * Unlike focusMainWindow, calling this never shows or focuses anything.
+   */
+  readonly getMainWindow: () => BrowserWindow | null;
 }
 
 export class IslandController {
@@ -41,6 +46,13 @@ export class IslandController {
   #lastRunCount = 0;
   /** True while the island is hidden only because the main window is. */
   #hiddenWithMain = false;
+  /** Whether the main window currently holds focus. */
+  #mainFocused = false;
+  /**
+   * Set by an explicit hide; while true, focus changes must not resurrect the
+   * island. Cleared by an explicit show or by re-enabling the island.
+   */
+  #manualHidden = false;
   /** Serializes preference writes so concurrent callers cannot interleave. */
   #preferencesChain: Promise<void> = Promise.resolve();
 
@@ -77,6 +89,34 @@ export class IslandController {
           }),
         );
       },
+      onSnapEdge: ({ edge, railT, displayId }) => {
+        // A blob released at a rail becomes a docked pill; the pill keeps the
+        // exact along-rail spot it was released at.
+        void this.setPreferences({
+          dockedEdge: edge,
+          railT,
+          displayId,
+        }).catch((error: unknown) =>
+          this.#services.logger.warn("Could not dock the island", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      },
+      onDetach: ({ x, y, displayId }) => {
+        // Pulled off its rail, the pill is a free blob again at the pointer.
+        void this.setPreferences({
+          dockedEdge: null,
+          railT: null,
+          position: "custom",
+          customX: x,
+          customY: y,
+          displayId,
+        }).catch((error: unknown) =>
+          this.#services.logger.warn("Could not undock the island", {
+            error: error instanceof Error ? error.message : String(error),
+          }),
+        );
+      },
     });
 
     this.#tray = new StatusTray({
@@ -84,7 +124,7 @@ export class IslandController {
       islandVisible: () => this.#window.visible,
       actions: {
         openMainWindow: () => options.focusMainWindow(),
-        toggleIsland: () => this.#window.toggle(),
+        toggleIsland: () => this.toggleIsland(),
         describeActivity: () => this.#activity(),
         pauseRuns: () => this.#pauseRuns(),
         stopAllWork: () => this.#stopAllWork(),
@@ -139,6 +179,11 @@ export class IslandController {
       this.#window.apply(settings.statusIsland);
     }
     await this.refresh();
+    // From the first second the focus rule governs: a focused main window
+    // means no island on top of it. Reads focus without touching the window:
+    // focusMainWindow would show and focus it as a side effect.
+    const main = this.#options.getMainWindow();
+    this.setMainFocused(Boolean(main && !main.isDestroyed() && main.isFocused()));
   }
 
   /** Collects the current picture and lets the service decide (spec §102). */
@@ -307,9 +352,16 @@ export class IslandController {
   }
 
   async #setPreferencesInner(patch: Partial<IslandPreferences>): Promise<IslandState> {
+    const wasEnabled = this.#services.attention.preferences.enabled;
     const settings = await this.#services.settings.update({
       statusIsland: { ...this.#services.attention.preferences, ...patch },
     });
+    if (patch.enabled === false) {
+      this.#manualHidden = true;
+    } else if (patch.enabled === true && !wasEnabled) {
+      // Re-enabling is an explicit show: back on screen, focus rule after.
+      this.#manualHidden = false;
+    }
     const state = this.#services.attention.setPreferences(settings.statusIsland);
     this.#window.apply(settings.statusIsland);
     this.#tray.refresh();
@@ -343,9 +395,27 @@ export class IslandController {
     return this.#services.attention.dismissOverride();
   }
 
+  /** Forgets a dragged spot and edge-dock, back to the default corner. */
+  resetPosition(): Promise<IslandState> {
+    return this.setPreferences({
+      position: "topCenter",
+      customX: null,
+      customY: null,
+      displayId: null,
+      dockedEdge: null,
+      railT: null,
+    });
+  }
+
+  /** Applies the size the island page measured for its current face. */
+  resize(width: number, height: number): boolean {
+    this.#window.setContentSize(width, height);
+    return this.#window.visible;
+  }
+
   show(): boolean {
-    // An explicit show is the user's choice, not a side effect of the main
-    // window coming back.
+    // An explicit show wins immediately; focus changes govern after it.
+    this.#manualHidden = false;
     this.#hiddenWithMain = false;
     this.#window.show();
     this.#tray.refresh();
@@ -353,23 +423,80 @@ export class IslandController {
   }
 
   hide(): boolean {
-    // An explicit hide is the user's choice and stays until shown again.
+    // An explicit hide sticks until an explicit show or re-enable: focus
+    // changes must not resurrect what the user dismissed.
+    this.#manualHidden = true;
     this.#hiddenWithMain = false;
     this.#window.hide();
     this.#tray.refresh();
     return this.#window.visible;
   }
 
+  /** Tray toggle with the same stickiness as the IPC show/hide. */
+  toggleIsland(): boolean {
+    if (this.#window.visible) {
+      this.hide();
+    } else {
+      this.show();
+    }
+    return this.#window.visible;
+  }
+
+  /**
+   * The island belongs on screen from launch, but never on top of the app
+   * itself: a focused main window hides it, losing focus brings it back.
+   * Explicit choices (manual hide, disabled island) always win over this.
+   */
+  setMainFocused(focused: boolean): void {
+    this.#mainFocused = focused;
+    this.#applyFocusRule();
+  }
+
+  #applyFocusRule(): void {
+    const preferences = this.#services.attention.preferences;
+    if (!preferences.enabled || this.#manualHidden) {
+      return;
+    }
+    if (this.#mainFocused) {
+      if (this.#window.visible) {
+        this.#window.hide();
+        this.#tray.refresh();
+        this.#services.logger.info("Island hidden while the main window is focused");
+      }
+      return;
+    }
+    // Focus went elsewhere (or nowhere): the island comes back — unless the
+    // main window itself is gone and the user asked it not to outlive it.
+    // Reads through getMainWindow on purpose: focusMainWindow would restore
+    // and focus the window as a side effect, which un-minimizes it.
+    const main = this.#options.getMainWindow();
+    const mainGone = !main || main.isDestroyed() || !main.isVisible();
+    if (mainGone && !preferences.stayVisibleWhenHidden) {
+      if (this.#window.visible) {
+        this.#window.hide();
+        this.#tray.refresh();
+        this.#services.logger.info("Island hidden with the main window");
+      }
+      return;
+    }
+    if (!this.#window.visible) {
+      this.#window.show();
+      this.#tray.refresh();
+      this.#services.logger.info("Island shown while the main window is in the background");
+    }
+  }
+
   /**
    * Follows the main window when the island was not asked to stay (spec §101).
    * A manually hidden island is never resurrected by this; only an island
-   * that was hidden together with the main window comes back with it.
+   * that was hidden together with the main window comes back with it — and
+   * only when the focus rule would show it anyway.
    */
   setMainVisible(visible: boolean): void {
     if (visible) {
       if (this.#hiddenWithMain) {
         this.#hiddenWithMain = false;
-        this.#window.apply(this.#services.attention.preferences);
+        this.#applyFocusRule();
         this.#tray.refresh();
       }
       return;

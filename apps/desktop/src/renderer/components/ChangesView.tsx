@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { RefreshCw } from "lucide-react";
 import type { GitFileChange, GitStatus } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
-import { Popover } from "./Popover.js";
 
 interface ChangesViewProps {
   readonly sessionId: string;
@@ -79,23 +78,100 @@ export function ChangesView({ sessionId, onError }: ChangesViewProps): JSX.Eleme
       ) : (
         <ul className="changes__list">
           {status?.changes.map((change) => (
-            <li className="changes__item" key={`${change.path}-${change.kind}`}>
-              <span className="changes__badge" data-kind={change.kind}>
-                {badgeFor(change)}
-              </span>
-              <Popover
-                title="File path"
-                triggerClassName="row__text"
-                trigger={<>{change.path}</>}
-              >
-                <p className="popover__detail">{change.path}</p>
-              </Popover>
-              {change.staged ? <span className="row__meta">staged</span> : null}
-            </li>
+            <ChangeRow key={`${change.path}-${change.kind}`} sessionId={sessionId} change={change} />
           ))}
         </ul>
       )}
     </div>
+  );
+}
+
+const DIFF_LINE_CAP = 60;
+
+function ChangeRow({
+  sessionId,
+  change,
+}: {
+  readonly sessionId: string;
+  readonly change: GitFileChange;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const [diff, setDiff] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const toggle = async (): Promise<void> => {
+    const next = !open;
+    setOpen(next);
+    if (next && diff === null && !failed && !loading) {
+      setLoading(true);
+      try {
+        const result = await invoke("git.diff", {
+          sessionId,
+          path: change.path,
+          staged: change.staged,
+        });
+        setDiff(result.diff);
+      } catch {
+        setFailed(true);
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  return (
+    <li className="changes__item changes__item--expandable">
+      <button
+        type="button"
+        className="changes__rowbtn"
+        onClick={() => void toggle()}
+        aria-expanded={open}
+      >
+        <span className="changes__badge" data-kind={change.kind}>
+          {badgeFor(change)}
+        </span>
+        <span className="row__text" title={change.path}>
+          {change.path}
+        </span>
+        {change.staged ? <span className="row__meta">staged</span> : null}
+      </button>
+      {open ? (
+        <div className="diff-preview">
+          {loading ? (
+            <p className="row__meta">Loading diff…</p>
+          ) : failed || diff === null ? (
+            <p className="row__meta">Diff unavailable</p>
+          ) : diff.trim().length === 0 ? (
+            <p className="row__meta">No textual diff</p>
+          ) : (
+            <pre className="diff-preview__pre">
+              {diff
+                .split("\n")
+                .slice(0, DIFF_LINE_CAP)
+                .map((line, index) => (
+                  <span
+                    key={index}
+                    className="diff-preview__line"
+                    data-kind={
+                      line.startsWith("+") && !line.startsWith("+++")
+                        ? "add"
+                        : line.startsWith("-") && !line.startsWith("---")
+                          ? "del"
+                          : "ctx"
+                    }
+                  >
+                    {line || " "}
+                  </span>
+                ))}
+              {diff.split("\n").length > DIFF_LINE_CAP ? (
+                <span className="row__meta">… truncated</span>
+              ) : null}
+            </pre>
+          )}
+        </div>
+      ) : null}
+    </li>
   );
 }
 

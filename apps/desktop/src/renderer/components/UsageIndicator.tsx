@@ -7,7 +7,6 @@ interface UsageIndicatorProps {
   readonly usage: AggregatedUsage | null;
   readonly providers: ProviderSummary[];
   readonly activeProviderId: string | null;
-  readonly activeModelName: string | null;
 }
 
 /**
@@ -19,7 +18,6 @@ export function UsageIndicator({
   usage,
   providers,
   activeProviderId,
-  activeModelName,
 }: UsageIndicatorProps): JSX.Element {
   const names = useMemo(
     () => new Map(providers.map((provider) => [provider.metadata.id, provider.metadata.displayName])),
@@ -34,25 +32,8 @@ export function UsageIndicator({
   return (
     <Popover
       title="Usage"
-      triggerClassName="usage-indicator"
-      trigger={
-        <>
-          <span>{activeModelName ?? "No model"}</span>
-          {headline ? (
-            <>
-              <span className="usage-bar" aria-hidden="true">
-                <span
-                  className="usage-bar__fill"
-                  style={{ width: `${headline.percent}%` }}
-                />
-              </span>
-              <span className="usage-indicator__value">{headline.percent}%</span>
-            </>
-          ) : (
-            <span className="usage-indicator__value">--</span>
-          )}
-        </>
-      }
+      triggerClassName="pill"
+      trigger={<>{headline ? `${headline.percent}% left` : "Usage unavailable"}</>}
     >
       {usage && usage.snapshots.length > 0 ? (
         <>

@@ -10,6 +10,7 @@ import { z } from "zod";
 
 export const islandWidgetIdSchema = z.enum([
   "needsAttention",
+  "agentQuestion",
   "activeAgents",
   "teamProgress",
   "providerUsage",
@@ -27,6 +28,10 @@ export const islandPositionSchema = z.enum([
   "custom",
 ]);
 export type IslandPosition = z.infer<typeof islandPositionSchema>;
+
+/** Edge-dock rails (Island Apple): null means a free blob. */
+export const islandEdgeSchema = z.enum(["top", "right", "bottom", "left"]);
+export type IslandEdge = z.infer<typeof islandEdgeSchema>;
 
 export const islandPreferencesSchema = z.object({
   enabled: z.boolean().default(true),
@@ -56,6 +61,12 @@ export const islandPreferencesSchema = z.object({
   pinnedWidget: islandWidgetIdSchema.nullable().default(null),
   /** Closing the main window quits, or leaves the runtime going (spec §104). */
   closeToTray: z.boolean().default(false),
+  /** Edge-dock (Island Apple): the rail the pill sits on, or null for a free blob. */
+  dockedEdge: islandEdgeSchema.nullable().default(null),
+  /** Position along the rail in pixels; null means centered. */
+  railT: z.number().nullable().default(null),
+  /** The minimal circle is the default face; false starts expanded. */
+  minimalByDefault: z.boolean().default(true),
 });
 export type IslandPreferences = z.infer<typeof islandPreferencesSchema>;
 export const defaultIslandPreferences: IslandPreferences =
@@ -68,6 +79,32 @@ export const islandTargetSchema = z.object({
   runId: z.string().min(1).optional(),
 });
 export type IslandTarget = z.infer<typeof islandTargetSchema>;
+
+/** One diff line in a capped approval preview; the producer caps at 6 lines. */
+export const islandDiffLineSchema = z.object({
+  kind: z.enum(["add", "del", "ctx"]),
+  text: z.string().max(500),
+});
+export type IslandDiffLine = z.infer<typeof islandDiffLineSchema>;
+
+/** One answerable option on an agent question. */
+export const islandOptionSchema = z.object({
+  id: z.string().min(1).max(200),
+  label: z.string().min(1).max(200),
+  hint: z.string().max(200).optional(),
+});
+export type IslandOption = z.infer<typeof islandOptionSchema>;
+
+/** One provider usage row, from real snapshots only — never estimated. */
+export const islandUsageRowSchema = z.object({
+  providerId: z.string().min(1),
+  name: z.string().min(1).max(120),
+  /** Window label from the provider (Weekly, 5-hour, Daily). */
+  window: z.string().max(60).default(""),
+  /** Percent remaining, or null when the provider did not report a number. */
+  percentLeft: z.number().min(0).max(100).nullable(),
+});
+export type IslandUsageRow = z.infer<typeof islandUsageRowSchema>;
 
 /** One thing the island can show, produced by the attention service. */
 export const islandEntrySchema = z.object({
@@ -89,6 +126,21 @@ export const islandEntrySchema = z.object({
   /** Identifies the underlying thing, so a repeat does not queue twice. */
   key: z.string(),
   at: z.date(),
+  /** Approval diff preview, capped by the producer; absent when not an approval. */
+  diff: z
+    .object({
+      file: z.string().max(500),
+      stat: z.string().max(120),
+      lines: z.array(islandDiffLineSchema).max(6),
+    })
+    .nullable()
+    .default(null),
+  /** Answerable options; absent when the entry is not a question. */
+  options: z.array(islandOptionSchema).max(9).default([]),
+  /** Provider mark key for the Logo component; absent falls back to a letter. */
+  icon: z.string().max(120).nullable().default(null),
+  /** Structured usage rows for the usage panel; empty when nothing reported. */
+  usage: z.array(islandUsageRowSchema).max(24).default([]),
 });
 export type IslandEntry = z.infer<typeof islandEntrySchema>;
 
@@ -106,6 +158,7 @@ export type IslandState = z.infer<typeof islandStateSchema>;
 /** Priorities from spec §99, in one place so nothing scatters them. */
 export const ISLAND_PRIORITY = {
   userActionRequired: 100,
+  agentQuestion: 95,
   permissionRequired: 90,
   agentBlocked: 80,
   connectionFailure: 70,
@@ -115,4 +168,26 @@ export const ISLAND_PRIORITY = {
   agentActivity: 30,
   providerUsage: 20,
   idle: 10,
+} as const;
+
+/**
+ * Hover/drag timing, in one place so main and renderer share them.
+ * Values come from the approved mock; the renderer owns the hover timers,
+ * main owns the dock geometry.
+ */
+export const ISLAND_TIMING = {
+  /** Hover-leave grace before a hover layer hides. */
+  peekGraceMs: 240,
+  /** Fade duration for hover layers (CSS mirrors this). */
+  hideFadeMs: 180,
+  /** Pull distance off a rail that detaches edge → blob. */
+  detachPx: 78,
+  /** Edge proximity that snaps a released blob to the rail. */
+  snapPx: 54,
+  /** Adjacent-edge distance that rounds docked corners. */
+  cornerPx: 40,
+  /** Minimum inset from display edges. */
+  edgeMarginPx: 14,
+  /** Wheel/cycle throttle, already the renderer's value. */
+  wheelThrottleMs: 300,
 } as const;

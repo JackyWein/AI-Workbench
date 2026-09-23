@@ -1,9 +1,20 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowRight,
+  Boxes,
+  CircleDot,
+  Folder,
+  MessageSquare,
+  Sun,
+  Tag,
+  Terminal,
+} from "lucide-react";
 import type { IslandWidgetId } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 
 const ISLAND_WIDGET_LABELS: Record<IslandWidgetId, string> = {
   needsAttention: "Needs attention",
+  agentQuestion: "Agent question",
   activeAgents: "Active agents",
   teamProgress: "Team progress",
   providerUsage: "Usage",
@@ -131,6 +142,35 @@ export function CommandPalette(): JSX.Element | null {
         },
       },
     ];
+
+    // Reasoning effort lives here now that the header is crumbs + pills: only
+    // the active tool's own options appear, and Default clears back to none.
+    if (activeSessionId) {
+      const activeSession = sessions.find((entry) => entry.id === activeSessionId);
+      const activeProvider = providers.find(
+        (entry) => entry.metadata.id === activeSession?.providerId,
+      );
+      for (const option of activeProvider?.metadata.effortOptions ?? []) {
+        list.push({
+          id: `effort.${option}`,
+          label: `Reasoning effort: ${option}`,
+          group: "Session",
+          run: () => {
+            void store.getState().setSessionRuntime({ reasoningEffort: option });
+          },
+        });
+      }
+      if ((activeProvider?.metadata.effortOptions ?? []).length > 0) {
+        list.push({
+          id: "effort.default",
+          label: "Reasoning effort: default",
+          group: "Session",
+          run: () => {
+            void store.getState().setSessionRuntime({ reasoningEffort: null });
+          },
+        });
+      }
+    }
 
     // The Status Island is reachable from the keyboard as well as by click
     // and scroll (spec §81, §100).
@@ -265,10 +305,27 @@ export function CommandPalette(): JSX.Element | null {
     if (!needle) {
       return commands.slice(0, 12);
     }
+    // Session > action ordering is the registry order; the filter only
+    // narrows, never re-ranks, so the grammar stays stable while typing.
     return commands
       .filter((command) => command.label.toLowerCase().includes(needle))
       .slice(0, 20);
   }, [commands, query]);
+
+  const grouped = useMemo(() => {
+    const order: string[] = [];
+    const byGroup = new Map<string, Command[]>();
+    for (const command of results) {
+      const list = byGroup.get(command.group);
+      if (list) {
+        list.push(command);
+      } else {
+        byGroup.set(command.group, [command]);
+        order.push(command.group);
+      }
+    }
+    return order.map((group) => ({ group, items: byGroup.get(group) ?? [] }));
+  }, [results]);
 
   useEffect(() => {
     if (open) {
@@ -303,8 +360,7 @@ export function CommandPalette(): JSX.Element | null {
           setOpen(false);
         }
       }}
-    >
-      <div className="palette" role="dialog" aria-label="Command palette" aria-modal="true">
+    >      <div className="palette" role="dialog" aria-label="Command palette" aria-modal="true">
         <input
           ref={inputRef}
           className="palette__input"
@@ -332,24 +388,97 @@ export function CommandPalette(): JSX.Element | null {
           <p className="palette__empty">No matching command</p>
         ) : (
           <ul className="palette__list" role="listbox" aria-label="Commands">
-            {results.map((command, position) => (
-              <li key={command.id}>
-                <button
-                  type="button"
-                  className="palette__item"
-                  role="option"
-                  aria-selected={position === index}
-                  onMouseEnter={() => setIndex(position)}
-                  onClick={() => void run(command)}
-                >
-                  <span className="row__text">{command.label}</span>
-                  <span className="palette__group">{command.group}</span>
-                </button>
+            {grouped.map((section) => (
+              <li key={section.group}>
+                <p className="palette__grouphead">
+                  {section.group}
+                  <span className="palette__count">{section.items.length}</span>
+                </p>
+                <ul>
+                  {section.items.map((command) => {
+                    const position = results.indexOf(command);
+                    return (
+                      <li key={command.id}>
+                        <button
+                          type="button"
+                          className="palette__item"
+                          role="option"
+                          aria-selected={position === index}
+                          onMouseEnter={() => setIndex(position)}
+                          onClick={() => void run(command)}
+                        >
+                          <span className="palette__icon" aria-hidden="true">
+                            <GroupIcon group={command.group} />
+                          </span>
+                          <span className="row__text">
+                            <Highlight label={command.label} needle={query.trim()} />
+                          </span>
+                          <span className="palette__group">{command.group}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </li>
             ))}
           </ul>
         )}
+        <div className="palette__foot" aria-hidden="true">
+          <span>
+            <kbd className="kbd">↑↓</kbd> navigate
+          </span>
+          <span>
+            <kbd className="kbd">↵</kbd> run
+          </span>
+          <span>
+            <kbd className="kbd">esc</kbd> dismiss
+          </span>
+        </div>
       </div>
     </div>
+  );
+}
+
+function GroupIcon({ group }: { readonly group: string }): JSX.Element {
+  const size = 14;
+  const width = { strokeWidth: 1.75 } as const;
+  switch (group) {
+    case "Session":
+      return <MessageSquare size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+    case "Workspace":
+      return <Folder size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+    case "Go to":
+      return <ArrowRight size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+    case "Providers":
+      return <Boxes size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+    case "Models":
+      return <Tag size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+    case "Appearance":
+      return <Sun size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+    case "Status Island":
+      return <CircleDot size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+    default:
+      return <Terminal size={size} strokeWidth={width.strokeWidth} aria-hidden="true" />;
+  }
+}
+
+/** Bold accent match for the typed substring; plain text when there is none. */
+function Highlight({
+  label,
+  needle,
+}: {
+  readonly label: string;
+  readonly needle: string;
+}): JSX.Element {
+  const position = needle.length === 0 ? -1 : label.toLowerCase().indexOf(needle.toLowerCase());
+  if (position < 0) {
+    return <>{label}</>;
+  }
+  return (
+    <>
+      {label.slice(0, position)}
+      <mark className="palette__mark">{label.slice(position, position + needle.length)}</mark>
+      {label.slice(position + needle.length)}
+    </>
   );
 }

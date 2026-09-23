@@ -1,5 +1,7 @@
-import { useRef, type JSX, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
+import type { GitStatus } from "@ai-workbench/shared";
+import { invoke } from "../lib/client.js";
 import { ChangesView } from "./ChangesView.js";
 import { FilesView } from "./FilesView.js";
 import { TerminalView } from "./TerminalView.js";
@@ -26,6 +28,27 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps): JSX.Element 
   const setPanelOpen = useWorkbench((state) => state.setWorkspacePanelOpen);
   const setError = useWorkbench((state) => state.setError);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [changeCount, setChangeCount] = useState<number | null>(null);
+
+  // Tab badge only: the count comes from the same status the Changes tab
+  // shows, so the two can never disagree for long. Failures omit the badge.
+  useEffect(() => {
+    let current = true;
+    void invoke("git.status", { sessionId })
+      .then((next: GitStatus) => {
+        if (current) {
+          setChangeCount(next.isRepository && !next.clean ? next.changes.length : 0);
+        }
+      })
+      .catch(() => {
+        if (current) {
+          setChangeCount(null);
+        }
+      });
+    return () => {
+      current = false;
+    };
+  }, [sessionId]);
 
   // Roving tabindex: only the open tab is in the tab order, arrows move
   // between tabs and select as they go.
@@ -72,7 +95,9 @@ export function WorkspacePanel({ sessionId }: WorkspacePanelProps): JSX.Element 
             className="panel__tab"
             onClick={() => setTab(entry.id)}
           >
-            {entry.label}
+            {entry.id === "changes" && changeCount !== null && changeCount > 0
+              ? `Changes · ${changeCount}`
+              : entry.label}
           </button>
         ))}
         <button

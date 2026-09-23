@@ -20,6 +20,8 @@ interface ContextPanelProps {
   readonly messageCount: number;
   /** Usage of the most recent answer, when the provider reported any. */
   readonly usage: MessageUsage | null;
+  /** Resends the last user turn; omitted while there is nothing to resume. */
+  readonly onResume: (() => void) | null;
 }
 
 /** Optional right-hand context (spec §80). Compact, read-only, no dashboard. */
@@ -30,14 +32,53 @@ export function ContextPanel({
   status,
   messageCount,
   usage,
+  onResume,
 }: ContextPanelProps): JSX.Element {
   const context = describeContext(usage);
+  const percent = contextPercent(usage);
+  const cancel = useWorkbench((state) => state.cancel);
+  const busy = useWorkbench((state) => state.busy[session.id] ?? false);
+  const model = provider?.models.find((entry) => entry.id === session.modelId);
 
   return (
     <aside className="context" aria-label="Session context">
       <div className="context__group">
         <p className="context__label">Status</p>
-        <p className="context__value">{status ? labelFor(status) : "Idle"}</p>
+        <p className="context__value">
+          <span
+            className="pill"
+            data-tone={
+              status === "error" ? "danger" : status === "waiting" ? "warn" : "live"
+            }
+          >
+            {status === "waiting" || (status !== "idle" && status !== undefined) ? (
+              <span
+                className="status-dot"
+                data-state={status === "error" ? "error" : status === "waiting" ? "waiting" : "running"}
+                aria-hidden="true"
+              />
+            ) : null}
+            {status ? labelFor(status) : "Idle"}
+          </span>
+        </p>
+        {busy || onResume ? (
+          <div className="context__actions">
+            {busy ? (
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => void cancel()}
+              >
+                Interrupt
+              </button>
+            ) : null}
+            {!busy && onResume ? (
+              <button type="button" className="btn-ghost" onClick={onResume}>
+                Resume
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="context__group">
@@ -64,6 +105,11 @@ export function ContextPanel({
       </div>
 
       <div className="context__group">
+        <p className="context__label">Model</p>
+        <p className="context__value">{model?.displayName ?? "Default"}</p>
+      </div>
+
+      <div className="context__group">
         <p className="context__label">Session</p>
         <p className="context__value">
           {session.providerSessionId ? "Resumable" : "Not started yet"}
@@ -79,6 +125,18 @@ export function ContextPanel({
         <div className="context__group">
           <p className="context__label">Context</p>
           <p className="context__value">{context}</p>
+          {percent !== null ? (
+            <div
+              className="context__meter"
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Context used, ${percent} percent`}
+            >
+              <i style={{ width: `${percent}%` }} />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -114,11 +172,13 @@ function SessionSkills({ sessionId }: { readonly sessionId: string }): JSX.Eleme
   return (
     <div className="context__group">
       <p className="context__label">Skills</p>
-      {skills.map((entry) => (
-        <p className="context__value" key={entry.skill.id}>
-          {entry.skill.name}
-        </p>
-      ))}
+      <div className="chip-row">
+        {skills.map((entry) => (
+          <span className="chip" key={entry.skill.id}>
+            {entry.skill.name}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -153,21 +213,26 @@ function SessionTools({ sessionId }: { readonly sessionId: string }): JSX.Elemen
       <p className="context__label">MCP servers</p>
       {servers.map((server) => {
         const status = statuses.find((entry) => entry.id === server.id);
+        const enabled = enabledIds.includes(server.id);
         return (
-          <label className="scope-toggle" key={server.id}>
+          <label className="mcp-switch" key={server.id}>
+            <span
+              className="status-dot"
+              data-state={status && status.state !== "connected" ? "waiting" : "running"}
+              aria-hidden="true"
+            />
+            <span className="mcp-switch__name">{server.name}</span>
             <input
               type="checkbox"
-              checked={enabledIds.includes(server.id)}
+              className="mini-switch"
+              checked={enabled}
               onChange={(event) => {
                 void setSessionMcpAccess(server.id, event.target.checked).catch(
                   (error: unknown) => setError(describeError(error)),
                 );
               }}
+              aria-label={`${enabled ? "Disable" : "Enable"} ${server.name} for this session`}
             />
-            <span>{server.name}</span>
-            {status && status.state !== "connected" ? (
-              <span className="row__meta">{status.state}</span>
-            ) : null}
           </label>
         );
       })}
@@ -179,9 +244,19 @@ function labelFor(status: SessionStatus): string {
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-/** Context is shown only when a provider actually reports it (spec §56). */
-function describeContext(usage: MessageUsage | null): string | null {
+/** Percent width for the thin context meter; null when no window is known. */
+function contextPercent(usage: MessageUsage | null): number | null {
   if (!usage || usage.contextTokens === undefined) {
+    return null;
+  }
+  if (usage.contextWindow === undefined || usage.contextWindow <= 0) {
+    return null;
+  }
+  return Math.round((usage.contextTokens / usage.contextWindow) * 100);
+}
+
+/** Context is shown only when a provider actually reports it (spec §56). */
+function describeContext(usage: MessageUsage | null): string | null {  if (!usage || usage.contextTokens === undefined) {
     return null;
   }
   const used = formatTokens(usage.contextTokens);

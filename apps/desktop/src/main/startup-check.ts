@@ -128,7 +128,7 @@ export async function runStartupCheck(
     try {
       const pressed = await islandJs(
         `(() => {
-           const node = document.querySelector('.island');
+           const node = document.querySelector('.isl');
            if (!node) return false;
            node.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true }));
            return true;
@@ -141,13 +141,16 @@ export async function runStartupCheck(
     }
   };
 
-  /** Waits until the island page renders the current widget's title. */
+  /** Waits until the island page renders a real unit, not its loading face. */
   const waitIslandDom = async (timeoutMs = 10_000): Promise<boolean> => {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       try {
         const ready = await islandJs(
-          "Boolean(document.querySelector('.island__title')?.textContent)",
+          `(() => {
+             const label = document.querySelector('.isl')?.getAttribute('aria-label') ?? '';
+             return Boolean(label && !label.includes('loading') && !label.includes('No state'));
+           })()`,
         );
         if (ready === true) {
           return true;
@@ -162,7 +165,18 @@ export async function runStartupCheck(
 
   await check(
     "shell renders",
-    "Boolean(document.querySelector('.app') && document.querySelector('.sidebar'))",
+    `(async () => {
+       // The boot screen gates the shell until the store is ready, so this
+       // waits for the app rather than asserting a single frame.
+       const deadline = Date.now() + 15000;
+       while (Date.now() < deadline) {
+         if (document.querySelector('.app') && document.querySelector('.sidebar')) {
+           return true;
+         }
+         await new Promise(resolve => setTimeout(resolve, 100));
+       }
+       return false;
+     })()`,
   );
 
   await check(
@@ -195,7 +209,19 @@ export async function runStartupCheck(
   );
 
   await checkMain("the island is a separate visible window", async () => {
-    if (!island.visible) {
+    // The island hides while the main window is focused, so the check looks
+    // away first: losing focus is what brings it on screen.
+    window.blur();
+    const deadline = Date.now() + 5_000;
+    let visible = false;
+    while (Date.now() < deadline) {
+      if (island.visible) {
+        visible = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    if (!visible) {
       return false;
     }
     if (!(await waitIslandDom())) {
@@ -209,34 +235,53 @@ export async function runStartupCheck(
     if (BrowserWindow.getAllWindows().filter((entry) => !entry.isDestroyed()).length !== 2) {
       return false;
     }
-    // It shows exactly the title the service reported — nothing invented —
-    // and it is sized for the state it is in: compact normally, larger while
-    // an entry is holding it open. Which entry that is depends on what the
-    // application knows, so both are compared against the service rather than
-    // against fixed values. On a second start there can be unseen news, so a
-    // check that demanded the compact size would be asserting a fresh profile.
+    // It names what the service reported — nothing invented — and it is sized
+    // for its face: the page measures, main sizes the window to it. Which
+    // face that is depends on what the application knows, so the label is
+    // compared against the service rather than a fixed value. On a second
+    // start there can be unseen news, so a check that demanded one face would
+    // be asserting a fresh profile.
+    const state = island.state;
+    const label = await islandJs(
+      "document.querySelector('.isl')?.getAttribute('aria-label') ?? ''",
+    );
+    const bounds = target.getBounds();
+    const names = state.entries.map((entry) => entry.title);
+    const sized =
+      bounds.width >= 42 &&
+      bounds.width <= 480 &&
+      bounds.height >= 42 &&
+      bounds.height <= 640;
+    return (
+      typeof label === "string" &&
+      label.startsWith("Status Island:") &&
+      (names.some((name) => label.includes(name)) || label.includes("No agents")) &&
+      sized
+    );
+  });
+
+  await checkMain("the island hides while the main window is focused", async () => {
+    focusWindow(window);
     const deadline = Date.now() + 5_000;
-    let matched = false;
     while (Date.now() < deadline) {
-      const state = island.state;
-      const title = await islandJs(
-        "document.querySelector('.island__title')?.textContent ?? ''",
-      );
-      const bounds = target.getBounds();
-      const expected = state.expanded
-        ? { width: 380, height: 132 }
-        : { width: 320, height: 44 };
-      if (
-        title === state.current.title &&
-        bounds.width === expected.width &&
-        bounds.height === expected.height
-      ) {
-        matched = true;
-        break;
+      if (!island.visible) {
+        return true;
       }
       await new Promise((resolve) => setTimeout(resolve, 200));
     }
-    return matched;
+    return false;
+  });
+
+  await checkMain("the island returns when focus leaves the app", async () => {
+    window.blur();
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (island.visible) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return false;
   });
 
   await check(
@@ -339,7 +384,19 @@ export async function runStartupCheck(
     );
 
     await checkMain("the island reappears at the stored position", async () => {
-      if (!island.visible) {
+      // A focused main window keeps the island hidden, so the check looks
+      // away first — then the island must be back, at its stored spot.
+      window.blur();
+      const deadline = Date.now() + 5_000;
+      let visible = false;
+      while (Date.now() < deadline) {
+        if (island.visible) {
+          visible = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      if (!visible) {
         return false;
       }
       if (!(await waitIslandDom())) {
@@ -411,7 +468,8 @@ export async function runStartupCheck(
   await check(
     "usage detail opens on keyboard focus",
     `(() => {
-       const trigger = document.querySelector('.usage-indicator');
+       const trigger = [...document.querySelectorAll('.header__actions .pill')]
+         .find(node => /%|Usage/.test(node.textContent ?? ''));
        if (!trigger) return false;
        trigger.blur();
        trigger.focus();
@@ -1040,16 +1098,25 @@ export async function runStartupCheck(
     if (!target) {
       return false;
     }
-    const bounds = target.getBounds();
-    const actions = await islandJs(
-      "[...document.querySelectorAll('.island__actions button')].map(node => node.textContent)",
-    );
-    return (
-      bounds.width === 380 &&
-      bounds.height === 132 &&
-      Array.isArray(actions) &&
-      actions.some((label) => typeof label === "string" && label.includes("Open"))
-    );
+    // The page measures its card and reports back, so the window settles a
+    // few hops after the service: poll for the card, not a single read.
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      const bounds = target.getBounds();
+      const actions = await islandJs(
+        "[...document.querySelectorAll('.isl__actions button')].map(node => node.textContent)",
+      );
+      if (
+        bounds.width === 340 &&
+        bounds.height > 90 &&
+        Array.isArray(actions) &&
+        actions.some((label) => typeof label === "string" && label.includes("Open"))
+      ) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return false;
   });
 
   // The deep link the island offers, clicked where a user clicks it: the main
@@ -1058,7 +1125,7 @@ export async function runStartupCheck(
     try {
       const clicked = await islandJs(
         `(() => {
-           const button = [...document.querySelectorAll('.island__actions button')]
+           const button = [...document.querySelectorAll('.isl__actions button')]
              .find(node => node.textContent === 'Open');
            if (!button) return false;
            button.click();
@@ -1083,17 +1150,25 @@ export async function runStartupCheck(
     if (!target) {
       return false;
     }
-    const bounds = target.getBounds();
-    const actions = await islandJs(
-      "document.querySelectorAll('.island__actions').length",
-    );
-    const state = await island.refresh();
-    return (
-      bounds.width === 320 &&
-      bounds.height === 44 &&
-      actions === 0 &&
-      state.expanded === false
-    );
+    // Same async settle in reverse: the circle measures 42px, reported back.
+    const deadline = Date.now() + 8_000;
+    while (Date.now() < deadline) {
+      const bounds = target.getBounds();
+      const actions = await islandJs(
+        "document.querySelectorAll('.isl__actions').length",
+      );
+      const state = await island.refresh();
+      if (
+        bounds.width <= 64 &&
+        bounds.height <= 64 &&
+        actions === 0 &&
+        state.expanded === false
+      ) {
+        return true;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return false;
   });
 
   await checkMain("the main window hides while the runtime continues", () => {

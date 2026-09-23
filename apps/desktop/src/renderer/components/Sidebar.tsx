@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import type { Session, Workspace } from "@ai-workbench/shared";
+import { headlineUsage } from "../lib/format.js";
 import { useWorkbench, type MainView } from "../store/workbench.js";
 import { Popover } from "./Popover.js";
 
@@ -21,6 +22,8 @@ interface SidebarProps {
   readonly activeWorkspaceId: string | null;
   readonly activeSessionId: string | null;
   readonly view: MainView;
+  readonly appVersion: string | null;
+  readonly username: string | null;
 }
 
 export function Sidebar({
@@ -29,6 +32,8 @@ export function Sidebar({
   activeWorkspaceId,
   activeSessionId,
   view,
+  appVersion,
+  username,
 }: SidebarProps): JSX.Element {
   const selectWorkspace = useWorkbench((state) => state.selectWorkspace);
   const selectSession = useWorkbench((state) => state.selectSession);
@@ -39,6 +44,29 @@ export function Sidebar({
   const chooseDirectory = useWorkbench((state) => state.chooseDirectory);
   const setView = useWorkbench((state) => state.setView);
   const status = useWorkbench((state) => state.status);
+  const messages = useWorkbench((state) => state.messages);
+  const setPaletteOpen = useWorkbench((state) => state.setPaletteOpen);
+  const skills = useWorkbench((state) => state.skills);
+  const plugins = useWorkbench((state) => state.plugins);
+  const mcpServers = useWorkbench((state) => state.mcpServers);
+  const providers = useWorkbench((state) => state.providers);
+  const teams = useWorkbench((state) => state.teams);
+  const usage = useWorkbench((state) => state.usage);
+
+  // Sidebar card: the OS account, how many tools are registered, and the
+  // active session's remaining usage — every value read, never written.
+  const activeSession = sessions.find((entry) => entry.id === activeSessionId);
+  const activeSnapshot = usage?.snapshots.find(
+    (snapshot) => snapshot.providerId === activeSession?.providerId,
+  );
+  const headline = activeSnapshot ? headlineUsage(activeSnapshot) : null;
+  const displayName = username ?? "local";
+  const initials = displayName
+    .split(/[\s._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("") || "?";
 
   const [creating, setCreating] = useState(false);
 
@@ -66,7 +94,11 @@ export function Sidebar({
   return (
     <nav className="sidebar" aria-label="Workspaces and sessions">
       <div className="sidebar__head">
+        <span className="sidebar__appmark" aria-hidden="true">
+          W
+        </span>
         <span className="sidebar__title">AI Workbench</span>
+        {appVersion ? <span className="sidebar__version">{appVersion}</span> : null}
         <button
           type="button"
           className="icon-button"
@@ -74,6 +106,19 @@ export function Sidebar({
           aria-label="Add workspace"
         >
           <FolderPlus size={15} strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="sidebar__searchwrap">
+        <button
+          type="button"
+          className="sidebar__search"
+          onClick={() => setPaletteOpen(true)}
+          aria-label="Search or command (Ctrl+K)"
+          title="Search or command (Ctrl+K)"
+        >
+          <span className="sidebar__search-text">Search or command…</span>
+          <kbd className="kbd">⌘K</kbd>
         </button>
       </div>
 
@@ -135,6 +180,9 @@ export function Sidebar({
             ) : (
               sessions.map((session) => {
                 const current = session.id === activeSessionId && view === "chat";
+                const sessionStatus = status[session.id];
+                const needsYou = sessionStatus === "waiting" || sessionStatus === "error";
+                const count = messages[session.id]?.length ?? 0;
                 return (
                   // The same shape as a workspace row: the thing, then the
                   // action on it, on one line.
@@ -153,6 +201,16 @@ export function Sidebar({
                             aria-hidden="true"
                           />
                           <span className="row__text">{session.name}</span>
+                          {needsYou ? (
+                            <span
+                              className="row__count hot"
+                              title={sessionStatus === "error" ? "Needs you — error" : "Needs you — waiting"}
+                            >
+                              !
+                            </span>
+                          ) : count > 0 ? (
+                            <span className="row__count">{count}</span>
+                          ) : null}
                         </>
                       }
                     >
@@ -184,6 +242,9 @@ export function Sidebar({
         >
           <Boxes size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Providers</span>
+          {providers.length > 0 ? (
+            <span className="row__count">{providers.length}</span>
+          ) : null}
         </button>
         <button
           type="button"
@@ -193,6 +254,7 @@ export function Sidebar({
         >
           <BookOpen size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Skills</span>
+          {skills.length > 0 ? <span className="row__count">{skills.length}</span> : null}
         </button>
         <button
           type="button"
@@ -202,6 +264,9 @@ export function Sidebar({
         >
           <Puzzle size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Plugins</span>
+          {plugins.length > 0 ? (
+            <span className="row__count">{plugins.length}</span>
+          ) : null}
         </button>
         <button
           type="button"
@@ -211,6 +276,7 @@ export function Sidebar({
         >
           <Users size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Teams</span>
+          {teams.length > 0 ? <span className="row__count">{teams.length}</span> : null}
         </button>
         <button
           type="button"
@@ -220,6 +286,9 @@ export function Sidebar({
         >
           <Server size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">MCP servers</span>
+          {mcpServers.length > 0 ? (
+            <span className="row__count">{mcpServers.length}</span>
+          ) : null}
         </button>
         <button
           type="button"
@@ -230,6 +299,22 @@ export function Sidebar({
           <Settings size={14} strokeWidth={1.75} aria-hidden="true" />
           <span className="row__text">Settings</span>
         </button>
+        <div className="sidebar__user" title={displayName}>
+          <span className="sidebar__avatar" aria-hidden="true">
+            {initials}
+          </span>
+          <span className="sidebar__who">
+            <span className="sidebar__who-name">{displayName}</span>
+            <span className="sidebar__who-plan">
+              {providers.length === 1
+                ? "1 provider"
+                : `${providers.length} providers`}
+            </span>
+          </span>
+          <span className="sidebar__usage">
+            {headline ? `${headline.percent}%` : "—"}
+          </span>
+        </div>
       </div>
     </nav>
   );
@@ -241,6 +326,9 @@ function dotState(status: string | undefined): string {
   }
   if (status === "error") {
     return "error";
+  }
+  if (status === "waiting") {
+    return "waiting";
   }
   return "running";
 }

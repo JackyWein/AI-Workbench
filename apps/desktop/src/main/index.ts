@@ -73,6 +73,11 @@ async function bootstrap(): Promise<void> {
       }
       return existing;
     },
+    // Pure read for visibility/focus checks: focusing here would un-minimize
+    // the window on every background tick that asks whether it is visible.
+    getMainWindow: () => {
+      return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    },
     quit: () => {
       quitting = true;
       app.quit();
@@ -88,6 +93,7 @@ async function bootstrap(): Promise<void> {
 
   // Closing the main window may leave the runtime going (spec §104).
   attachMainWindowCloseBehavior(window);
+  attachMainWindowFocusTracking(window);
 
   // The island starts in check mode too: `verify:app` proves the companion
   // window, the tray and the attention service in the running application,
@@ -143,12 +149,21 @@ async function shutdown(): Promise<void> {
 }
 
 /**
+ * The island hides while the main window is focused and returns when focus
+ * leaves it. Kept as a function so windows created later — for example on
+ * macOS activate — behave the same as the first one.
+ */
+function attachMainWindowFocusTracking(window: BrowserWindow): void {
+  window.on("focus", () => island?.setMainFocused(true));
+  window.on("blur", () => island?.setMainFocused(false));
+}
+
+/**
  * Closing the main window may leave the runtime going (spec §104). Kept as a
  * function so windows created later — for example on macOS activate — behave
  * the same as the first one.
  */
-function attachMainWindowCloseBehavior(window: BrowserWindow): void {
-  window.on("close", (event) => {
+function attachMainWindowCloseBehavior(window: BrowserWindow): void {  window.on("close", (event) => {
     if (quitting || startupCheckOnly) {
       return;
     }
@@ -207,6 +222,7 @@ app.on("activate", () => {
       preloadFile: join(__dirname, "../preload/index.js"),
     });
     attachMainWindowCloseBehavior(mainWindow);
+    attachMainWindowFocusTracking(mainWindow);
     island?.setMainVisible(true);
   }
 });

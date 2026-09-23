@@ -131,19 +131,24 @@ function ProviderEntry({
   return (
     <article className="provider-entry">
       <div className="provider-entry__head">
-        <Logo
-          name={provider.metadata.icon}
-          label={provider.metadata.displayName}
-          size={18}
-        />
+        <span className="logo-well">
+          <Logo
+            name={provider.metadata.icon}
+            label={provider.metadata.displayName}
+            size={18}
+          />
+        </span>
         <span className="provider-entry__name">{provider.metadata.displayName}</span>
         <span className="row__meta">{installationLabel(provider)}</span>
         <span className="agents-bar__spacer" />
-        <button
-          type="button"
-          className="quiet-button"
-          disabled={saving}
-          onClick={() =>
+        <span className={`pill ${authTone(provider)}`}>
+          {authPillLabel(provider)}
+        </span>
+        <input
+          type="checkbox"
+          className="mini-switch"
+          checked={provider.enabled}
+          onChange={() =>
             void saveProviderConfig({
               providerId: provider.metadata.id,
               enabled: !provider.enabled,
@@ -159,9 +164,7 @@ function ProviderEntry({
               ? `Hide ${provider.metadata.displayName}`
               : `Show ${provider.metadata.displayName}`
           }
-        >
-          {provider.enabled ? "Hide" : "Show"}
-        </button>
+        />
       </div>
 
       {provider.metadata.description ? (
@@ -457,8 +460,37 @@ function accountWording(label: string): string {
   return spaced.length === 0 ? label : spaced;
 }
 
-function authLabel(provider: ProviderSummary): string {
+/** Card-head pill: state first, honest about the unknown. */
+function authTone(provider: ProviderSummary): string {
   switch (provider.auth.state) {
+    case "authenticated":
+      return "pill--live";
+    case "authenticationRequired":
+    case "authenticationExpired":
+      return "pill--warn";
+    default:
+      return "pill--dim";
+  }
+}
+
+function authPillLabel(provider: ProviderSummary): string {
+  switch (provider.auth.state) {
+    case "authenticated":
+      return "Signed in";
+    case "authenticationRequired":
+      return "Sign-in required";
+    case "authenticationExpired":
+      return "Sign-in expired";
+    case "notApplicable":
+      return "No sign-in";
+    case "unsupported":
+      return "Unsupported";
+    default:
+      return "Unknown auth";
+  }
+}
+
+function authLabel(provider: ProviderSummary): string {  switch (provider.auth.state) {
     case "authenticated": {
       const account = provider.auth.accountLabel;
       const plan = provider.auth.plan;

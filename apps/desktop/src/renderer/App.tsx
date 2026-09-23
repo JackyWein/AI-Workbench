@@ -20,7 +20,7 @@ import { SkillsView } from "./components/SkillsView.js";
 import { TeamsView } from "./components/TeamsView.js";
 import { WorkspacePanel } from "./components/WorkspacePanel.js";
 
-type AppInfo = { version: string; platform: string; userDataPath: string };
+type AppInfo = { version: string; platform: string; userDataPath: string; username: string };
 
 /** Usage of the most recent answer that reported any. */
 function latestUsage(messages: readonly ChatMessage[]): MessageUsage | null {
@@ -101,15 +101,45 @@ export function App(): JSX.Element {
     document.documentElement.dataset["density"] = state.settings.density;
   }, [state.settings.density]);
 
-  const session = state.sessions.find((entry) => entry.id === state.activeSessionId);
-  const workspace = state.workspaces.find(
+  const session = state.sessions.find((entry) => entry.id === state.activeSessionId);  const workspace = state.workspaces.find(
     (entry) => entry.id === state.activeWorkspaceId,
   );
   const provider = state.providers.find(
     (entry) => entry.metadata.id === session?.providerId,
-  );
-  const messages = session ? (state.messages[session.id] ?? []) : [];
+  );  const messages = session ? (state.messages[session.id] ?? []) : [];
   const busy = session ? (state.busy[session.id] ?? false) : false;
+
+  // Boot faces belong here, never on the island: a loading screen while the
+  // store fills, and the exact error with a retry when startup itself fails.
+  if (!state.ready) {
+    return (
+      <div className="boot" role="status" aria-label="Starting AI Workbench">
+        <span className="boot__mark" aria-hidden="true">
+          W
+        </span>
+        <p className="boot__text">Starting AI Workbench…</p>
+      </div>
+    );
+  }
+
+  if (state.bootError) {
+    return (
+      <div className="boot" role="alert" aria-label="AI Workbench failed to start">
+        <span className="boot__mark" aria-hidden="true">
+          W
+        </span>
+        <p className="boot__text">Could not start AI Workbench</p>
+        <p className="boot__error">{state.bootError}</p>
+        <button
+          type="button"
+          className="ghost-button"
+          onClick={() => void state.initialize()}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -119,6 +149,8 @@ export function App(): JSX.Element {
         activeWorkspaceId={state.activeWorkspaceId}
         activeSessionId={state.activeSessionId}
         view={state.view}
+        appVersion={appInfo?.version ?? null}
+        username={appInfo?.username ?? null}
       />
 
       <main className="main">
@@ -142,8 +174,6 @@ export function App(): JSX.Element {
               providers={state.providers}
               usage={state.usage}
               status={state.status[session.id]}
-              busy={busy}
-              onCancel={() => void state.cancel()}
             />
             <div className="main__body">
               {messages.length === 0 ? (
@@ -157,6 +187,10 @@ export function App(): JSX.Element {
               <Composer
                 busy={busy}
                 disabled={false}
+                modelName={
+                  provider?.models.find((entry) => entry.id === session.modelId)
+                    ?.displayName ?? null
+                }
                 onSend={(text) => void state.sendMessage(text)}
                 onCancel={() => void state.cancel()}
               />
@@ -216,6 +250,21 @@ export function App(): JSX.Element {
           status={state.status[session.id]}
           messageCount={messages.length}
           usage={latestUsage(messages)}
+          onResume={messages.some(
+            (entry) => entry.role === "user" && entry.content.trim().length > 0,
+          )
+            ? () => {
+                const store = useWorkbench.getState();
+                const list = store.messages[session.id] ?? [];
+                for (let index = list.length - 1; index >= 0; index -= 1) {
+                  const candidate = list[index];
+                  if (candidate?.role === "user" && candidate.content.trim().length > 0) {
+                    void store.sendMessage(candidate.content);
+                    return;
+                  }
+                }
+              }
+            : null}
         />
       ) : (
         <div />

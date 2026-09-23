@@ -1,0 +1,1454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Workbench — All Views in A's Language</title>
+<style>
+/* ============ tokens (project's own) ============ */
+:root {
+  --surface-base: #111215;
+  --surface-raised: #16171b;
+  --surface-overlay: #1c1e23;
+  --surface-sunken: #0c0d0f;
+  --surface-message: #1a1c20;
+  --surface-hover: rgba(255, 255, 255, 0.045);
+  --surface-active: rgba(255, 255, 255, 0.07);
+  --surface-selected: rgba(255, 255, 255, 0.085);
+  --text-primary: #ecedf0;
+  --text-secondary: #a3a7b0;
+  --text-muted: #6b707a;
+  --text-inverted: #121317;
+  --border-subtle: rgba(255, 255, 255, 0.075);
+  --border-strong: rgba(255, 255, 255, 0.15);
+  --accent: #8c9dff;
+  --accent-quiet: rgba(140, 157, 255, 0.16);
+  --success: #5fcf95;
+  --warning: #e5b65c;
+  --danger: #ef7b72;
+  --running: #5bc8a7;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 11px;
+  --radius-pill: 999px;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Segoe UI Variable Text", "Segoe UI", "Roboto", sans-serif;
+  --font-mono: "Cascadia Mono", "JetBrains Mono", ui-monospace, SFMono-Regular,
+    Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--surface-base); color: var(--text-primary);
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.55;
+  overflow: hidden; -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv01", "ss03";
+}
+button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+svg { display: block; }
+
+/* ============ page frame ============ */
+.shell { display: flex; flex-direction: column; height: 100vh; }
+.pagehead { display: flex; align-items: center; gap: 14px; padding: 10px 18px; border-bottom: 1px solid var(--border-subtle); background: var(--surface-sunken); }
+.pagehead h1 { font-size: 13px; font-weight: 600; letter-spacing: -0.01em; margin: 0; }
+.pagehead .meta { font-size: 11px; color: var(--text-muted); }
+.pagehead a.back { font-size: 12px; color: var(--text-secondary); text-decoration: none; border: 1px solid var(--border-subtle); border-radius: 7px; padding: 3px 10px; background: var(--surface-raised); }
+.pagehead a.back:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.tabbar { display: flex; gap: 2px; background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 2px; max-width: 100%; overflow-x: auto; }
+.tabbar button { padding: 4px 11px; border-radius: 6px; font-size: 12px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; }
+.tabbar button:hover { color: var(--text-primary); }
+.tabbar button[aria-selected="true"] { color: var(--text-primary); background: var(--surface-selected); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.view { flex: 1; min-height: 0; overflow-y: auto; padding: 22px 26px 56px; }
+.desc { max-width: 1080px; margin: 0 auto 14px; display: flex; gap: 16px; align-items: baseline; }
+.desc h2 { font-size: 17px; font-weight: 600; letter-spacing: -0.02em; margin: 0; white-space: nowrap; }
+.desc p { color: var(--text-secondary); margin: 0; font-size: 12.5px; max-width: 70ch; }
+.desc p b { color: var(--text-primary); font-weight: 600; }
+.desc code { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+kbd { font-family: var(--font-mono); font-size: 10px; padding: 1px 5px; background: var(--surface-active); border: 1px solid var(--border-subtle); border-radius: 4px; color: var(--text-secondary); white-space: nowrap; }
+.mock { max-width: 1080px; margin: 0 auto; border: 1px solid var(--border-subtle); border-radius: 12px; overflow: hidden; background: var(--surface-base); box-shadow: 0 24px 64px rgba(0,0,0,.45); height: 600px; display: grid; grid-template-columns: 232px minmax(0,1fr); }
+.mock.nosb { grid-template-columns: minmax(0,1fr); }
+.mock.tall { height: 760px; }
+.notes { max-width: 1080px; margin: 14px auto 0; display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+.note { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 10px 13px; background: var(--surface-raised); }
+.note h3 { font-size: 11.5px; font-weight: 600; margin: 0 0 4px; }
+.note p { font-size: 11.5px; color: var(--text-secondary); margin: 0; line-height: 1.55; }
+.note code { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-primary); }
+
+/* ============ shared atoms ============ */
+.ic { display: inline-flex; align-items: center; justify-content: center; flex: none; color: var(--text-muted); }
+.row { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: 6px; color: var(--text-secondary); font-size: 12.5px; font-weight: 500; white-space: nowrap; width: 100%; text-align: left; }
+.row:hover { background: var(--surface-hover); color: var(--text-primary); }
+.row[data-current="true"] { background: var(--surface-selected); color: var(--text-primary); }
+.row .t { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.row .n { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.row .n.hot { color: var(--warning); background: rgba(229,182,92,.12); border-radius: 4px; padding: 0 5px; }
+.seclbl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); padding: 12px 8px 4px; display: flex; align-items: center; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex: none; }
+.dot.live { background: var(--running); }
+.dot.warn { background: var(--warning); }
+.dot.idle { background: var(--text-muted); opacity: .5; }
+.pulse { animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+.avatar { width: 20px; height: 20px; border-radius: 50%; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 600; background: var(--surface-active); color: var(--text-secondary); }
+.logo { width: 22px; height: 22px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; background: var(--surface-active); border: 1px solid var(--border-subtle); color: var(--text-secondary); letter-spacing: .02em; }
+.logo svg { width: 13px; height: 13px; display: block; }
+.pill { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; font-weight: 500; padding: 2px 8px; border-radius: var(--radius-pill); border: 1px solid var(--border-subtle); color: var(--text-secondary); white-space: nowrap; }
+.pill.live { color: var(--running); border-color: rgba(91,200,167,.3); background: rgba(91,200,167,.08); }
+.pill.warn { color: var(--warning); border-color: rgba(229,182,92,.3); background: rgba(229,182,92,.08); }
+.pill.acc { color: var(--accent); border-color: rgba(140,157,255,.3); background: var(--accent-quiet); }
+.pill.dim { color: var(--text-muted); }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--surface-raised); border: 1px solid var(--border-subtle); color: var(--text-secondary); margin: 0 4px 4px 0; font-family: var(--font-mono); font-size: 10.5px; }
+.sw { margin-left: auto; width: 30px; height: 17px; border-radius: 99px; background: var(--surface-active); position: relative; flex: none; }
+.sw i { position: absolute; top: 2px; left: 2px; width: 13px; height: 13px; border-radius: 50%; background: var(--text-muted); }
+.sw.on { background: rgba(91,200,167,.28); }
+.sw.on i { left: 15px; background: var(--running); }
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-subtle); border-radius: 7px; padding: 5px 12px; font-size: 12px; font-weight: 500; color: var(--text-secondary); background: var(--surface-raised); white-space: nowrap; }
+.btn:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.btn-p { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--text-inverted); font-size: 12px; font-weight: 600; border-radius: 7px; padding: 5px 12px; white-space: nowrap; }
+.btn-q { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; color: var(--text-secondary); padding: 5px 10px; border-radius: 7px; white-space: nowrap; }
+.btn-q:hover { color: var(--text-primary); background: var(--surface-hover); }
+.btn-amber { background: var(--warning); color: #221a08; font-size: 11px; font-weight: 600; border-radius: 6px; padding: 4px 11px; }
+.tin, select.sel, textarea.tin { width: 100%; padding: 7px 12px; font: inherit; font-size: 12.5px; color: var(--text-primary); background: var(--surface-raised); border: 1px solid var(--border-subtle); border-radius: 7px; outline: none; }
+textarea.tin { resize: none; line-height: 1.55; font-family: var(--font-mono); font-size: 11.5px; }
+.tin::placeholder { color: var(--text-muted); }
+.tin:hover { border-color: var(--border-strong); }
+.tin:focus, select.sel:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-quiet); }
+select.sel { appearance: none; -webkit-appearance: none; padding-right: 28px; background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23a3a7b0' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>"); background-repeat: no-repeat; background-position: right 10px center; cursor: pointer; }
+.fld { margin-bottom: 10px; }
+.fld > span { display: block; font-size: 11.5px; color: var(--text-muted); margin-bottom: 5px; }
+
+/* ============ app sidebar (shared) ============ */
+.sb { background: var(--surface-sunken); border-right: 1px solid var(--border-subtle); display: flex; flex-direction: column; min-height: 0; }
+.appSw { display: flex; align-items: center; gap: 8px; padding: 10px 10px 6px; }
+.appSw .mark { width: 22px; height: 22px; border-radius: 6px; flex: none; background: var(--surface-active); border: 1px solid var(--border-subtle); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--text-primary); }
+.appSw .nm { font-size: 12.5px; font-weight: 600; letter-spacing: -0.01em; }
+.appSw .ver { font-size: 10px; color: var(--text-muted); border: 1px solid var(--border-subtle); border-radius: 4px; padding: 0 4px; }
+.search { margin: 4px 10px 2px; display: flex; align-items: center; gap: 7px; border: 1px solid var(--border-subtle); border-radius: 7px; background: var(--surface-raised); padding: 0 8px; height: 28px; font-size: 12px; color: var(--text-muted); }
+.search kbd { margin-left: auto; }
+.sbnav { flex: 1; overflow: hidden; padding: 0 6px 8px; }
+.sbfoot { border-top: 1px solid var(--border-subtle); padding: 8px 10px; display: flex; align-items: center; gap: 8px; }
+.sbfoot .who { font-size: 12px; font-weight: 500; }
+.sbfoot .plan { font-size: 10.5px; color: var(--text-muted); }
+.usage { margin-left: auto; font-size: 10.5px; color: var(--running); font-variant-numeric: tabular-nums; }
+
+/* ============ generic view page ============ */
+.mn { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.vbody { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 0 16px; }
+.vbody::-webkit-scrollbar { width: 10px; }
+.vbody::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 99px; border: 3px solid transparent; background-clip: padding-box; }
+.vcol { max-width: 660px; margin: 0 auto; padding: 0 22px; }
+.viewhead { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.viewhead h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.015em; margin: 0; }
+.viewhead .right { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.vdesc { font-size: 12px; color: var(--text-muted); margin: 0 0 14px; line-height: 1.55; }
+.card { border: 1px solid var(--border-subtle); border-radius: 10px; background: var(--surface-raised); padding: 12px 14px; margin-bottom: 10px; }
+.card__head { display: flex; align-items: center; gap: 9px; }
+.card__name { font-size: 12.5px; font-weight: 600; }
+.card__meta { font-size: 11px; color: var(--text-muted); }
+.card__head .right { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.prop { display: flex; align-items: baseline; gap: 8px; min-height: 25px; font-size: 12px; }
+.prop .k { color: var(--text-muted); width: 108px; flex: none; }
+.prop .v { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop .v .note2 { color: var(--text-muted); font-size: 11px; }
+.notice { display: flex; gap: 8px; align-items: flex-start; font-size: 11.5px; color: var(--warning); background: rgba(229,182,92,.07); border: 1px solid rgba(229,182,92,.25); border-radius: 8px; padding: 8px 11px; margin: 10px 0 0; line-height: 1.5; }
+.secttl { font-size: 10.5px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); margin: 18px 0 8px; display: flex; align-items: center; }
+.secttl:first-child { margin-top: 0; }
+
+/* providers */
+.prov-acc { border-top: 1px solid var(--border-subtle); margin-top: 10px; padding-top: 8px; }
+.accrow { display: flex; align-items: center; gap: 8px; min-height: 30px; font-size: 12px; }
+.accrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.accrow .m { font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); font-size: 10.5px; }
+.cfg { border-top: 1px solid var(--border-subtle); margin-top: 10px; padding-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cfg .full { grid-column: 1 / -1; }
+
+/* teams */
+.agentrow { display: flex; align-items: center; gap: 9px; min-height: 32px; font-size: 12px; }
+.agentrow .t { flex: 1; min-width: 0; }
+.agentrow .t .nm { color: var(--text-primary); font-weight: 500; }
+.agentrow .t .sb2 { color: var(--text-muted); font-size: 11px; }
+.goalrow { display: flex; gap: 8px; margin-top: 10px; }
+.goalrow .tin { flex: 1; }
+.runrow2 { display: flex; align-items: center; gap: 9px; min-height: 30px; font-size: 12px; border-top: 1px solid var(--border-subtle); padding-top: 8px; margin-top: 8px; }
+.runrow2 .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* agents (workspace terminals) */
+.launchbar { display: flex; align-items: center; gap: 7px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); }
+.launchbar .lbl { font-size: 11px; color: var(--text-muted); margin-right: 2px; }
+.launch { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-subtle); background: var(--surface-raised); border-radius: 8px; padding: 4px 10px 4px 4px; font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+.launch:hover { color: var(--text-primary); border-color: var(--border-strong); }
+.tgrid { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px 14px; }
+.tile { border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.tile[data-current="true"] { border-color: rgba(140,157,255,.45); box-shadow: 0 0 0 1px rgba(140,157,255,.12), 0 10px 28px rgba(0,0,0,.35); }
+.tile .th { display: flex; align-items: center; gap: 8px; padding: 8px 11px; border-bottom: 1px solid var(--border-subtle); }
+.tile .th .nm { font-size: 12px; font-weight: 600; }
+.tile .th .el { margin-left: auto; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.av { width: 22px; height: 22px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; background: var(--surface-active); border: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.av svg { width: 13px; height: 13px; display: block; }
+.tile .tb { position: relative; flex: 1; min-height: 0; overflow: hidden; margin: 10px 10px 0; padding: 8px 11px; font-family: var(--font-mono); font-size: 10.5px; line-height: 1.7; color: var(--text-secondary); background: #0d0e11; border: 1px solid var(--border-subtle); border-radius: 8px; -webkit-mask-image: linear-gradient(180deg,#000 62%,transparent 98%); mask-image: linear-gradient(180deg,#000 62%,transparent 98%); }
+.tile .tb .ln { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .tb .ok { color: var(--success); } .tile .tb .ac { color: var(--accent); }
+.tile .tf { padding: 8px 11px; border-top: 1px solid var(--border-subtle); }
+.tile .tf .task { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; }
+.segbar { display: flex; gap: 2px; height: 3px; }
+.segbar i { display: block; height: 100%; border-radius: 2px; background: var(--surface-active); }
+.segbar i.d { background: var(--running); }
+
+/* workspace panel */
+.crumbs { height: 46px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--border-subtle); font-size: 12.5px; }
+.crumbs .ws { color: var(--text-muted); } .crumbs .sl { color: var(--border-strong); }
+.crumbs .sess { font-weight: 600; letter-spacing: -0.01em; }
+.crumbs .right { margin-left: auto; display: flex; gap: 7px; align-items: center; }
+.chatmini { padding: 12px 22px 4px; }
+.chatmini .mrow { max-width: 620px; margin: 0 auto 10px; }
+.chatmini .who { font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 3px; }
+.chatmini .bub { background: var(--surface-message); border: 1px solid var(--border-subtle); border-radius: 4px 12px 12px 12px; padding: 7px 12px; font-size: 12.5px; display: inline-block; }
+.chatmini .txt { font-size: 12.5px; }
+.wpane { border-top: 1px solid var(--border-subtle); background: var(--surface-sunken); display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.wtabs { display: flex; align-items: center; gap: 2px; padding: 6px 12px 0; }
+.wtabs button { padding: 5px 11px; font-size: 12px; font-weight: 500; color: var(--text-secondary); border-radius: 7px 7px 0 0; border: 1px solid transparent; border-bottom: none; }
+.wtabs button[aria-selected="true"] { color: var(--text-primary); background: var(--surface-raised); border-color: var(--border-subtle); }
+.wtabs .x { margin-left: auto; color: var(--text-muted); font-size: 12px; padding: 4px 8px; }
+.wbody { flex: 1; min-height: 0; display: grid; grid-template-columns: 250px minmax(0,1fr); border-top: 1px solid var(--border-subtle); background: var(--surface-raised); }
+.wfiles { border-right: 1px solid var(--border-subtle); padding: 8px 6px; overflow: hidden; }
+.frow { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px; border-radius: 6px; font-size: 12px; color: var(--text-secondary); font-family: var(--font-mono); font-size: 11.5px; }
+.frow:hover { background: var(--surface-hover); }
+.frow[data-current="true"] { background: var(--surface-selected); color: var(--text-primary); }
+.frow .st { margin-left: auto; font-size: 10.5px; font-weight: 700; }
+.frow .st.m { color: var(--warning); } .frow .st.a { color: var(--success); } .frow .st.q { color: var(--text-muted); }
+.wdiff { padding: 10px 14px; font-family: var(--font-mono); font-size: 11px; line-height: 1.7; overflow: hidden; }
+.wdiff .fh { color: var(--text-secondary); margin-bottom: 6px; font-family: var(--font-sans); font-size: 11.5px; font-weight: 600; }
+.wdiff .add { color: var(--success); } .wdiff .del { color: var(--danger); } .wdiff .ctx { color: var(--text-muted); }
+.wdiff .ln2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* skills / plugins / mcp */
+.scope3 { display: inline-flex; padding: 2px; gap: 2px; background: var(--surface-sunken); border: 1px solid var(--border-subtle); border-radius: 8px; }
+.scope3 button { padding: 3px 10px; font-size: 11px; font-weight: 500; color: var(--text-muted); border-radius: 6px; white-space: nowrap; }
+.scope3 button[aria-pressed="true"] { color: var(--text-primary); background: var(--surface-raised); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.scope3 button:disabled { opacity: .35; }
+.expander { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; }
+.expander .chev { transition: transform .12s ease; color: var(--text-muted); }
+.expander[data-open="true"] .chev { transform: rotate(90deg); }
+.detailbox { border-top: 1px solid var(--border-subtle); margin-top: 10px; padding-top: 10px; }
+.code2 { font-family: var(--font-mono); font-size: 11px; background: #0d0e11; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 9px 12px; color: #c9d1d9; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lat { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* settings */
+.setrow { display: flex; align-items: center; gap: 12px; min-height: 40px; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); }
+.setrow:last-child { border-bottom: none; }
+.setrow .t { flex: 1; min-width: 0; }
+.setrow .t .nm { font-size: 12.5px; font-weight: 500; }
+.setrow .t .ds { font-size: 11.5px; color: var(--text-muted); }
+.setrow select.sel { width: 150px; flex: none; }
+.setrow .sw { margin-left: 0; }
+.krow { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 12px; color: var(--text-secondary); }
+.krow .t { flex: 1; }
+.krow kbd + kbd { margin-left: 4px; }
+
+/* palette overlay */
+.ovl { position: relative; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.ovl .dim { filter: blur(6px) brightness(.55); pointer-events: none; }
+.pal { position: absolute; left: 50%; top: 54px; transform: translateX(-50%); width: 580px; max-width: calc(100% - 60px); border: 1px solid var(--border-strong); border-radius: 14px; overflow: hidden; background: rgba(26,28,33,.95); backdrop-filter: blur(24px); box-shadow: 0 40px 96px rgba(0,0,0,.65), inset 0 1px 0 rgba(255,255,255,.06); }
+.pin { display: flex; align-items: center; gap: 10px; padding: 13px 15px; border-bottom: 1px solid var(--border-subtle); }
+.pin .q { flex: 1; font-size: 14.5px; }
+.caret2 { display: inline-block; width: 8px; height: 15px; background: var(--accent); border-radius: 1px; vertical-align: -2px; animation: pulse 1s infinite; }
+.grp { padding: 8px 14px 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); display: flex; }
+.grp .c2 { margin-left: auto; letter-spacing: 0; }
+.res { display: flex; align-items: center; gap: 10px; padding: 0 8px; margin: 0 6px; height: 38px; border-radius: 8px; font-size: 12.5px; color: var(--text-secondary); }
+.res .ric { width: 26px; height: 26px; border-radius: 7px; background: var(--surface-active); display: inline-flex; align-items: center; justify-content: center; color: var(--text-secondary); flex: none; font-size: 9px; font-weight: 700; }
+.res .ric svg { width: 14px; height: 14px; display: block; }
+.tile .cur { display: inline-block; width: 7px; height: 12px; background: var(--text-secondary); vertical-align: -2px; border-radius: 1px; }
+.res .rt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.res .rt .sub2 { color: var(--text-muted); font-size: 11.5px; }
+.res .rm { color: var(--text-muted); }
+.res.sel { background: var(--accent-quiet); color: var(--text-primary); }
+.res.sel .ric { background: rgba(140,157,255,.22); color: var(--accent); }
+mark { background: none; color: var(--accent); font-weight: 600; }
+.res.sel mark { color: #c3cbff; }
+.pft { display: flex; align-items: center; gap: 12px; padding: 8px 14px; border-top: 1px solid var(--border-subtle); font-size: 10.5px; color: var(--text-muted); }
+
+/* island stage */
+.stage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px; background: radial-gradient(ellipse 70% 60% at 50% 40%, #181a1f 0%, #0c0d0f 70%); padding: 20px; }
+.island { border-radius: var(--radius-pill); background: rgba(28,30,35,.92); border: 1px solid var(--border-subtle); box-shadow: 0 10px 30px rgba(0,0,0,.42); padding: 8px 16px; display: flex; align-items: center; gap: 9px; min-width: 300px; }
+.island .tt { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.island .dt { font-size: 11px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.islandlogo { width: 15px; height: 15px; display: inline-flex; flex: none; }
+.islandlogo svg { width: 15px; height: 15px; display: block; }
+.islandcard { width: 340px; border-radius: 12px; background: rgba(28,30,35,.94); border: 1px solid var(--border-subtle); box-shadow: 0 18px 48px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); padding: 12px 14px; }
+.islandcard .tt { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.islandcard .dt { font-size: 11.5px; color: var(--text-secondary); margin: 5px 0 9px; }
+.islandbar { height: 3px; border-radius: var(--radius-pill); background: var(--surface-active); overflow: hidden; margin-bottom: 10px; }
+.islandbar i { display: block; height: 100%; width: 66%; background: var(--accent); border-radius: inherit; }
+.islandacts { display: flex; gap: 6px; justify-content: flex-end; }
+.caption { font-size: 11px; color: var(--text-muted); }
+
+/* ============ hairline lists (skills / plugins / mcp) ============ */
+.llist { border-top: 1px solid var(--border-subtle); border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px; }
+.lrow { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 6px 2px; border-top: 1px solid var(--border-subtle); text-align: left; font-size: 12.5px; }
+.llist > :first-child { border-top: none; }
+.lname { font-weight: 500; white-space: nowrap; }
+.lmeta { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lrow .leff { margin-left: auto; font-size: 11.5px; color: var(--text-secondary); white-space: nowrap; display: flex; align-items: center; }
+.lrow .leff.off { color: var(--text-muted); }
+.lrow .leff.warn { color: var(--warning); }
+.lrow .chev { color: var(--text-muted); flex: none; }
+.lrow[data-open="true"] .chev { transform: rotate(90deg); }
+.ldetail { padding: 2px 0 14px; }
+.scoperow { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); padding: 5px 0; max-width: 430px; }
+.vdesc code { font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); }
+
+/* ============ island minimal ============ */
+.minis { display: flex; gap: 30px; align-items: flex-start; }
+.miniwrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.mini { width: 42px; height: 42px; border-radius: 50%; background: rgba(28,30,35,.94); border: 1px solid var(--border-subtle); box-shadow: 0 8px 24px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06); display: flex; align-items: center; justify-content: center; position: relative; flex: none; }
+.mini svg { width: 18px; height: 18px; display: block; }
+.mini.ring { border: none; padding: 2px; background: conic-gradient(var(--accent) 0 66%, rgba(255,255,255,.1) 66% 100%); }
+.mini.ring > span { width: 100%; height: 100%; border-radius: 50%; background: #1a1c21; display: flex; align-items: center; justify-content: center; }
+.mini.ring > span svg { width: 16px; height: 16px; }
+.mini.alert { border-color: rgba(229,182,92,.65); box-shadow: 0 8px 24px rgba(0,0,0,.45), 0 0 0 3px rgba(229,182,92,.15); }
+.mini.idle svg { opacity: .45; }
+.mini .bdg { position: absolute; top: -3px; right: -3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 99px; background: var(--warning); color: #221a08; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+.stage--split { flex-direction: row; align-items: stretch; gap: 0; }
+.staticcol, .livedcol { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 30px; padding: 16px 24px; }
+.staticcol { border-right: 1px solid var(--border-subtle); }
+.livedemo { display: flex; align-items: center; gap: 14px; min-height: 52px; }
+.livedemo .mini { transition: transform .18s ease; }
+.livedemo:hover .mini { transform: scale(1.06); }
+.livedemo .island { opacity: 0; transform: translateX(-14px) scale(.88); transform-origin: left center; filter: blur(4px); transition: opacity .2s ease, transform .32s cubic-bezier(.3,1.3,.5,1), filter .2s ease; pointer-events: none; margin: 0; }
+.livedemo:hover .island { opacity: 1; transform: none; filter: none; }
+.livedemo .mini { cursor: grab; touch-action: none; }
+.livedemo.dragging .mini { cursor: grabbing; }
+.livedemo.dragging .island { opacity: 1; transform: none; filter: none; }
+.islandcard { cursor: grab; touch-action: none; will-change: transform; }
+.islandcard.dragging { cursor: grabbing; }
+.islandcard button { cursor: pointer; }
+.livedemo { will-change: transform; }
+.livetag { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: .08em; color: var(--running); border: 1px solid rgba(91,200,167,.35); border-radius: 99px; padding: 1px 8px; margin-right: 6px; vertical-align: 1px; }
+.wmark { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.livedemo { position: relative; }
+.livedemo .pop-agents, .livedemo .pop-usage { position: absolute; left: 56px; top: 50%; z-index: 5; opacity: 0; filter: blur(4px); pointer-events: none; transform: translateY(-50%) translateX(-14px) scale(.94); transform-origin: left center; transition: opacity .2s ease, transform .3s cubic-bezier(.3,1.3,.5,1), filter .2s ease; }
+.livedemo[data-mode="agents"]:hover .pop-agents, .livedemo[data-mode="agents"].dragging .pop-agents, .livedemo[data-mode="usage"]:hover .pop-usage, .livedemo[data-mode="usage"].dragging .pop-usage { opacity: 1; transform: translateY(-50%); filter: none; }
+.agentlist { width: 300px; border-radius: 12px; background: rgba(28,30,35,.96); border: 1px solid var(--border-subtle); box-shadow: 0 18px 48px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); padding: 4px 6px; }
+.arow { display: flex; align-items: center; gap: 9px; padding: 7px 9px; }
+.arow + .arow { border-top: 1px solid var(--border-subtle); }
+.arow .tt2 { flex: 1; min-width: 0; }
+.arow .nm { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arow .sub { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.arow .el { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; }
+.modelabel b { color: var(--text-primary); font-weight: 600; }
+
+/* ============ edge island (apple style) ============ */
+.desk { position: relative; flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; background: radial-gradient(ellipse 90% 70% at 50% 0%, #17181d 0%, #0c0d0f 65%); }
+.deskgrid { position: absolute; inset: 30px 0 0 0; background-image: linear-gradient(rgba(255,255,255,.024) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.024) 1px, transparent 1px); background-size: 28px 28px; pointer-events: none; }
+.menubar { position: relative; z-index: 5; height: 30px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 11.5px; border-bottom: 1px solid var(--border-subtle); background: rgba(12,13,15,.72); }
+.menubar .mb-name { font-weight: 600; }
+.menubar .right { margin-left: auto; display: flex; align-items: center; gap: 10px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.menubar .wmark2 { width: 15px; height: 15px; border-radius: 4px; background: var(--surface-active); border: 1px solid var(--border-subtle); display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--text-primary); }
+.deskstage { position: relative; flex: 1; min-height: 0; }
+.edgeunit { position: absolute; background: rgba(10,11,13,.96); border: 1px solid var(--border-subtle); border-radius: 19px; box-shadow: 0 12px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.07); cursor: grab; touch-action: none; transition: left .26s cubic-bezier(.3,1.25,.4,1), top .26s cubic-bezier(.3,1.25,.4,1), width .3s cubic-bezier(.3,1.3,.4,1), height .3s cubic-bezier(.3,1.3,.4,1), border-radius .3s ease, filter .22s ease, border-color .12s ease, padding .3s ease, box-shadow .2s ease; }
+.edgeunit:hover { border-color: var(--border-strong); }
+.edgeunit.dragging { transition: none; cursor: grabbing; }
+.edgeunit.morph { filter: blur(3px); }
+.edgeunit.is-blob { border-radius: 50%; }
+.edgeunit.show-v { border-radius: 22px; }
+.edgeunit .ec { position: absolute; inset: 0; display: flex; align-items: center; gap: 9px; padding: 0 14px; opacity: 0; transition: opacity .16s ease, border-radius .3s ease; pointer-events: none; border-radius: inherit; overflow: hidden; }
+.edgeunit.show-h .ec-h, .edgeunit.show-v .ec-v, .edgeunit.show-b .ec-b { opacity: 1; }
+.edgeunit.show-a .ec-a { opacity: 1; pointer-events: auto; }
+.edgeunit .ec-a { flex-direction: column; align-items: stretch; gap: 0; padding: 12px 14px; justify-content: center; pointer-events: none; }
+.edgeunit .ec-a .at { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.edgeunit .at .el { margin-left: auto; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; font-weight: 400; }
+.edgeunit .a-head { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; flex: none; }
+.edgeunit .a-head .all { margin-left: auto; font-size: 11px; font-weight: 500; color: var(--accent); }
+.edgeunit .aitems { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.edgeunit .aitem + .aitem { border-top: 1px solid var(--border-subtle); margin-top: 8px; padding-top: 10px; }
+.edgeunit .x-use { margin-top: 10px; border-top: 1px solid var(--border-subtle); padding-top: 4px; }
+.edgeunit .x-use .xl { font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 2px; }
+.edgeunit.dragging .pop-agents, .edgeunit.dragging .pop-usage, .edgeunit.dragging .pop-card, .edgeunit.dragging .pop-q { display: none; }
+.edgeunit .ec-a .ad { font-size: 11px; color: var(--text-secondary); white-space: nowrap; margin: 4px 0 8px; }
+/* blob states */
+.edgeunit .ec-b .m-app { display: none; font-size: 12px; font-weight: 700; color: var(--text-primary); }
+.edgeunit.st-none .ec-b .m-prov { display: none; }
+.edgeunit.st-none .ec-b .m-app { display: inline-flex; }
+.edgeunit .ec-b .bdg { display: none; position: absolute; top: 3px; right: 3px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 99px; background: var(--warning); color: #221a08; font-size: 9px; font-weight: 700; align-items: center; justify-content: center; }
+.edgeunit.st-approval .ec-b .bdg { display: inline-flex; }
+.edgeunit .ec-b { padding: 0; }
+.edgeunit .blobin { position: relative; width: 100%; height: 100%; border-radius: 50%; background: #101114; display: flex; align-items: center; justify-content: center; }
+.edgeunit.st-working.is-blob { border-color: rgba(91,200,167,.6); box-shadow: 0 12px 32px rgba(0,0,0,.5), 0 0 0 3px rgba(91,200,167,.13), inset 0 1px 0 rgba(255,255,255,.07); }
+.edgeunit.st-approval.is-blob { border-color: rgba(229,182,92,.7); box-shadow: 0 12px 32px rgba(0,0,0,.5), 0 0 0 3px rgba(229,182,92,.15); }
+.edgeunit.st-idle.is-blob .m-prov { opacity: .5; }
+/* hover panels on the blob */
+.edgeunit .pop-agents, .edgeunit .pop-usage { position: absolute; left: 48px; top: 50%; z-index: 6; opacity: 0; filter: blur(4px); pointer-events: none; transform: translateY(-50%) translateX(-14px) scale(.94); transform-origin: left center; transition: opacity .2s ease, transform .3s cubic-bezier(.3,1.3,.5,1), filter .2s ease; }
+.edgeunit.is-blob[data-mode="agents"].peek .pop-agents, .edgeunit.is-blob[data-mode="agents"].dragging .pop-agents, .edgeunit.is-blob[data-mode="usage"].peek .pop-usage, .edgeunit.is-blob[data-mode="usage"].dragging .pop-usage { opacity: 1; transform: translateY(-50%); filter: none; }
+/* demo toolbar */
+.demobar { position: absolute; top: 10px; right: 12px; z-index: 7; display: flex; gap: 2px; align-items: center; background: rgba(20,21,25,.85); border: 1px solid var(--border-subtle); border-radius: 8px; padding: 2px; font-size: 10.5px; color: var(--text-muted); }
+.demobar span { padding: 0 4px 0 6px; letter-spacing: .06em; text-transform: uppercase; font-size: 9px; font-weight: 600; }
+.demobar button { padding: 3px 9px; border-radius: 6px; color: var(--text-secondary); font-weight: 500; }
+.demobar button:hover { color: var(--text-primary); }
+.demobar button.on { background: var(--surface-selected); color: var(--text-primary); }
+.edgeunit.show-v .ec-v { flex-direction: column; gap: 7px; padding: 12px 0; justify-content: center; }
+.edgeunit.show-v .ett { display: none; }
+.edgeunit .ett { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edgeunit .edt { font-size: 10.5px; color: var(--text-secondary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.edgeunit .em { width: 17px; height: 17px; flex: none; display: inline-flex; }
+.edgeunit .em svg { width: 17px; height: 17px; display: block; }
+.ghost { position: absolute; border: 1.5px dashed rgba(140,157,255,.55); border-radius: 99px; opacity: 0; transition: opacity .15s ease; pointer-events: none; }
+.ghost.on { opacity: 1; }
+.trail { position: absolute; left: 0; top: 0; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); opacity: 0; pointer-events: none; }
+.deskhint { position: absolute; left: 12px; bottom: 10px; font-size: 10.5px; color: var(--text-muted); pointer-events: none; z-index: 5; }
+@media (prefers-reduced-motion: reduce) { .edgeunit, .edgeunit .ec, .trail, .ghost { transition: none !important; } .edgeunit.opening, .edgeunit.opening .ec-a > *, .edgeunit.opening .ec-x > *, .edgeunit.opening .ec-q > * { animation: none !important; } }
+/* docked idle pill */
+.edgeunit.show-i .ec-i { opacity: 1; }
+.edgeunit .ec-i .for-none, .edgeunit .ec-i .wapp { display: none; }
+.edgeunit.st-none .ec-i .for-idle, .edgeunit.st-none .ec-i .dimm { display: none; }
+.edgeunit.st-none .ec-i .for-none { display: block; }
+.edgeunit.st-none .ec-i .wapp { display: inline-flex; }
+.edgeunit .ec-i .dimm { opacity: .55; }
+/* approval + question glow on the dock (compact pill only, never the card) */
+.edgeunit.st-approval:not(.is-blob):not(.open) { border-color: rgba(229,182,92,.7); box-shadow: 0 12px 32px rgba(0,0,0,.5), 0 0 26px rgba(229,182,92,.28), inset 0 1px 0 rgba(255,255,255,.07); }
+.edgeunit.st-question:not(.is-blob):not(.open) { border-color: rgba(140,157,255,.65); box-shadow: 0 12px 32px rgba(0,0,0,.5), 0 0 26px rgba(140,157,255,.3), inset 0 1px 0 rgba(255,255,255,.07); }
+.edgeunit.st-question.is-blob { border-color: rgba(140,157,255,.7); box-shadow: 0 12px 32px rgba(0,0,0,.5), 0 0 0 3px rgba(140,157,255,.15); }
+/* floating count on the compact unit */
+.edgeunit .countbadge { position: absolute; top: -7px; right: -7px; z-index: 7; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 99px; background: var(--warning); color: #221a08; font-size: 10px; font-weight: 700; display: none; align-items: center; justify-content: center; }
+.edgeunit.st-approval .countbadge, .edgeunit.st-question .countbadge { display: inline-flex; }
+.edgeunit.st-question .countbadge { background: var(--accent); color: var(--text-inverted); }
+.edgeunit.open .countbadge { display: none; }
+/* question pill (docked, compact) */
+.edgeunit.show-qp .ec-qp { opacity: 1; }
+.edgeunit.show-qp .ec-qp { opacity: 1; }
+.edgeunit .ec-qp .edt { color: var(--accent); font-weight: 600; }
+/* standalone question card */
+.edgeunit.show-q .ec-q { opacity: 1; pointer-events: auto; }
+/* attention cards sit flat: no drop shadow, just the inset top edge */
+.edgeunit.show-a, .edgeunit.show-q { box-shadow: inset 0 1px 0 rgba(255,255,255,.07); }
+.edgeunit .pop-card, .edgeunit .pop-q { box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+.edgeunit .ec-q { flex-direction: column; align-items: stretch; justify-content: center; padding: 14px 16px; }
+.edgeunit .qh { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
+.edgeunit .qh .el { margin-left: auto; font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.edgeunit .q-title { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 6px 0 2px; }
+.edgeunit .q-sub { font-size: 11.5px; color: var(--text-muted); margin-bottom: 8px; }
+.edgeunit .qo-row { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left; border: 1px solid var(--border-subtle); background: var(--surface-raised); border-radius: 9px; padding: 8px 11px; margin-top: 6px; }
+.edgeunit .qo-row:hover { border-color: var(--accent); background: var(--accent-quiet); }
+.edgeunit .qo-row .t { font-size: 12.5px; font-weight: 600; }
+.edgeunit .qo-row .d { font-size: 11px; color: var(--text-muted); }
+.edgeunit .qo-row kbd { margin-left: auto; }
+.edgeunit .q-foot { display: flex; justify-content: flex-end; margin-top: 8px; }
+/* hover cards for the free blob */
+.edgeunit .pop-card, .edgeunit .pop-q { position: absolute; left: 48px; top: 50%; z-index: 6; opacity: 0; filter: blur(4px); pointer-events: none; transform: translateY(-50%) translateX(-14px) scale(.94); transform-origin: left center; transition: opacity .2s ease, transform .3s cubic-bezier(.3,1.3,.5,1), filter .2s ease; }
+.edgeunit.is-blob.st-approval.peek .pop-card, .edgeunit.is-blob.st-approval.dragging .pop-card,
+.edgeunit.is-blob.st-question.peek .pop-q, .edgeunit.is-blob.st-question.dragging .pop-q { opacity: 1; transform: translateY(-50%); filter: none; }
+/* hover persistence: delayed hide bridges the gap, shown cards stay clickable */
+.edgeunit .pop-agents, .edgeunit .pop-usage, .edgeunit .pop-card, .edgeunit .pop-q { transition: opacity .18s ease .15s, transform .3s cubic-bezier(.3,1.3,.5,1), filter .2s ease .15s; }
+.edgeunit.is-blob[data-mode="agents"].peek .pop-agents, .edgeunit.is-blob[data-mode="agents"].dragging .pop-agents,
+.edgeunit.is-blob[data-mode="usage"].peek .pop-usage, .edgeunit.is-blob[data-mode="usage"].dragging .pop-usage,
+.edgeunit.is-blob.st-approval.peek .pop-card, .edgeunit.is-blob.st-approval.dragging .pop-card,
+.edgeunit.is-blob.st-question.peek .pop-q, .edgeunit.is-blob.st-question.dragging .pop-q { transition-delay: 0s; pointer-events: auto; }
+/* no popups mid-flight while re-docking */
+.edgeunit.flying .pop-agents, .edgeunit.flying .pop-usage, .edgeunit.flying .pop-card, .edgeunit.flying .pop-q { opacity: 0 !important; }
+.edgeunit.st-approval .pop-usage, .edgeunit.st-question .pop-usage,
+.edgeunit.st-approval .pop-agents, .edgeunit.st-question .pop-agents { display: none; }
+/* expand choreography */
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes pop { from { transform: scale(.93); filter: blur(4px); } }
+.edgeunit.opening { animation: pop .34s cubic-bezier(.3,1.35,.45,1); }
+.edgeunit.opening .ec-a > *, .edgeunit.opening .ec-x > *, .edgeunit.opening .ec-q > * { animation: rise .26s ease both; }
+.edgeunit.opening .ec-a > *:nth-child(2), .edgeunit.opening .ec-x > *:nth-child(2), .edgeunit.opening .ec-q > *:nth-child(2) { animation-delay: .04s; }
+.edgeunit.opening .ec-a > *:nth-child(3), .edgeunit.opening .ec-x > *:nth-child(3), .edgeunit.opening .ec-q > *:nth-child(3) { animation-delay: .08s; }
+.edgeunit.opening .ec-a > *:nth-child(n+4), .edgeunit.opening .ec-x > *:nth-child(n+4), .edgeunit.opening .ec-q > *:nth-child(n+4) { animation-delay: .12s; }
+/* expanded docked panel */
+.edgeunit.show-x .ec-x { opacity: 1; pointer-events: auto; }
+.edgeunit .ec-x { flex-direction: column; align-items: stretch; justify-content: flex-start; padding: 12px 14px; overflow-y: auto; }
+.edgeunit .xw { display: none; }
+.edgeunit.st-working .x-working, .edgeunit.st-idle .x-idle, .edgeunit.st-none .x-none { display: block; }
+.edgeunit .xh { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.edgeunit .xh .el { margin-left: auto; font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.edgeunit .xrow { display: flex; align-items: center; gap: 9px; padding: 7px 2px; border-top: 1px solid var(--border-subtle); }
+.edgeunit .xrow .tt2 { flex: 1; min-width: 0; }
+.edgeunit .xrow .nm { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edgeunit .xrow .sb2 { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edgeunit .xrow .el { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; }
+.edgeunit .xq { border: 1px solid rgba(229,182,92,.3); background: rgba(229,182,92,.06); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+.edgeunit .xq .qq { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.edgeunit .xq .qo { display: flex; gap: 6px; flex-wrap: wrap; }
+.edgeunit .xask { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 7px 10px; color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+.edgeunit .xask kbd { margin-left: auto; }
+.edgeunit .xstat { display: flex; align-items: baseline; gap: 8px; font-size: 12px; padding: 7px 0; border-top: 1px solid var(--border-subtle); }
+.edgeunit .xstat .r { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+/* pretty diff, capped with a fade */
+.edgeunit .ediff { font-family: var(--font-mono); font-size: 10.5px; line-height: 1.65; background: #0d0e11; border: 1px solid var(--border-subtle); border-radius: 8px; padding: 7px 10px; margin: 0 0 8px; overflow: hidden; -webkit-mask-image: linear-gradient(180deg,#000 70%,transparent 98%); mask-image: linear-gradient(180deg,#000 70%,transparent 98%); }
+.edgeunit .ediff .ln2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.edgeunit .ediff .ef { font-family: var(--font-sans); font-size: 10.5px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
+.edgeunit .ediff .add { color: var(--success); }
+.edgeunit .ediff .del { color: var(--danger); }
+.edgeunit .ediff .ctx { color: var(--text-muted); }
+.usagecard { width: 300px; border-radius: 12px; background: rgba(28,30,35,.96); border: 1px solid var(--border-subtle); box-shadow: 0 18px 48px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.06); padding: 12px 14px; }
+.usagecard .uh { display: flex; align-items: baseline; margin-bottom: 4px; }
+.usagecard .uh .t { font-size: 12.5px; font-weight: 600; }
+.usagecard .uh .u { margin-left: auto; font-size: 10.5px; color: var(--text-muted); }
+.urow { padding: 7px 0; border-top: 1px solid var(--border-subtle); }
+.urow .l1 { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.urow .l1 .nm { font-weight: 500; }
+.urow .l1 .lim { color: var(--text-muted); font-size: 11px; }
+.urow .l1 .pc { margin-left: auto; font-size: 11.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.urow .bar { height: 3px; border-radius: 99px; background: var(--surface-active); margin-top: 6px; overflow: hidden; }
+.urow .bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.urow .bar i.low { background: var(--warning); }
+.urow .na { font-size: 11px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="pagehead">
+    <a class="back" href="index.html">← Concepts A·B·C</a>
+    <h1>AI Workbench — All Views in A's Language</h1>
+    <span class="meta">same sidebar · same cards · same controls</span>
+    <nav class="tabbar" aria-label="views">
+      <button data-view="providers" aria-selected="true">Providers</button>
+      <button data-view="teams" aria-selected="false">Teams</button>
+      <button data-view="agents" aria-selected="false">Agents</button>
+      <button data-view="workspace" aria-selected="false">Files &amp; Terminal</button>
+      <button data-view="skills" aria-selected="false">Skills</button>
+      <button data-view="plugins" aria-selected="false">Plugins</button>
+      <button data-view="mcp" aria-selected="false">MCP</button>
+      <button data-view="settings" aria-selected="false">Settings</button>
+      <button data-view="palette" aria-selected="false">Palette</button>
+      <button data-view="island" aria-selected="false">Island</button>
+      <button data-view="edge" aria-selected="false">Island Apple</button>
+    </nav>
+  </header>
+
+  <!-- ================= PROVIDERS ================= -->
+  <section class="view" data-view="providers">
+    <div class="desc"><h2>Providers</h2><p><b>Central provider screen (§19).</b> One card per tool: logo, install state, detail rows, capability chips, enable switch. Accounts live under their family; CLI tools expose path/args/models — all in <code>view__inner</code> rhythm.</p></div>
+    <div class="mock" data-active="providers">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <button class="row"><span class="dot warn"></span><span class="t">Opencode · review</span><span class="n hot">1</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn"><div class="vbody"><div class="vcol">
+        <div class="viewhead"><h1>Providers</h1><span class="right"><button class="btn-q"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>Check again</button></span></div>
+        <p class="vdesc">Everything shown comes from the tool itself — installation, auth, models, capabilities. Unverified stays unverified.</p>
+        <div class="card">
+          <div class="card__head"><span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="card__name">Claude Code</span><span class="card__meta">Installed · 2.1.3</span><span class="right"><span class="pill live"><span class="dot live"></span>Signed in</span><span class="sw on"><i></i></span></span></div>
+          <div style="margin-top:8px">
+            <div class="prop"><span class="k">Account</span><span class="v">max plan <span class="note2">· reported by the tool</span></span></div>
+            <div class="prop"><span class="k">Transport</span><span class="v">cli</span></div>
+            <div class="prop"><span class="k">Models</span><span class="v">Sonnet 4.5, Opus 4.1 <span class="note2">· reported by the tool</span></span></div>
+            <div class="prop"><span class="k">Usage</span><span class="v">Weekly 68% remaining</span></div>
+          </div>
+          <div style="margin-top:8px"><span class="chip">chat</span><span class="chip">streaming</span><span class="chip">sessionResume</span><span class="chip">toolCalls</span><span class="chip">usage</span><span class="chip">+9</span></div>
+          <div class="prov-acc">
+            <div class="accrow"><span class="t">Arbeit</span><span class="m">~/.claude-work</span><button class="btn-q">Disconnect</button></div>
+            <div class="accrow"><span class="t">Privat</span><span class="m">detected · ~/.claude</span><button class="btn-q">+ Connect</button></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card__head"><span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="card__name">Codex</span><span class="card__meta">Installed · unverified</span><span class="right"><span class="pill warn">Unknown auth</span><span class="sw on"><i></i></span></span></div>
+          <p class="notice">Not run against the real tool here. Flags and event shapes are the profile's best guess — connect it once to verify.</p>
+          <div style="margin-top:8px">
+            <div class="prop"><span class="k">Models</span><span class="v">gpt-5.5, gpt-5.4-mini <span class="note2">· yours, entered below</span></span></div>
+          </div>
+          <div class="cfg">
+            <div class="fld"><span>Executable path</span><input class="tin" value="" placeholder="Leave empty to search PATH" /></div>
+            <div class="fld"><span>Extra arguments</span><input class="tin" value="" placeholder="Optional, separated by spaces" /></div>
+            <div class="fld full"><span>Models, one per line</span><textarea class="tin" rows="2">gpt-5.5 = GPT-5.5
+gpt-5.4-mini</textarea></div>
+          </div>
+          <div style="margin-top:10px"><button class="btn">Save and re-check</button></div>
+        </div>
+      </div></div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Same card grammar</h3><p>Logo well + name + install meta + state pill + enable switch in the head; <code>detail-list</code> rows below. No provider branding beyond the logo.</p></div>
+      <div class="note"><h3>Honesty is visible</h3><p>Provenance rides with every value ("reported by the tool" vs "yours"); unverified profiles get the amber notice, not a silent guess.</p></div>
+      <div class="note"><h3>Config where it belongs</h3><p>CLI path/args/models edit inline in the card; custom OpenAI-compatible providers reuse the same fields + key reference below.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= TEAMS ================= -->
+  <section class="view" data-view="teams" hidden>
+    <div class="desc"><h2>Teams</h2><p><b>Quiet by default (§70).</b> A team is a few lines until opened — agent stack, active run, goal input. Detail lives behind the run, never a permanent dashboard.</p></div>
+    <div class="mock" data-active="teams">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1 2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <button class="row"><span class="dot warn"></span><span class="t">Opencode · review</span><span class="n hot">1</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn"><div class="vbody"><div class="vcol">
+        <div class="viewhead"><h1>Teams</h1><span class="right"><button class="btn-q">+ New team</button></span></div>
+        <p class="vdesc">Teams live globally: create one from any workspace and start runs on it from here at any time.</p>
+        <div class="card">
+          <div class="card__head"><span class="card__name">Auth refactor</span><span class="card__meta">AI-Workbench · 3 agents</span><span class="right"><span class="pill live"><span class="dot live"></span>1 running</span></span></div>
+          <div style="margin-top:8px">
+            <div class="agentrow"><span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="t"><div class="nm">Claude Code · lead</div><div class="sb2">Sonnet 4.5 · typescript-strict, code-review</div></span><span class="pill live">working</span></div>
+            <div class="agentrow"><span class="logo">G</span><span class="t"><div class="nm">Gemini · reviewer</div><div class="sb2">agy · needs lead handoff</div></span><span class="pill dim">idle</span></div>
+            <div class="agentrow"><span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="t"><div class="nm">Codex · worker</div><div class="sb2">UI polish pass · task 7/9</div></span><span class="pill live">working</span></div>
+          </div>
+          <div class="goalrow"><input class="tin" value="" placeholder="New goal for this team…" /><button class="btn-p">Start run</button></div>
+          <div class="runrow2"><span class="dot live"></span><span class="t">Migrate credentials to OS secret storage</span><span class="card__meta">6/9 · 11:47</span><button class="btn-q">■ Stop</button></div>
+        </div>
+        <div class="card">
+          <div class="card__head"><span class="card__name">Release notes</span><span class="card__meta">AI-Workbench · 2 agents</span><span class="right"><span class="pill dim">no active run</span></span></div>
+          <div class="goalrow"><input class="tin" value="" placeholder="New goal for this team…" /><button class="btn-p">Start run</button></div>
+        </div>
+      </div></div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Compact by rule</h3><p>Team = name + home + agent rows + goal input + runs. Tasks, messages, artifacts stay one click deeper — §70 forbids the dashboard.</p></div>
+      <div class="note"><h3>Capability-gated</h3><p>Only pickable providers appear in agent assignment; lead is one toggle. Provider identity never drives core logic.</p></div>
+      <div class="note"><h3>Runs are controllable</h3><p>Every running goal shows elapsed + Stop. Background work is always interruptible (§G7).</p></div>
+    </div>
+  </section>
+
+  <!-- ================= AGENTS ================= -->
+  <section class="view" data-view="agents" hidden>
+    <div class="desc"><h2>Agents</h2><p><b>Workspace terminals (§26).</b> Each tile is the provider's own CLI in a real terminal — launched from the bar, running while hidden. Same tile grammar as concept B, inside A's shell.</p></div>
+    <div class="mock" data-active="chat">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row" data-current="true"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1 2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <button class="row"><span class="dot warn"></span><span class="t">Opencode · review</span><span class="n hot">1</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn">
+        <div class="crumbs"><span class="ws">AI-Workbench</span><span class="sl">/</span><span class="sess">Agents</span><span class="right"><span class="pill live"><span class="dot live"></span>2 live</span><span class="pill dim">Chat · Agents toggle <kbd>⌃⇧A</kbd></span></span></div>
+        <div class="launchbar"><span class="lbl">Launch</span>
+          <button class="launch"><span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span>Claude</button>
+          <button class="launch"><span class="logo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span>Codex</button>
+          <button class="launch"><span class="logo"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span>Opencode</button>
+        </div>
+        <div class="tgrid">
+          <div class="tile" data-current="true">
+            <div class="th"><span class="av"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude · terminal</span><span class="pill live">LIVE</span><span class="el">04:12</span></div>
+            <div class="tb"><div class="ln">$ claude --model sonnet</div><div class="ln">registry.ts edited · +42 −18</div><div class="ln"><span class="ok">✓ 287 passed</span> in 1.2s</div><div class="ln">$ pnpm typecheck <span class="cur"></span></div></div>
+            <div class="tf"><div class="task">pty-3 · 80×24 · running while hidden</div><div class="segbar"><i class="d" style="flex:7"></i><i style="flex:3"></i></div></div>
+          </div>
+          <div class="tile">
+            <div class="th"><span class="av"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex · terminal</span><span class="pill dim">idle</span><span class="el">00:00</span></div>
+            <div class="tb"><div class="ln">$ codex exec "draft release notes"</div><div class="ln">reading CHANGELOG · 14 commits</div><div class="ln">$ <span class="cur"></span></div></div>
+            <div class="tf"><div class="task">pty-4 · 80×24 · click to focus</div><div class="segbar"><i style="flex:10"></i></div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Launch bar, capability-filtered</h3><p>Only tools that expose a terminal-capable CLI appear. Uninstalled tools never render a dead button.</p></div>
+      <div class="note"><h3>Real terminals</h3><p>node-pty behind, xterm in front; resize/input/cleanup handled. Tiles survive the view switching away.</p></div>
+      <div class="note"><h3>One toggle</h3><p>Chat ⇄ Agents via <kbd>Ctrl+Shift+A</kbd>, palette, or header — the clean conversation is never lost.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= WORKSPACE ================= -->
+  <section class="view" data-view="workspace" hidden>
+    <div class="desc"><h2>Files &amp; Terminal</h2><p><b>Session workspace panel (§26–28).</b> Tabs for terminal, files, changes above the composer — runtime separate from visible UI, git state one glance away.</p></div>
+    <div class="mock" data-active="chat">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row" data-current="true"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1 2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row" data-current="true"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <button class="row"><span class="dot warn"></span><span class="t">Opencode · review</span><span class="n hot">1</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn">
+        <div class="crumbs"><span class="ws">AI-Workbench</span><span class="sl">/</span><span class="sess">Claude Code · Arbeit</span><span class="right"><span class="pill"><span class="dot live"></span>main · 2 changed</span><span class="pill acc">Sonnet 4.5 ▾</span></span></div>
+        <div class="chatmini">
+          <div class="mrow"><div class="who">You</div><span class="bub">Refactor the provider registry to capability-based discovery.</span></div>
+          <div class="mrow"><div class="who">Claude</div><div class="txt">Done — 287 pass. Diff is in Changes below.</div></div>
+        </div>
+        <div class="wpane">
+          <div class="wtabs"><button>Terminal</button><button>Files</button><button aria-selected="true">Changes · 2</button><span class="x">Ctrl+` to toggle · ✕</span></div>
+          <div class="wbody">
+            <div class="wfiles">
+              <div class="frow" data-current="true">M registry.ts<span class="st m">M</span></div>
+              <div class="frow">M registry.test.ts<span class="st m">M</span></div>
+              <div class="frow">A tokens.css<span class="st a">A</span></div>
+              <div class="frow">? island-draft.tsx<span class="st q">?</span></div>
+            </div>
+            <div class="wdiff"><div class="fh">registry.ts · +42 −18</div><div class="ln2 ctx">@@ capabilities(id) — normalized discovery</div><div class="ln2 del">-  if (providerId === 'claude') { … }</div><div class="ln2 add">+  const caps = registry.capabilities(id);</div><div class="ln2 add">+  if (caps.has('sessionResume')) { … }</div><div class="ln2 ctx">   287 passed · 0 failed · 1.2s</div></div>
+          </div>
+        </div>
+      </section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Panel, not page</h3><p>Terminal/Files/Changes dock above the composer and toggle with <kbd>Ctrl+`</kbd>. The session runtime never depends on visibility.</p></div>
+      <div class="note"><h3>Git at a glance</h3><p>Branch + changed count in the header; status letters in mono; diff preview with add/del tones only — chrome stays neutral.</p></div>
+      <div class="note"><h3>Safe by construction</h3><p>Everything resolves inside the session working directory; traversal outside is refused, not warned.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= SKILLS ================= -->
+  <section class="view" data-view="skills" hidden>
+    <div class="desc"><h2>Skills</h2><p><b>Provider-neutral instructions (§29–30).</b> Global → workspace → session, narrowest wins. Each row shows effective scope; imports accept Markdown or Claude-style folders.</p></div>
+    <div class="mock" data-active="skills">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1 2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn"><div class="vbody"><div class="vcol">
+        <div class="viewhead"><h1>Skills</h1><span class="right"><span class="card__meta">14 installed</span><button class="btn-q"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>Import from folder</button></span></div>
+        <p class="vdesc">Effective scope wins: session overrides workspace overrides global.</p>
+        <div class="llist">
+          <button class="lrow" data-open="true"><span class="lname">typescript-strict</span><span class="lmeta">v2.3 · needs filesystem, toolCalls</span><span class="leff">Session</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+          <div class="ldetail">
+            <p class="vdesc" style="margin:0 0 4px">Unknown + guards, no <code>as</code>, no <code>!</code>. Reaches every provider that reports file-edit capability.</p>
+            <div class="scoperow"><span>Global</span><span class="sw on"><i></i></span></div>
+            <div class="scoperow"><span>Workspace <span class="lmeta">· AI-Workbench</span></span><span class="sw"><i></i></span></div>
+            <div class="scoperow"><span>Session <span class="lmeta">· Claude Code · Arbeit</span></span><span class="sw on"><i></i></span></div>
+          </div>
+          <button class="lrow"><span class="lname">code-review</span><span class="lmeta">v1.8</span><span class="leff">Workspace</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button class="lrow"><span class="lname">systematic-debugging</span><span class="lmeta">v1.2</span><span class="leff">Session</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button class="lrow"><span class="lname">test-driven-development</span><span class="lmeta">v3.0</span><span class="leff">Global</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button class="lrow"><span class="lname">home-assistant</span><span class="lmeta">v1.1</span><span class="leff off">Off</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div>
+      </div></div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Lists, not cards</h3><p>Hairline rows, 38px, name + version left, effective scope right. Fourteen skills scan in one glance — no boxes, no pill-per-row.</p></div>
+      <div class="note"><h3>Scopes are switches</h3><p>Expanding a row reveals three labeled on/off rows with context (which workspace, which session). Editing state where it is read.</p></div>
+      <div class="note"><h3>Internal format, many importers</h3><p>Markdown or <code>SKILL.md</code> folders normalize once; providers only ever see the neutral form.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= PLUGINS ================= -->
+  <section class="view" data-view="plugins" hidden>
+    <div class="desc"><h2>Plugins</h2><p><b>External services (§32–34).</b> Accounts connect once per service and serve every plugin of that type; secrets cross to main once and never return.</p></div>
+    <div class="mock" data-active="plugins">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1 2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn"><div class="vbody"><div class="vcol">
+        <div class="viewhead"><h1>Plugins</h1><span class="right"><span class="card__meta">2 installed · 1 connected</span></span></div>
+        <p class="vdesc">Capabilities from outside tools. Skills teach; plugins connect.</p>
+        <div class="llist">
+          <div class="lrow"><span class="logo"><svg fill="currentColor" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg></span><span class="lname">GitHub</span><span class="lmeta">repos · issues · PRs</span><span class="leff">Arbeit · connected</span></div>
+          <div class="ldetail">
+            <div class="scoperow"><span>Global</span><span class="sw on"><i></i></span></div>
+            <div class="scoperow"><span>Workspace</span><span class="sw on"><i></i></span></div>
+            <div class="scoperow"><span>Session <span class="lmeta">· needs an active session</span></span><span class="sw"><i></i></span></div>
+          </div>
+          <div class="lrow"><span class="logo">G</span><span class="lname">Gmail</span><span class="lmeta">read · drafts</span><span class="leff"><button class="btn">Connect…</button></span></div>
+        </div>
+        <div class="secttl">Accounts</div>
+        <div class="llist">
+          <div class="lrow"><span class="lname">Arbeit</span><span class="lmeta">github · OS keychain, reference only</span><span class="leff"><button class="btn-q">Disconnect</button></span></div>
+        </div>
+      </div></div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>One account, many plugins</h3><p>Drive, Gmail and Calendar share one Google sign-in. Sessions get permission, never the secret.</p></div>
+      <div class="note"><h3>Same list language</h3><p>Identical rows, switches and account list as Skills — one pattern learned once, reused three times.</p></div>
+      <div class="note"><h3>Separation holds</h3><p>Plugin/service logic never leaks into provider adapters; the ToolBridge decides exposure per session.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= MCP ================= -->
+  <section class="view" data-view="mcp" hidden>
+    <div class="desc"><h2>MCP</h2><p><b>First-class servers (§37–38).</b> One line per server with live state + latency; transport, tools and per-session access expand inline. Secrets stay referenced, never pasted.</p></div>
+    <div class="mock" data-active="mcp">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1 2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn"><div class="vbody"><div class="vcol">
+        <div class="viewhead"><h1>MCP servers</h1><span class="right"><span class="pill live"><span class="dot live"></span>3 connected</span></span></div>
+        <p class="vdesc">Servers belong to the app; each session chooses which it may use, in its context panel.</p>
+        <div class="llist">
+          <button class="lrow" data-open="true"><span class="dot live"></span><span class="lname">team-bridge</span><span class="lmeta">stdio · 21 tools</span><span class="leff">12ms · connected</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+          <div class="ldetail">
+            <div class="prop"><span class="k">Command</span><span class="v">ai-workbench-team-mcp</span></div>
+            <div style="margin:6px 0 8px"><span class="chip">team_create_task</span><span class="chip">team_send_message</span><span class="chip">team_finish_goal</span><span class="chip">+18</span></div>
+            <div style="display:flex;gap:2px"><button class="btn-q">Disconnect</button><button class="btn-q" style="color:var(--danger)">Delete</button></div>
+          </div>
+          <button class="lrow"><span class="dot live"></span><span class="lname">filesystem</span><span class="lmeta">stdio · 9 tools</span><span class="leff">8ms · connected</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+          <button class="lrow"><span class="dot warn"></span><span class="lname">linear-remote</span><span class="lmeta">http · retrying</span><span class="leff warn">reconnecting</span><svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 6 6 6-6 6"/></svg></button>
+        </div>
+        <div class="secttl">Add server</div>
+        <div class="cfg">
+          <div class="fld"><span>Name</span><input class="tin" value="" placeholder="github" /></div>
+          <div class="fld"><span>Transport</span><select class="sel"><option>stdio</option><option>http</option><option>sse</option></select></div>
+          <div class="fld full"><span>Command</span><input class="tin" value="" placeholder="npx -y mcp-server-github" /></div>
+          <div class="full"><button class="btn">Add server</button></div>
+        </div>
+      </div></div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>State reads inline</h3><p>Dot, latency and state live on the row — health without opening. Remote transports show reconnecting, never a spinner forever.</p></div>
+      <div class="note"><h3>Unboxed add form</h3><p>The form is a hairline section, not a card in a card. Fields, button, done.</p></div>
+      <div class="note"><h3>Auth by reference</h3><p>HTTP bearer comes from a credential reference resolved in main; the key is never typed, shown, or logged here.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= SETTINGS ================= -->
+  <section class="view" data-view="settings" hidden>
+    <div class="desc"><h2>Settings</h2><p><b>App preferences, nothing else.</b> Section labels, label/description rows, native-feeling controls from the shared layer. Provider config lives in Providers, not here.</p></div>
+    <div class="mock" data-active="settings">
+      <aside class="sb">
+        <div class="appSw"><span class="mark">W</span><span class="nm">AI Workbench</span><span class="ver">0.0.1</span></div>
+        <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Search or command…<kbd>⌘K</kbd></div>
+        <div class="sbnav">
+          <div class="seclbl">Workspace</div>
+          <button class="row"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M4 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v9a2 2 0 0 1 2 2H6a2 2 0 0 1-2-2z"/></svg></span><span class="t">AI-Workbench</span><span class="n">main</span></button>
+          <div class="seclbl">Sessions</div>
+          <button class="row"><span class="dot live"></span><span class="t">Claude Code · Arbeit</span><span class="n">12</span></button>
+          <div class="seclbl">Manage</div>
+          <button class="row" data-view="providers"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Providers</span><span class="n">5</span></button>
+          <button class="row" data-view="teams"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3 3 0 0 1 0 7M21 20c0-2.6-1.6-4.8-4-5.7"/></svg></span><span class="t">Teams</span><span class="n">2</span></button>
+          <button class="row" data-view="skills"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3 4 7v10l8 4 8-4V7z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg></span><span class="t">Skills</span><span class="n">14</span></button>
+          <button class="row" data-view="plugins"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/></svg></span><span class="t">Plugins</span></button>
+          <button class="row" data-view="mcp"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="3" y="6" width="13" height="12" rx="2"/><path d="M16 10h3a2 2 0 0 1 0 4h-3"/></svg></span><span class="t">MCP servers</span><span class="n">5</span></button>
+          <button class="row" data-view="settings"><span class="ic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span class="t">Settings</span></button>
+        </div>
+        <div class="sbfoot"><span class="avatar">JK</span><span><div class="who">Jacky</div><div class="plan">Pro · 3 providers</div></span><span class="usage">68%</span></div>
+      </aside>
+      <section class="mn"><div class="vbody"><div class="vcol">
+        <div class="viewhead"><h1>Settings</h1></div>
+        <div class="secttl">Status Island</div>
+        <div class="setrow"><span class="t"><div class="nm">Show island</div><div class="ds">Floating companion while the main window is hidden.</div></span><span class="sw on"><i></i></span></div>
+        <div class="setrow"><span class="t"><div class="nm">Mode</div><div class="ds">Automatic follows attention; manual stays where put.</div></span><select class="sel"><option>Automatic</option><option>Manual</option></select></div>
+        <div class="secttl">Appearance</div>
+        <div class="setrow"><span class="t"><div class="nm">Theme</div><div class="ds">Dark is the default surface.</div></span><select class="sel"><option>System</option><option selected>Dark</option><option>Light</option></select></div>
+        <div class="setrow"><span class="t"><div class="nm">Density</div><div class="ds">Compact tightens spacing.</div></span><select class="sel"><option>Comfortable</option><option>Compact</option></select></div>
+        <div class="secttl">Shortcuts</div>
+        <div class="krow"><span class="t">Command palette</span><kbd>⌘K</kbd></div>
+        <div class="krow"><span class="t">Terminal panel</span><kbd>Ctrl+`</kbd></div>
+        <div class="krow"><span class="t">Chat ⇄ Agents</span><kbd>Ctrl</kbd><kbd>⇧</kbd><kbd>A</kbd></div>
+        <div class="secttl">About</div>
+        <div class="prop"><span class="k">Version</span><span class="v">0.0.1 <span class="note2">· update available: 0.0.2</span></span></div>
+        <div style="margin-top:8px"><button class="btn">Check for updates</button></div>
+      </div></div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Preferences only</h3><p>Island, appearance, shortcuts, updates. Anything provider-shaped lives in Providers; anything secret-shaped in the OS keychain.</p></div>
+      <div class="note"><h3>Rows, not cards</h3><p>Hairline-separated label rows with right-docked controls — the macOS Settings grammar, one accent, no boxes.</p></div>
+      <div class="note"><h3>Shortcuts discoverable</h3><p>The full list lives here and in the palette footer; every global key is shown, none hidden.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= PALETTE ================= -->
+  <section class="view" data-view="palette" hidden>
+    <div class="desc"><h2>Palette</h2><p><b>Keyboard path to everything (§81).</b> Real command groups from the app — Session, Workspace, Go to, Providers, Appearance, Status Island — over the dimmed console. <kbd>⌘K</kbd> anywhere.</p></div>
+    <div class="mock nosb" data-active="">
+      <section class="mn"><div class="ovl">
+        <div class="dim">
+          <div class="crumbs"><span class="ws">AI-Workbench</span><span class="sl">/</span><span class="sess">Claude Code · Arbeit</span><span class="right"><span class="pill"><span class="dot live"></span>main · clean</span><span class="pill acc">Sonnet 4.5 ▾</span></span></div>
+          <div class="chatmini">
+            <div class="mrow"><div class="who">You</div><span class="bub">Refactor the provider registry to capability-based discovery.</span></div>
+            <div class="mrow"><div class="who">Claude</div><div class="txt">Done — 287 pass. Diff is in Changes below.</div></div>
+          </div>
+        </div>
+        <div class="pal">
+          <div class="pin"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color:var(--text-muted)"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><span class="q">isl<span class="caret2"></span></span><kbd>esc</kbd></div>
+          <div class="grp">Status Island<span class="c2">3</span></div>
+          <div class="res sel"><span class="ric"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg></span><span class="rt">Status <mark>Isl</mark>and: automatic</span><span class="rm"><kbd>↵</kbd></span></div>
+          <div class="res"><span class="ric"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M12 17v5M9 3h6l1 7h-8z"/></svg></span><span class="rt">Pin Status <mark>Isl</mark>and: usage</span><span class="rm"><kbd>↵</kbd></span></div>
+          <div class="res"><span class="ric"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span><span class="rt">Show / Hide Status <mark>Isl</mark>and</span><span class="rm"><kbd>↵</kbd></span></div>
+          <div class="grp">Go to</div>
+          <div class="res"><span class="ric"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><span class="rt">Go to Teams</span><span class="rm"><kbd>G</kbd><kbd>T</kbd></span></div>
+          <div class="res"><span class="ric"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span><span class="rt">Go to Providers</span><span class="rm"><kbd>G</kbd><kbd>P</kbd></span></div>
+          <div class="pft"><span><kbd>↑↓</kbd> navigate</span><span><kbd>↵</kbd> run</span><span><kbd>esc</kbd> dismiss</span></div>
+        </div>
+      </div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Real groups</h3><p>Session, Workspace, Go to, Providers, Appearance, Status Island — the palette mirrors the app's actual command registry, filtered as you type.</p></div>
+      <div class="note"><h3>Overlay, never page</h3><p>Translucent surface (§71), Escape returns to context. The dimmed console behind proves where you are.</p></div>
+      <div class="note"><h3>Island commands live here</h3><p>Show/hide, cycle, automatic, pin — the floating window is fully drivable without a mouse.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= ISLAND ================= -->
+  <section class="view" data-view="island" hidden>
+    <div class="desc"><h2>Island</h2><p><b>Separate frameless window (§95–104).</b> Left: static references (pill, circles, usage, approval). Right, both <b>live</b>: multi-agent hover list with click-to-usage toggle, and the idle app-mark with usage overlay.</p></div>
+    <div class="mock nosb tall" data-active="">
+      <section class="mn"><div class="stage stage--split">
+        <div class="staticcol">
+        <div>
+          <div class="island"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="tt">Claude Code · editing registry.ts</span><span class="dt">04:12</span></div>
+          <div class="caption" style="text-align:center;margin-top:10px">compact · static reference — the hover target, restored</div>
+        </div>
+        <div>
+          <div class="minis">
+            <div class="miniwrap"><div class="mini ring"><span><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span></div><div class="caption">working · progress ring</div></div>
+            <div class="miniwrap"><div class="mini alert"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg><span class="bdg">1</span></div><div class="caption">approval · amber ring + count</div></div>
+            <div class="miniwrap"><div class="mini idle"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></div><div class="caption">idle · mark only</div></div>
+            <div class="miniwrap"><div class="mini"><span class="wmark">W</span></div><div class="caption">no agent · app mark</div></div>
+          </div>
+          <div class="caption" style="text-align:center;margin-top:10px">the circle vocabulary — four states, zero text</div>
+        </div>
+        <div>
+          <div class="usagecard">
+            <div class="uh"><span class="t">Usage</span><span class="u">updated 2m ago</span></div>
+            <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="lim">Weekly</span><span class="pc">68% left</span></div><div class="bar"><i style="width:68%"></i></div></div>
+            <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex</span><span class="lim">5-hour</span><span class="pc">42% left</span></div><div class="bar"><i style="width:42%"></i></div></div>
+            <div class="urow"><div class="l1"><span class="islandlogo">G</span><span class="nm">Gemini</span><span class="lim">Daily</span><span class="pc">12% left</span></div><div class="bar"><i class="low" style="width:12%"></i></div></div>
+            <div class="urow"><div class="l1"><span class="islandlogo"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span><span class="nm">Opencode</span><div class="na">Usage unavailable</div></div></div>
+          </div>
+          <div class="caption" style="text-align:center;margin-top:10px">usage panel · static reference — bars compare, unknowns stay honest</div>
+        </div>
+        <div><div class="islandcard">
+          <div class="tt"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span>Claude Code needs approval</div>
+          <div class="dt">Write to packages/ui/tokens.css · +18 −4 · waiting 00:58</div>
+          <div class="islandbar"><i></i></div>
+          <div class="islandacts"><button class="btn-q">Dismiss</button><button class="btn-amber">Approve</button></div>
+        </div><div class="caption" style="text-align:center;margin-top:10px">approval · static reference — attention state, provider mark, amber actions</div></div>
+        </div>
+        <div class="livedcol">
+        <div>
+          <div class="livedemo" data-drag data-mode="agents">
+            <div class="mini ring" data-grip title="Click to switch hover view"><span><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span></div>
+            <div class="agentlist pop-agents">
+              <div class="arow"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="tt2"><div class="nm">Claude Code</div><div class="sub">editing registry.ts</div></span><span class="el">04:12</span></div>
+              <div class="arow"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="tt2"><div class="nm">Codex</div><div class="sub">drafting release notes</div></span><span class="el">01:03</span></div>
+              <div class="arow"><span class="logo">TM</span><span class="tt2"><div class="nm">Auth refactor</div><div class="sub">6/9 · 1 blocked</div></span><span class="el">11:47</span></div>
+            </div>
+            <div class="usagecard pop-usage">
+              <div class="uh"><span class="t">Usage</span><span class="u">updated 2m ago</span></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="lim">Weekly</span><span class="pc">68% left</span></div><div class="bar"><i style="width:68%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex</span><span class="lim">5-hour</span><span class="pc">42% left</span></div><div class="bar"><i style="width:42%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo">G</span><span class="nm">Gemini</span><span class="lim">Daily</span><span class="pc">12% left</span></div><div class="bar"><i class="low" style="width:12%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span><span class="nm">Opencode</span><div class="na">Usage unavailable</div></div></div>
+            </div>
+          </div>
+          <div class="caption" style="text-align:center;margin-top:10px"><span class="livetag">LIVE</span><span class="modelabel">hover: <b>agents</b> — click the circle for usage</span></div>
+        </div>
+        <div>
+          <div class="livedemo" data-drag data-mode="usage">
+            <div class="mini" data-grip><span class="wmark">W</span></div>
+            <div class="usagecard pop-usage">
+              <div class="uh"><span class="t">Usage</span><span class="u">updated 2m ago</span></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="lim">Weekly</span><span class="pc">68% left</span></div><div class="bar"><i style="width:68%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex</span><span class="lim">5-hour</span><span class="pc">42% left</span></div><div class="bar"><i style="width:42%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo">G</span><span class="nm">Gemini</span><span class="lim">Daily</span><span class="pc">12% left</span></div><div class="bar"><i class="low" style="width:12%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span><span class="nm">Opencode</span><div class="na">Usage unavailable</div></div></div>
+            </div>
+          </div>
+          <div class="caption" style="text-align:center;margin-top:10px"><span class="livetag">LIVE</span>nothing running — hover for the usage panel · draggable too</div>
+        </div>
+        </div>
+      </div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Statics left, live right</h3><p>References left (pill, circles, usage, approval) in a taller 760px box. Right is live twice: multi-agent hover list — single-click the circle swaps hover to usage; idle app-mark shows usage only. Drag either unit; double-click resets.</p></div>
+      <div class="note"><h3>No fake progress</h3><p>Bars only where tasks can be counted; solo sessions show named states; usage only from real provider reports.</p></div>
+      <div class="note"><h3>Deep-linked</h3><p>Opening an entry lands the main window on the run it is about — island and console stay one model.</p></div>
+    </div>
+  </section>
+
+  <!-- ================= ISLAND APPLE (edge dock) ================= -->
+  <section class="view" data-view="edge" hidden>
+    <div class="desc"><h2>Island Apple</h2><p><b>Notch grammar for the desktop, fully wired.</b> Toolbar drives working / approval / question / idle / no-agent. Approval and question stay compact with badge + outline glow (amber / blue); click springs open the card — diff for approval, clean options for questions.</p></div>
+    <div class="mock nosb tall" data-active="">
+      <section class="mn"><div class="desk">
+        <div class="menubar"><span class="wmark2">W</span><span class="mb-name">AI Workbench</span><span class="right"><span>Tue 09:41</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/></svg><svg width="20" height="14" viewBox="0 0 26 14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="20" height="10" rx="2.5"/><rect x="3.5" y="4.5" width="12" height="5" rx="1" fill="currentColor" stroke="none"/><path d="M23.5 5v4" stroke-linecap="round"/></svg></span></div>
+        <div class="deskstage" id="edgestage">
+          <div class="deskgrid"></div>
+          <div class="ghost" id="edgeghost"></div>
+          <div class="trail" id="edgetrail"></div>
+          <div class="edgeunit show-h st-working" id="edgeunit" data-mode="agents" title="Drag to move along edges · click the blob to switch hover view">
+            <span class="countbadge">1</span>
+            <div class="ec ec-h"><span class="em"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="ett">Claude Code · editing registry.ts</span><span class="edt">04:12</span></div>
+            <div class="ec ec-v"><span class="em"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="edt">04:12</span></div>
+            <div class="ec ec-i"><span class="em dimm"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="em wapp">W</span><span class="ett for-idle">Idle · 3 sessions</span><span class="ett for-none">No agents</span><span class="edt">68%</span></div>
+            <div class="ec ec-qp"><span class="em"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="ett">Claude asks</span><span class="edt">1 new</span></div>
+            <div class="ec ec-b"><span class="blobin"><span class="em m-prov"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="em m-app">W</span></span></div>
+            <div class="ec ec-a">
+              <div class="a-head">2 approvals<button class="all" data-act="approve">Approve all</button></div>
+              <div class="aitems">
+                <div class="aitem">
+              <div class="at"><span class="em"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span>Claude Code needs approval</div>
+              <div class="ad">Write to packages/ui/tokens.css · +18 −4 · waiting 00:58</div>
+              <div class="ediff"><div class="ef">middleware.ts · +3 −1</div><div class="ln2 ctx">12 const verify = (token) =&gt;</div><div class="ln2 del">13 − &nbsp;jwt.verify(token);</div><div class="ln2 add">13 + &nbsp;if (!token) throw new</div><div class="ln2 add">14 + &nbsp;&nbsp;AuthError('missing');</div><div class="ln2 ctx">15 &nbsp;&nbsp;return jwt.verify(token,</div></div>
+              <div class="islandacts"><button class="btn-q" data-act="dismiss">Dismiss</button><button class="btn-amber" data-act="approve">Approve</button></div>
+                </div>
+                <div class="aitem">
+                  <div class="at"><span class="em"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span>Opencode needs approval<span class="el">01:12</span></div>
+                  <div class="ad">Write to theme.config.ts · +6 −2</div>
+                  <div class="ediff"><div class="ef">theme.config.ts · +6 −2</div><div class="ln2 add">+ &nbsp;"accent": "#8c9dff",</div><div class="ln2 del">− &nbsp;"accent": "#5e6ad2",</div><div class="ln2 ctx">&nbsp;&nbsp;"radius": 7,</div></div>
+                  <div class="islandacts"><button class="btn-q" data-act="dismiss">Dismiss</button><button class="btn-amber" data-act="approve">Approve</button></div>
+                </div>
+              </div>
+            </div>
+            <div class="ec ec-q">
+              <div class="a-head">2 questions</div>
+              <div class="aitems">
+                <div class="aitem">
+              <div class="qh"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span>Claude Code asks</span><span class="el">now</span></div>
+              <div class="q-title">Which deployment target?</div>
+              <div class="q-sub">ship-auth · blocked until answered</div>
+              <button class="qo-row"><span class="t">Production</span><span class="d">ship it</span><kbd>⌘1</kbd></button>
+              <button class="qo-row"><span class="t">Staging</span><span class="d">canary first</span><kbd>⌘2</kbd></button>
+              <button class="qo-row"><span class="t">Local only</span><span class="d">keep it here</span><kbd>⌘3</kbd></button>
+              </div>
+              <div class="aitem">
+                <div class="qh"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span>Codex asks</span><span class="el">01:03</span></div>
+                <div class="q-title">Merge strategy?</div>
+                <div class="q-sub">release/0.0.2 · one option ships it</div>
+                <button class="qo-row"><span class="t">Squash</span><span class="d">single commit</span><kbd>⌘1</kbd></button>
+                <button class="qo-row"><span class="t">Rebase</span><span class="d">keep history</span><kbd>⌘2</kbd></button>
+              </div>
+              </div>
+            </div>
+            <div class="islandcard pop-card">
+              <div class="tt"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span>Claude Code needs approval</div>
+              <div class="dt">Write to packages/ui/tokens.css · +18 −4 · waiting 00:58</div>
+              <div class="islandbar"><i></i></div>
+              <div class="islandacts"><button class="btn-q" data-act="dismiss">Dismiss</button><button class="btn-amber" data-act="approve">Approve</button></div>
+            </div>
+            <div class="usagecard pop-q" style="padding:14px 16px">
+              <div class="qh"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span>Claude Code asks</span><span class="el">now</span></div>
+              <div class="q-title">Which deployment target?</div>
+              <div class="q-sub">ship-auth · blocked until answered</div>
+              <button class="qo-row"><span class="t">Production</span><span class="d">ship it</span><kbd>⌘1</kbd></button>
+              <button class="qo-row"><span class="t">Staging</span><span class="d">canary first</span><kbd>⌘2</kbd></button>
+              <button class="qo-row"><span class="t">Local only</span><span class="d">keep it here</span><kbd>⌘3</kbd></button>
+            </div>
+            <div class="ec ec-x">
+              <div class="xw x-working">
+                <div class="xh"><span class="pill live">LIVE</span><span>3 agents</span><span class="el">04:12</span></div>
+                <div class="xrow"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="tt2"><div class="nm">Claude Code</div><div class="sb2">editing registry.ts · Sonnet 4.5</div></span><span class="el">04:12</span></div>
+                <div class="xrow"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="tt2"><div class="nm">Codex</div><div class="sb2">drafting release notes · 5.5</div></span><span class="el">01:03</span></div>
+                <div class="xrow"><span class="logo">TM</span><span class="tt2"><div class="nm">Auth refactor</div><div class="sb2">6/9 tasks · 1 blocked · lead claude</div></span><span class="el">11:47</span></div>
+                <div class="xask">Ask anything…<kbd>↵</kbd></div>
+                <div class="x-use"><div class="xl">Usage</div>
+                  <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="lim">Weekly</span><span class="pc">68% left</span></div><div class="bar"><i style="width:68%"></i></div></div>
+                  <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex</span><span class="lim">5-hour</span><span class="pc">42% left</span></div><div class="bar"><i style="width:42%"></i></div></div>
+                </div>
+              </div>
+              <div class="xw x-idle">
+                <div class="xh"><span>Idle</span><span class="el">3 sessions</span></div>
+                <div class="xstat"><span>Longest idle</span><span class="r">Codex · 42m</span></div>
+                <div class="xstat"><span>Context freed</span><span class="r">128k tokens</span></div>
+                <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="lim">Weekly</span><span class="pc">68% left</span></div><div class="bar"><i style="width:68%"></i></div></div>
+                <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex</span><span class="lim">5-hour</span><span class="pc">42% left</span></div><div class="bar"><i style="width:42%"></i></div></div>
+              </div>
+              <div class="xw x-none">
+                <div class="xh"><span>Nothing running</span></div>
+                <div class="xstat"><span>Last session</span><span class="r">Codex · 2h ago</span></div>
+                <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="lim">Weekly</span><span class="pc">68% left</span></div><div class="bar"><i style="width:68%"></i></div></div>
+              </div>
+            </div>
+            <div class="agentlist pop-agents">
+              <div class="arow"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="tt2"><div class="nm">Claude Code</div><div class="sub">editing registry.ts</div></span><span class="el">04:12</span></div>
+              <div class="arow"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="tt2"><div class="nm">Codex</div><div class="sub">drafting release notes</div></span><span class="el">01:03</span></div>
+              <div class="arow"><span class="logo">TM</span><span class="tt2"><div class="nm">Auth refactor</div><div class="sub">6/9 · 1 blocked</div></span><span class="el">11:47</span></div>
+            </div>
+            <div class="usagecard pop-usage">
+              <div class="uh"><span class="t">Usage</span><span class="u">updated 2m ago</span></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z" fill="#D97757" fill-rule="evenodd"></path></svg></span><span class="nm">Claude Code</span><span class="lim">Weekly</span><span class="pc">68% left</span></div><div class="bar"><i style="width:68%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="#fff"></path><path d="M12.546 13.909a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="#3941FF"></path></svg></span><span class="nm">Codex</span><span class="lim">5-hour</span><span class="pc">42% left</span></div><div class="bar"><i style="width:42%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo">G</span><span class="nm">Gemini</span><span class="lim">Daily</span><span class="pc">12% left</span></div><div class="bar"><i class="low" style="width:12%"></i></div></div>
+              <div class="urow"><div class="l1"><span class="islandlogo"><svg fill="currentColor" fill-rule="evenodd" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16 6H8v12h8V6zm4 16H4V2h16v20z"></path></svg></span><span class="nm">Opencode</span><div class="na">Usage unavailable</div></div></div>
+            </div>
+          </div>
+          <div class="demobar"><span>demo</span><button data-demo="working" class="on">Working</button><button data-demo="approval">Approval</button><button data-demo="question">Question</button><button data-demo="idle">Idle</button><button data-demo="none">No agents</button></div>
+          <div class="deskhint">drag along edges · pull inward to detach · click dock to expand · double-click resets</div>
+        </div>
+      </div></section>
+    </div>
+    <div class="notes">
+      <div class="note"><h3>Notch grammar, any edge</h3><p>Top-center reads as the Mac notch; sides rotate the pill vertical (mark + elapsed). Same marks, hairlines and tabular numerals as the console.</p></div>
+      <div class="note"><h3>States, not screens</h3><p>Approval and question stack multiple items in a scrolling card (Approve all on top); working fills out with ask + usage. Hover closes the moment a drag starts; open cards never compete with the drag.</p></div>
+      <div class="note"><h3>Click expands the dock</h3><p>Working opens a rich agent panel (rows, live question with ⌘-options, ask input); idle shows stats + usage. Approval arrives glowing amber with a capped pretty diff. Dragging off collapses back to the blob.</p></div>
+    </div>
+  </section>
+</div>
+<script>
+for (const btn of document.querySelectorAll('.tabbar button')) {
+  btn.addEventListener('click', () => {
+    const view = btn.dataset.view;
+    document.querySelectorAll('.tabbar button').forEach((b) => b.setAttribute('aria-selected', b === btn ? 'true' : 'false'));
+    document.querySelectorAll('section.view').forEach((s) => { s.hidden = s.dataset.view !== view; });
+  });
+}
+document.querySelectorAll('.mock[data-active]').forEach((m) => {
+  const a = m.dataset.active;
+  if (!a) return;
+  m.querySelectorAll('[data-view]').forEach((r) => {
+    if (r.dataset.view === a) r.setAttribute('data-current', 'true');
+  });
+});
+// Island drag model (mirrors the real window: the unit drags by its circle,
+// the card by its body but never its buttons, clamped to the desktop).
+document.querySelectorAll('[data-drag]').forEach((el) => {
+  const grip = el.querySelector('[data-grip]') || el;
+  let x = 0, y = 0, lx = 0, ly = 0, on = false;
+  grip.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    on = true; lx = e.clientX; ly = e.clientY;
+    el.dataset.moved = ''; el.dataset.sx = String(e.clientX); el.dataset.sy = String(e.clientY);
+    try { grip.setPointerCapture(e.pointerId); } catch (_) {}
+    el.classList.add('dragging');
+  });
+  grip.addEventListener('pointermove', (e) => {
+    if (!on) return;
+    if (Math.hypot(e.clientX - Number(el.dataset.sx || 0), e.clientY - Number(el.dataset.sy || 0)) > 5) el.dataset.moved = '1';
+    const stage = el.closest('.stage') || el.closest('.mock');
+    const r = el.getBoundingClientRect();
+    const s = stage.getBoundingClientRect();
+    const m = 8;
+    const nx = Math.min(Math.max(x + e.clientX - lx, s.left + m - r.left + x), s.right - m - r.width - r.left + x);
+    const ny = Math.min(Math.max(y + e.clientY - ly, s.top + m - r.top + y), s.bottom - m - r.height - r.top + y);
+    lx = e.clientX; ly = e.clientY; x = nx; y = ny;
+    el.style.transform = 'translate(' + x + 'px,' + y + 'px)';
+  });
+  const up = () => { on = false; el.classList.remove('dragging'); };
+  grip.addEventListener('pointerup', up);
+  grip.addEventListener('pointercancel', up);
+  el.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button')) return;
+    x = 0; y = 0; el.style.transform = '';
+  });
+});
+// Island hover-mode toggle: single-click the running circle to switch what
+// hover reveals (agents <-> usage). A drag never toggles. Idle has only
+// usage, so its circle ignores the click.
+document.querySelectorAll('.livedemo[data-mode]').forEach((demo) => {
+  const htmlDemo = demo;
+  const grip = htmlDemo.querySelector('[data-grip]');
+  const label = htmlDemo.parentElement ? htmlDemo.parentElement.querySelector('.modelabel') : null;
+  if (!grip || !label) return;
+  grip.addEventListener('click', () => {
+    if (htmlDemo.dataset.moved === '1') return;
+    const next = htmlDemo.dataset.mode === 'agents' ? 'usage' : 'agents';
+    if (!htmlDemo.querySelector(next === 'agents' ? '.pop-agents' : '.pop-usage')) return;
+    htmlDemo.dataset.mode = next;
+    label.innerHTML = next === 'agents' ? 'hover: <b>agents</b> — click the circle for usage' : 'hover: <b>usage</b> — click the circle for agents';
+  });
+});
+
+// Edge island physics: perimeter travel, ink detach, ghost attach.
+(function () {
+  const stage = document.getElementById('edgestage');
+  const unit = document.getElementById('edgeunit');
+  const ghost = document.getElementById('edgeghost');
+  const trail = document.getElementById('edgetrail');
+  if (!stage || !unit || !ghost || !trail) return;
+  const RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const M = 14, TOPY = 12, PW = 236, PH = 38, VW = 46, VH = 118, BR = 21;
+  const AW = 340;
+  let S = { mode: 'dock', edge: 'top', t: 0 };
+  let snap = null, dragging = false, trailInit = false, tx = 0, ty = 0;
+  let demoState = 'working', modeMem = 'agents', open = false;
+  const geom = () => ({ W: stage.clientWidth, H: stage.clientHeight });
+  const halfLen = (edge) => (edge === 'left' || edge === 'right') ? VH / 2 : PW / 2;
+  const railPoint = (edge, t, W, H) => {
+    if (edge === 'top') return { x: t, y: TOPY + PH / 2 };
+    if (edge === 'bottom') return { x: t, y: H - M - PH / 2 };
+    if (edge === 'left') return { x: M + VW / 2, y: t };
+    return { x: W - M - VW / 2, y: t };
+  };
+  const clampT = (edge, v, W, H, ov) => {
+    const len = (edge === 'left' || edge === 'right') ? H : W;
+    const h = ov === undefined ? halfLen(edge) : ov;
+    return Math.min(Math.max(v, M + h), len - M - h);
+  };
+  function expandedPos(edge, t, W, H, h) {
+    if (edge === 'top') return { x: t, y: TOPY + h / 2 };
+    if (edge === 'bottom') return { x: t, y: H - M - h / 2 };
+    if (edge === 'left') return { x: M + AW / 2, y: t };
+    return { x: W - M - AW / 2, y: t };
+  }
+  const nearestEdge = (p, W, H) => {
+    const ds = [
+      { edge: 'top', d: p.y - TOPY },
+      { edge: 'bottom', d: H - M - p.y },
+      { edge: 'left', d: p.x - M },
+      { edge: 'right', d: W - M - p.x },
+    ];
+    ds.sort((a, b) => a.d - b.d);
+    return ds[0];
+  };
+  const projT = (edge, p) => (edge === 'left' || edge === 'right') ? p.y : p.x;
+  // Size open panels from real content: clone the active layer into a hidden
+  // measurer inside the unit (so scoped styles apply), read it, fit + clamp.
+  function measureOpen(w) {
+    const sel = demoState === 'approval' ? '.ec-a' : demoState === 'question' ? '.ec-q' : '.ec-x';
+    const src = unit.querySelector(sel);
+    const meas = document.createElement('div');
+    meas.setAttribute('aria-hidden', 'true');
+    meas.style.cssText = 'position:absolute;top:0;left:0;width:' + (w - 28) + 'px;visibility:hidden;pointer-events:none;';
+    meas.innerHTML = src ? src.innerHTML : '';
+    unit.appendChild(meas);
+    const dims = geom();
+    const h = Math.min(Math.max(meas.offsetHeight + 30, 160), Math.max(220, dims.H - 60));
+    unit.removeChild(meas);
+    return h;
+  }
+  function render() {
+    const dims = geom();
+    const W = dims.W, H = dims.H;
+    if (!W || !H) return;
+    let cx, cy, w, h;
+    unit.classList.remove('is-blob', 'show-h', 'show-v', 'show-b', 'show-a', 'show-x', 'show-i', 'show-q', 'show-qp');
+    unit.classList.toggle('open', open);
+    if (open) {
+      w = AW;
+      if (demoState === 'approval') unit.classList.add('show-a');
+      else if (demoState === 'question') unit.classList.add('show-q');
+      else unit.classList.add('show-x');
+      h = measureOpen(w);
+      if (S.mode === 'free') {
+        cx = Math.min(Math.max(S.x, M + w / 2), W - M - w / 2);
+        cy = Math.min(Math.max(S.y, M + h / 2), H - M - h / 2);
+      } else {
+        const p = expandedPos(S.edge, S.t, W, H, h);
+        cx = p.x; cy = p.y;
+      }
+    } else if (S.mode === 'free') {
+      cx = S.x; cy = S.y; w = h = BR * 2;
+      unit.classList.add('is-blob', 'show-b');
+    } else {
+      const v = S.edge === 'left' || S.edge === 'right';
+      w = v ? VW : PW; h = v ? VH : PH;
+      const pt = railPoint(S.edge, S.t, W, H);
+      cx = pt.x; cy = pt.y;
+      const idleState = demoState === 'idle' || demoState === 'none';
+      unit.classList.toggle('show-i', idleState && !v);
+      unit.classList.toggle('show-qp', demoState === 'question' && !v);
+      unit.classList.toggle('show-v', v);
+      unit.classList.toggle('show-h', !v && !idleState && demoState !== 'question');
+    }
+    unit.style.width = w + 'px'; unit.style.height = h + 'px';
+    unit.style.left = (cx - w / 2) + 'px'; unit.style.top = (cy - h / 2) + 'px';
+    unit.style.transformOrigin = S.mode === 'free' ? 'center' : ({ top: '50% 0', bottom: '50% 100%', left: '0 50%', right: '100% 50%' }[S.edge]);
+  }
+  function morph(toBlob) {
+    unit.classList.toggle('is-blob', toBlob);
+    if (RM) return;
+    unit.classList.add('morph');
+    requestAnimationFrame(() => requestAnimationFrame(() => unit.classList.remove('morph')));
+  }
+  function showGhost(s) {
+    const dims = geom();
+    const v = s.edge === 'left' || s.edge === 'right';
+    const w = v ? VW : PW, h = v ? VH : PH;
+    const pt = railPoint(s.edge, s.t, dims.W, dims.H);
+    ghost.style.width = w + 'px'; ghost.style.height = h + 'px';
+    ghost.style.left = (pt.x - w / 2) + 'px'; ghost.style.top = (pt.y - h / 2) + 'px';
+    ghost.style.borderRadius = '99px';
+    ghost.classList.add('on');
+  }
+  function hideGhost() { ghost.classList.remove('on'); }
+  unit.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    dragging = true; unit.classList.add('dragging');
+    clearTimeout(peekTimer); unit.classList.remove('peek');
+    try { unit.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  unit.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const r = stage.getBoundingClientRect();
+    const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+    const dims = geom();
+    const W = dims.W, H = dims.H;
+    if (S.mode === 'dock') {
+      const cur = { top: p.y - TOPY, bottom: H - M - p.y, left: p.x - M, right: W - M - p.x }[S.edge];
+      const n = nearestEdge(p, W, H);
+      if (n.edge !== S.edge && n.d < 40 && cur < 78) {
+        S = { mode: 'dock', edge: n.edge, t: clampT(n.edge, projT(n.edge, p), W, H) };
+        render();
+      } else if (cur > 78) {
+        open = false;
+        S = { mode: 'free', x: Math.min(Math.max(p.x, M + BR), W - M - BR), y: Math.min(Math.max(p.y, M + BR), H - M - BR) };
+        morph(true); render(); hideGhost(); snap = null;
+      } else {
+        S.t = clampT(S.edge, projT(S.edge, p), W, H);
+        render();
+      }
+    } else {
+      S.x = Math.min(Math.max(p.x, M + BR), W - M - BR);
+      S.y = Math.min(Math.max(p.y, M + BR), H - M - BR);
+      render();
+      const n = nearestEdge(p, W, H);
+      if (n.d < 54) { snap = { edge: n.edge, t: clampT(n.edge, projT(n.edge, p), W, H) }; showGhost(snap); }
+      else { snap = null; hideGhost(); }
+    }
+  });
+  const up = () => {
+    if (!dragging) return;
+    dragging = false; unit.classList.remove('dragging');
+    if (S.mode === 'free' && snap) {
+      unit.classList.add('flying');
+      const dims = geom();
+      const pt = railPoint(snap.edge, snap.t, dims.W, dims.H);
+      const edge = snap.edge, t = snap.t;
+      S.x = pt.x; S.y = pt.y; render();
+      hideGhost(); snap = null;
+      setTimeout(() => { S = { mode: 'dock', edge: edge, t: t }; morph(false); render(); unit.classList.remove('flying'); }, RM ? 0 : 270);
+    }
+  };
+  unit.addEventListener('pointerup', up);
+  unit.addEventListener('pointercancel', up);
+  unit.addEventListener('dblclick', (e) => {
+    if (e.target.closest('button')) return;
+    const dims = geom();
+    snap = null; hideGhost();
+    S = { mode: 'dock', edge: 'top', t: dims.W / 2 };
+    morph(false); render();
+  });
+  function loop() {
+    const s = stage.getBoundingClientRect(), r = unit.getBoundingClientRect();
+    const cx = r.left - s.left + r.width / 2, cy = r.top - s.top + r.height / 2;
+    if (!trailInit) { tx = cx; ty = cy; trailInit = true; }
+    const k = RM ? 1 : 0.2;
+    tx += (cx - tx) * k; ty += (cy - ty) * k;
+    const sp = Math.hypot(cx - tx, cy - ty);
+    const show = (!RM && S.mode === 'free') ? Math.min(1, sp / 26) : 0;
+    const sc = 0.35 + Math.min(0.65, sp / 110);
+    trail.style.opacity = String(show * 0.9);
+    trail.style.transform = 'translate(' + (tx - 5) + 'px,' + (ty - 5) + 'px) scale(' + sc + ')';
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { if (open) render(); });
+  new ResizeObserver(() => {
+    const dims = geom();
+    if (!dims.W || !dims.H) return;
+    if (S.mode === 'dock') S.t = clampT(S.edge, S.t || dims.W / 2, dims.W, dims.H);
+    else {
+      S.x = Math.min(Math.max(S.x || dims.W / 2, 0), dims.W);
+      S.y = Math.min(Math.max(S.y || dims.H / 2, 0), dims.H);
+    }
+    render();
+  }).observe(stage);
+  render();
+  function setDemo(st) {
+    demoState = st;
+    document.querySelectorAll('.demobar button').forEach((b) => b.classList.toggle('on', b.dataset.demo === st));
+    unit.classList.remove('st-working', 'st-approval', 'st-question', 'st-idle', 'st-none');
+    unit.classList.add('st-' + st);
+    if (st === 'working') unit.dataset.mode = modeMem;
+    else unit.dataset.mode = 'usage';
+    if (st === 'approval') open = false;
+    hideGhost(); snap = null;
+    render();
+  }
+  document.querySelectorAll('.demobar button').forEach((b) => b.addEventListener('click', () => setDemo(b.dataset.demo)));
+  unit.querySelectorAll('[data-act="approve"]').forEach((b) => b.addEventListener('click', () => setDemo('working')));
+  unit.querySelectorAll('[data-act="dismiss"], [data-act="later"]').forEach((b) => b.addEventListener('click', () => setDemo('idle')));
+  unit.querySelectorAll('.qo-row').forEach((b) => b.addEventListener('click', () => setDemo('working')));
+  let ddx = 0, ddy = 0;
+  unit.addEventListener('pointerdown', (e) => { ddx = e.clientX; ddy = e.clientY; });
+  unit.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    if (Math.hypot(e.clientX - ddx, e.clientY - ddy) > 5) return;
+    if (S.mode === 'dock') {
+      open = !open;
+      if (open && !RM) {
+        unit.classList.remove('opening');
+        void unit.offsetWidth;
+        unit.classList.add('opening');
+        setTimeout(() => unit.classList.remove('opening'), 420);
+      }
+      render(); return;
+    }
+    if (!unit.classList.contains('is-blob')) return;
+    const next = (unit.dataset.mode || 'agents') === 'agents' ? 'usage' : 'agents';
+    if (!unit.querySelector(next === 'agents' ? '.pop-agents' : '.pop-usage')) return;
+    unit.dataset.mode = next; modeMem = next;
+  });
+  // Hover intent with a grace period: crossing the gap to an open card must
+  // not kill it, and the card stays clickable while shown.
+  let peekTimer = 0;
+  unit.addEventListener('pointerenter', () => { clearTimeout(peekTimer); unit.classList.add('peek'); });
+  unit.addEventListener('pointerleave', () => { clearTimeout(peekTimer); peekTimer = setTimeout(() => unit.classList.remove('peek'), 240); });
+})();
+</script>
+</body>
+</html>

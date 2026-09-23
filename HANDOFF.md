@@ -161,7 +161,176 @@ in Settings, Sidebar-Löschen + Session-Auto-Namen + Workspace-Dedup, Island
 Default-an + Self-Heal + Click-Cycle, Builder-Portable-Name, UpdateSection- und
 MCP-Test-Fixes.
 
-## What to do first
+## Stand 2026-09-22 (Approved-UI-Rollout auf `design/approved-rollout`, bun)
+
+Alle sechs freigegebenen Slices implementiert (A-Shell, Providers, Files &
+Terminal, Palette, Island, Island Apple). Parked views (Teams, Agents, Skills,
+Plugins, MCP, Settings) unangetastet. `bun run typecheck` + `bun run build`
+grün, `packages/status` + `packages/shared` 23/23 grün. Volle Suite lief an
+(~210 Tests, keine Failures vor Timeout), `bun run lint` ist env-weit kaputt
+(uri-js unter bun: `Cannot find module .../uri.all.js` — pre-existing, auch
+ohne diese Änderungen), `verify:app` weiter nur Linux/macOS.
+
+Renderer (alles mit echten Daten oder ehrlichem "unavailable", nichts erfunden):
+
+- `Sidebar.tsx` (+`App.tsx` appVersion): App-Mark + echte Version, ⌘K-Search,
+  Session-Counts aus `messages` (muted), amber `!` nur bei waiting/error,
+  Library-Counts aus Store (providers/skills/plugins/teams/mcp).
+- `SessionHeader.tsx`: echte Branch-Pille (`git.status`: branch · clean/N
+  changed, entfällt wenn kein Repo), Status-Pille statt Text.
+- `MessageItem.tsx` + `ChatView.tsx`: Code-Fences mit Zeilennummern + Copy,
+  Hover-Actions (Copy immer; Retry sendet User-Text bzw. vorherige User-Turn
+  bei failed Assistant), Tool-State (running/✓ done/! failed, keine erfundene
+  Dauer), Streaming-Zeile mit Stop-Chip (echtes cancel). Kein Branch-off (kein
+  Fork-Backend — dokumentiert, nicht geraten).
+- `Composer.tsx`: Placeholder Reply…, Hint mit Esc, Send + ↵-Kbd. Kein
+  Attach-Chip (kein Attachment-Backend — dokumentiert).
+- `ContextPanel.tsx`: Status-Pille, echte Model-Zeile, Context-Meter nur mit
+  bekanntem Fenster, Skill-Chips, MCP-Mini-Switches, Interrupt nur wenn busy
+  (kein Resume — kein Backend).
+- `ProvidersView.tsx`: Card-Köpfe mit Logo-Well + Install-Meta + Auth-Pille
+  (Signed in/Unknown auth/…) + Enable-Switch statt Hide/Show-Button.
+- `WorkspacePanel.tsx` + `ChangesView.tsx` + `FilesView.tsx`: Changes-Count im
+  Tab (`git.status`, ehrlich), Diff-Preview pro Datei (`git.diff`, 60 Zeilen
+  Cap, add/del-Töne, "Diff unavailable"/"No textual diff" statt Raten),
+  Datei-Preview mit Zeilennummern.
+- `CommandPalette.tsx`: Gruppen-Header mit Counts, Match-`<mark>`, Lucide-Icons
+  pro Gruppe, Footer (↑↓/↵/esc). Neues `agentQuestion`-Label für die Palette.
+
+Island + Edge-Dock (`island-guide.md` §§2–6, bis auf dokumentierte Reste gebaut):
+
+- `shared/domain/status-island.ts`: `agentQuestion`-Widget (Prio 95),
+  `islandEdgeSchema`, `dockedEdge`/`railT`/`minimalByDefault`-Prefs,
+  optionale `diff`/`options`/`icon`-Felder + `usage`-Rows (alle mit Defaults,
+  Builder via `quietDefaults()`), `ISLAND_PRIORITY.agentQuestion`,
+  `ISLAND_TIMING`-Konstanten an einem Ort.
+- `status/widgets.ts`: `providerUsageWidget` hängt echte Usage-Rows an
+  (percentLeft aus reported Limits, nichts ohne Zahl).
+- IPC: `statusIsland.resetPosition` + `statusIsland.resize` (Contract +
+  `ipc.ts` + Controller + Preload + `api.d.ts`). Noch KEIN answer/act —
+  dafür fehlt das Permission-/Question-Backend (größte offene Arbeit, §6.2).
+- `main/status-island.ts`: Fenstergröße gehört dem Renderer (resize-Channel),
+  `#place` mit Edge-Rails, Snap nach Drag-Ende (350ms-Debounce, `snapPx` 54)
+  + Detach (`detachPx` 78) via `onSnapEdge`/`onDetach`, `nearestEdge`/
+  `dockPoint`/`distanceFromEdge` exportiert und testbar.
+- `renderer/island/`: Rewrite auf approved Vokabular — 42px-Circle (accent/
+  amber/blau/hairline + Count-Badge), Hover mit 240ms-Grace (Drag per
+  mousedown gekillt), Click-Matrix (working toggelt agents⇄usage, approval/
+  question pinnt), ⌘1–9/Enter/Escape/Arrows/Wheel wie bisher, Multi-Listen,
+  Usage-Bars (amber <20%, "Usage unavailable" ohne Daten), Approval-/Question-
+  Cards (scrollend, flach, Diff-Cap 6), Edge-Pill horizontal/vertikal +
+  Expand-Panel, dblclick-Reset (lokal + Position), reduced-motion-safe.
+- Interim ehrlich markiert: Approve/Dismiss deep-linken per `open`/`dismiss`
+  (Kommentar im Code) bis Approve denselben Pfad wie das Terminal nutzt;
+  Question-Optionen ebenso. Ghost-Slot + Trailer-Dot + Corner-Rounding
+  entfallen bewusst (brauchen Drag-Overlay-Fenster — Follow-up in §4.3 des
+  Guides beschrieben).
+
+Nächste Schritte: 1) Linux/macOS `verify` (inkl. `verify:app`) + visuelle
+Abnahme im echten Fenster, 2) Permission-/Question-Backend (§6.2) mit echten
+answer/act-Channels, 3) Drag-Overlay (Ghost/Trailer), 4) G6-Kriterien in
+`PROGRESS.md` NUR aus Verify-Evidenz ticken. `package.json` trägt nebenbei
+bun-Scripts/Workspaces (Branch nutzt bun statt pnpm).
+
+## Stand 2026-09-22 später (1:1-Pass auf Mock A, gleiche Branch)
+
+Hauptfenster exakt auf `docs/design-proposals/index.html` Tab A gezogen, weiter
+ohne erfundene Daten: Sidebar (App-Mark + echte Version, Search-Box, 28px-Rows,
+7px-Dots, User-Card mit OS-Username + echter Provider-Anzahl + echtem
+Usage-%/`—`), Crumbs-Header (ws/sess + rechts Branch-/Status-/Model-/Usage-
+Pills; `app.getInfo` liefert neu `username` aus `os.userInfo`, Fallback
+"local"), Chat als Dokument (620px, Day-Divider Today/Yesterday/Datum, User-
+Bubble `4px 12px 12px 12px` inline-block, Tool-Rows als Boxen mit ✓done/!failed,
+Codeblöcke near-black mit Header + Copy), schwebender Composer (620px-Card mit
+Schatten, Attach disabled + Tooltip, Commands→Palette, Model-Pille→Palette,
+Send accent, zentrierter Hint), Context-Panel sunken mit Interrupt + Resume
+(Resume = letzte User-Turn erneut senden, nur wenn vorhanden). Header hat keine
+Selects/Toggles mehr — Model/Provider/Effort-Wechsel laufen über die Palette
+(neue "Reasoning effort:"-Commands, nur echte Optionen des aktiven Tools);
+`ModelPicker.tsx` gelöscht. Typecheck + Build grün, status/shared 23/23 grün.
+Offen: Workspace-Branch-Meta in Sidebar (kein Workspace-Git-IPC), Syntax-
+Highlighting in Codeblöcken (einfarbig), visuelle Abnahme am laufenden Fenster.
+
+## Stand 2026-09-22 abends (Island-Fokusregel + Check-Reparaturen, gleiche Branch)
+
+Verhalten wie gewünscht: Island ist ab Launch da, versteckt sich aber, solange
+das Hauptfenster fokussiert ist, und kehrt zurück, sobald der Fokus weggeht
+(`focus`/`blur` → `IslandController.setMainFocused`, inkl. Initialauswertung in
+`start()`). Explizite Entscheidungen gewinnen: `hide()` klebt bis `show()` oder
+Re-Enable, `show()`/Re-Enable zeigen sofort, danach regiert wieder der Fokus;
+deaktiviert bleibt deaktiviert; Tray-Toggle läuft über den Controller.
+Minimieren holt die Insel zurück, außer `stayVisibleWhenHidden` ist aus.
+Settings-Texte (Enabled, Start with) beschreiben das so.
+
+Dazu die fälligen Reparaturen, weil Renderer-Rewrite + Header-Slimmung die
+Headless-Checks gebrochen hätten: stabile Hooks (`.isl`-aria-label mit
+Single-Entry-Titel, `.isl__actions`, `.header__actions`-Pills), dynamische
+Größen statt 320x44/380x132 (Checks pollen Bounds), generische Action-Card für
+Errors & Co. (Service-`expanded` wird wieder gerendert), Fokus-Tanz als neue
+Checks (versteckt bei Fokus, zurück bei Blur, Resume nach Blur). `verify:app`
+weiter nur Linux/macOS lauffähig — dort muss das alles erst grün werden, bevor
+irgendwas in `PROGRESS.md` tickt.
+
+## Stand 2026-09-22 nachts (Minimize-Regression + Dev-Island-URL, gleiche Branch)
+
+Zwei echte Bugs, beide gefixt (typecheck/build/28 Tests grün):
+
+1. **Minimieren ging nicht mehr:** `#applyFocusRule` las die Sichtbarkeit über
+   `focusMainWindow()` — das aber restored, zeigt und fokussiert als
+   Seiteneffekt. Jeder Blur (also auch Minimieren) holte das Fenster sofort
+   zurück. Neu: `IslandControllerOptions.getMainWindow()` als rein lesender
+   Zugang; Fokus-Regel und Start-Check nutzen nur ihn. `focusMainWindow`
+   bleibt nur für explizites Öffnen (Island-Deep-Link).
+2. **Keine Insel im Dev:** `loadURL(devServerUrl + 'island/index.html')`
+   ergab `http://localhost:5173island/index.html` (ERR_INVALID_URL im Log).
+   Basis wird jetzt am Slash normalisiert. Hinweis: bei fokussierter App bleibt
+   die Insel per Fokusregel versteckt — zum Sehen woanders hinklicken oder
+   minimieren (geht wieder).
+## Stand 2026-09-22 ganz spät (Island-Guide-Audit + Loading/Error, gleiche Branch)
+
+Island gegen `docs/island-guide.md` §§2–3 auditiert, echte Abweichungen
+gefixt: Approve-all-Kopf (interim Deep-Link wie Approve, kommentiert),
+Card-Collapse per Hintergrund-Klick, 5px-Drag-vs-Click-Guard, Hover zeigt
+dieselbe Card wie Pin (keine Compact-Divergenz mehr), Footer immer
+"Answer later", "now" für frische Fragen, Usage-% auf Idle-Pills, Persistenz
+des Hover-Modus (localStorage), 180ms-Fade beim Schließen, Ink-Morph
+(Crossfade + Blur-Puls, reduced-motion-safe), Diff-Fade nur innerhalb des
+gecappten Diffs. Neu: Loading-Circle bis zum ersten State, Error-Card mit
+exaktem Grund + Retry (fehlende Bridge sofort, 15s ohne State als Timeout);
+Bridge-Type optionalisiert. Ghost-Slot + Trailer-Dot + Eckenrundung bleiben
+bewusst draußen (brauchen Drag-Overlay-Vollbildfenster — blind ein
+klickfressendes Overlay zu shippen wäre schlimmer). Typecheck/Build/28 Tests
+grün; `verify:app` muss auf Linux/macOS erst beweisen.
+
+## Stand 2026-09-22 nachts 2 (Boot-Screens ins Hauptfenster, gleiche Branch)
+
+Loading/Error gehören ins Hauptfenster, nicht auf die Insel: App gated jetzt
+auf `ready` (Boot-Screen "Starting AI Workbench…"), Boot-Fehler zeigen die
+exakte Ursache + Retry (`bootError` im Store, nur aus initialize-Catch).
+Insel rendert ohne State wieder null (stumme Folie). Shell-Check wartet auf
+`.app` (15s). Fokus-Regel loggt Übergänge (STATUS_ISLAND: hidden while
+focused / shown while in background) — Terminal verrät exakt, was die Insel
+tut. Typecheck/Build/28 Tests grün.
+## Stand 2026-09-22 nachts 3 (Insel malt nichts — Diagnoseinstrumente, gleiche Branch)
+
+Symptom: Log sagt "shown", Screen zeigt nichts, kein Ladefehler. Statisch ist
+alles sauber (resolveTheme ok, Mount-Point ok, Bridge-Pfad ok), also rät man
+nicht weiter: Insel meldet jetzt Ladefehler (`did-fail-load` mit Code/URL)
+und Konsolenausgaben inkl. Exceptions (`console-message`) ans Terminal —
+stille Folie war der eigentliche Bug zweiter Ordnung. Nach Neustart die neuen
+STATUS_ISLAND-Zeilen schicken, dann steht die Ursache fest. Typecheck/Build/
+28 Tests grün.
+## Stand 2026-09-22 nachts 4 (Hooks-Reihenfolge = blinde Insel, gleiche Branch)
+
+Diagnose bestätigt per Terminal: `Rendered more hooks than during the previous
+render` — frühes `return null` stand über useMemo/useRef/useEffect, React
+mountete die Insel ab → transparente Folie, kein Inhalt. Fix: alle Hooks
+laufen unbedingt, Guards erst danach; Hover-Modus-Reset beim Face-Wechsel
+entfernt (echte Persistenz). NB: react-hooks/eslint hätte das gefangen, läuft
+hier aber nicht (uri-js unter bun kaputt) — CI-Lint beachten. Dazu
+console-message auf Event-Objekt-Signatur umgestellt (Deprecation weg).
+Typecheck/Build/28 Tests grün.
+## What to do first
 
 1. On Linux/macOS: `pnpm verify` and confirm it is green. On Windows only
    `typecheck + lint + test + build` are expected green; `verify:app` needs

@@ -1,4 +1,5 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
+import { userInfo } from "node:os";
 import {
   APP_EVENT_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
@@ -33,8 +34,17 @@ export interface RegisterIpcOptions {
 const eventUnsubscribes: Array<() => void> = [];
 
 /** The island has its own tiny bridge; pushes go to the main window only. */
-function isIslandWindow(window: BrowserWindow): boolean {
+/** OS account name for the sidebar card; never throws, never a secret. */
+function localUsername(): string {
   try {
+    const name = userInfo().username.trim();
+    return name.length > 0 ? name : "local";
+  } catch {
+    return "local";
+  }
+}
+
+function isIslandWindow(window: BrowserWindow): boolean {  try {
     return window.webContents.getURL().endsWith("island/index.html");
   } catch {
     return false;
@@ -92,6 +102,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       version: options.appVersion,
       platform: process.platform,
       userDataPath: options.userDataPath,
+      username: localUsername(),
     }),
 
     "workspace.list": () => services.workspaces.list(),
@@ -381,6 +392,8 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "statusIsland.cycle": (input) => island.cycle(input.direction),
     "statusIsland.open": (input) => ({ opened: island.open(input) }),
     "statusIsland.dismiss": () => island.dismiss(),
+    "statusIsland.resetPosition": () => island.resetPosition(),
+    "statusIsland.resize": (input) => ({ visible: island.resize(input.width, input.height) }),
 
     "settings.get": () => services.settings.get(),
     "settings.update": (input) => services.settings.update(input),

@@ -92,6 +92,14 @@ const islandApi = {
   async cycle(direction: 1 | -1): Promise<void> {
     await ipcRenderer.invoke("statusIsland.cycle", { direction });
   },
+
+  async resetPosition(): Promise<void> {
+    await ipcRenderer.invoke("statusIsland.resetPosition", undefined);
+  },
+
+  async resize(width: number, height: number): Promise<void> {
+    await ipcRenderer.invoke("statusIsland.resize", { width, height });
+  },
 };
 
 export type WorkbenchApi = typeof api;

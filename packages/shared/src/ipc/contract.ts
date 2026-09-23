@@ -80,6 +80,8 @@ export const ipcContract = {
       version: z.string(),
       platform: z.string(),
       userDataPath: z.string(),
+      /** OS account name for the sidebar card; "local" when unreadable. */
+      username: z.string(),
     }),
   },
 
@@ -449,6 +451,16 @@ export const ipcContract = {
     output: z.object({ opened: z.boolean() }),
   },
   "statusIsland.dismiss": { input: z.void(), output: islandStateSchema },
+  /** Returns the island to its default corner and forgets a dragged spot. */
+  "statusIsland.resetPosition": { input: z.void(), output: islandStateSchema },
+  /** Lets the island page report the size its current face needs. */
+  "statusIsland.resize": {
+    input: z.object({
+      width: z.number().int().min(42).max(480),
+      height: z.number().int().min(42).max(640),
+    }),
+    output: z.object({ visible: z.boolean() }),
+  },
 
   "settings.get": { input: z.void(), output: appSettingsSchema },
   "settings.update": {

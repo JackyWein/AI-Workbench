@@ -101,8 +101,8 @@
   --z-palette: 300;
 
   /* Layout */
-  --sidebar-width: 244px;
-  --context-width: 264px;
+  --sidebar-width: 232px;
+  --context-width: 248px;
   --header-height: 46px;
   --tile-header-height: 34px;
   --composer-max-height: 220px;

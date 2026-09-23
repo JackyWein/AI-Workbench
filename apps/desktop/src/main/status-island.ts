@@ -2,6 +2,8 @@ import { join } from "node:path";
 import { BrowserWindow, screen, type Display } from "electron";
 import {
   ISLAND_STATE_CHANNEL,
+  ISLAND_TIMING,
+  type IslandEdge,
   type IslandPreferences,
   type IslandState,
   type Logger,
@@ -17,7 +19,6 @@ import {
  */
 
 const COMPACT = { width: 320, height: 44 } as const;
-const EXPANDED = { width: 380, height: 132 } as const;
 const MARGIN = 12;
 
 export interface StatusIslandOptions {
@@ -27,6 +28,10 @@ export interface StatusIslandOptions {
   readonly preloadFile: string;
   /** Persists a position the user dragged the island to. */
   readonly onMoved: (position: { x: number; y: number; displayId: number }) => void;
+  /** A released blob settled near a rail and should dock to it. */
+  readonly onSnapEdge: (snap: { edge: IslandEdge; railT: number; displayId: number }) => void;
+  /** A docked pill was pulled off its rail and is a free blob again. */
+  readonly onDetach: (position: { x: number; y: number; displayId: number }) => void;
 }
 
 export class StatusIslandWindow {
@@ -35,9 +40,9 @@ export class StatusIslandWindow {
   #window: BrowserWindow | null = null;
   #preferences: IslandPreferences | null = null;
   #lastState: IslandState | null = null;
-  #expanded = false;
   /** True while the position is set programmatically, not dragged. */
   #placing = false;
+  #snapTimer: NodeJS.Timeout | null = null;
 
   constructor(options: StatusIslandOptions) {
     this.#options = options;
@@ -97,7 +102,7 @@ export class StatusIslandWindow {
     return this.visible;
   }
 
-  /** Pushes new state and resizes when an entry needs the room (spec §97). */
+  /** Pushes new state; sizing belongs to the page, which reports it back. */
   render(state: IslandState): void {
     this.#lastState = state;
     // Self-heal: an enabled island without a live window comes back instead
@@ -122,19 +127,37 @@ export class StatusIslandWindow {
       });
       return;
     }
+  }
 
-    const wantsExpanded = state.expanded && Boolean(state.current.action);
-    if (wantsExpanded !== this.#expanded) {
-      this.#expanded = wantsExpanded;
-      const size = wantsExpanded ? EXPANDED : COMPACT;
-      window.setBounds({ ...window.getBounds(), ...size }, false);
-      if (this.#preferences) {
-        this.#place(window, this.#preferences);
-      }
+  /**
+   * Applies the size the island page measured for its current face. Position
+   * is kept; the result is clamped into the display so a tall card cannot
+   * strand itself half off-screen.
+   */
+  setContentSize(width: number, height: number): void {
+    const window = this.#window;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+    const bounds = window.getBounds();
+    if (bounds.width === width && bounds.height === height) {
+      return;
+    }
+    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
+    const [left, top] = clampToDisplay({ x: bounds.x, y: bounds.y }, { width, height }, display);
+    this.#placing = true;
+    try {
+      window.setBounds({ x: left, y: top, width, height }, false);
+    } finally {
+      this.#placing = false;
     }
   }
 
   destroy(): void {
+    if (this.#snapTimer) {
+      clearTimeout(this.#snapTimer);
+      this.#snapTimer = null;
+    }
     const window = this.#window;
     this.#window = null;
     if (!window || window.isDestroyed()) {
@@ -143,6 +166,8 @@ export class StatusIslandWindow {
     window.removeAllListeners("moved");
     try {
       window.webContents.removeAllListeners("did-finish-load");
+      window.webContents.removeAllListeners("did-fail-load");
+      window.webContents.removeAllListeners("console-message");
     } catch {
       // The web contents may already be gone; destroying the window is what
       // matters.
@@ -181,6 +206,28 @@ export class StatusIslandWindow {
 
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
+    // A blank companion is undebuggable: page load failures and page console
+    // output (including uncaught renderer exceptions) are forwarded to the
+    // main log, so the terminal names the cause instead of silence.
+    window.webContents.on(
+      "did-fail-load",
+      (_event, errorCode, errorDescription, validatedURL) => {
+        this.#logger.warn("Island page failed to load", {
+          errorCode,
+          errorDescription,
+          validatedURL,
+        });
+      },
+    );
+    window.webContents.on("console-message", (details) => {
+      const where = `${details.sourceId}:${details.lineNumber}`;
+      if (details.level === "error" || details.level === "warning") {
+        this.#logger.warn("Island console error", { message: details.message, where });
+      } else {
+        this.#logger.info("Island console", { message: details.message, where });
+      }
+    });
+
     // A dragged island remembers where it was put (spec §95). Positions set
     // programmatically must not echo back, or placing the window would
     // persist itself in a loop.
@@ -191,6 +238,17 @@ export class StatusIslandWindow {
       const bounds = window.getBounds();
       const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
       this.#options.onMoved({ x: bounds.x, y: bounds.y, displayId: display.id });
+      // Edge-dock settles after the drag, never during it: repositioning
+      // mid-drag would fight the pointer. When `moved` stops firing the
+      // island has been released (or paused) and snapping is safe.
+      if (this.#snapTimer) {
+        clearTimeout(this.#snapTimer);
+      }
+      this.#snapTimer = setTimeout(() => {
+        this.#snapTimer = null;
+        this.#settleToRail(window);
+      }, 350);
+      this.#snapTimer.unref?.();
     });
 
     window.webContents.on("did-finish-load", () => {
@@ -206,8 +264,11 @@ export class StatusIslandWindow {
     });
 
     if (this.#options.devServerUrl) {
+      // The dev server URL may or may not end in a slash; either way the
+      // island page must resolve under it, not beside it.
+      const base = this.#options.devServerUrl.replace(/\/+$/, "");
       window
-        .loadURL(`${this.#options.devServerUrl}island/index.html`)
+        .loadURL(`${base}/island/index.html`)
         .catch((error: unknown) =>
           this.#logger.warn("Could not load the island page", {
             error: error instanceof Error ? error.message : String(error),
@@ -228,14 +289,58 @@ export class StatusIslandWindow {
     return window;
   }
 
+  /**
+   * Settles a dragged island to its rail. A free blob released near an edge
+   * docks; a docked pill pulled off its rail becomes a free blob. Runs only
+   * after movement stopped, so it never fights an active drag.
+   */
+  #settleToRail(window: BrowserWindow): void {
+    if (window.isDestroyed() || this.#placing) {
+      return;
+    }
+    const bounds = window.getBounds();
+    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y });
+    const docked = this.#preferences?.dockedEdge ?? null;
+    const nearest = nearestEdge(bounds, display);
+
+    if (docked) {
+      const off = distanceFromEdge(bounds, display, docked);
+      if (off > ISLAND_TIMING.detachPx) {
+        this.#options.onDetach({ x: bounds.x, y: bounds.y, displayId: display.id });
+      }
+      return;
+    }
+
+    if (nearest && nearest.distance <= ISLAND_TIMING.snapPx) {
+      this.#options.onSnapEdge({
+        edge: nearest.edge,
+        railT: nearest.railT,
+        displayId: display.id,
+      });
+    }
+  }
+
   /** Multi-monitor aware placement, clamped into the chosen display. */
   #place(window: BrowserWindow, preferences: IslandPreferences | null): void {
     if (!preferences) {
       return;
     }
     const display = resolveDisplay(preferences.displayId);
-    const { x, y, width } = display.workArea;
     const bounds = window.getBounds();
+
+    if (preferences.dockedEdge) {
+      const point = dockPoint(preferences.dockedEdge, preferences.railT, bounds, display);
+      const [left, top] = clampToDisplay(point, bounds, display);
+      this.#placing = true;
+      try {
+        window.setPosition(left, top);
+      } finally {
+        this.#placing = false;
+      }
+      return;
+    }
+
+    const { x, y, width } = display.workArea;
 
     const position = ((): { x: number; y: number } => {
       switch (preferences.position) {
@@ -309,6 +414,105 @@ export function clampToDisplay(
   const x = Math.min(Math.max(rawX, area.x), area.x + area.width - width);
   const y = Math.min(Math.max(rawY, area.y), area.y + area.height - height);
   return [Math.round(x), Math.round(y)];
+}
+
+interface EdgeBounds {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Perpendicular distance of a window from a rail, in pixels. */
+export function distanceFromEdge(
+  bounds: EdgeBounds,
+  display: Display,
+  edge: IslandEdge,
+): number {
+  const area = display.workArea;
+  switch (edge) {
+    case "top":
+      return Math.abs(bounds.y - area.y);
+    case "bottom":
+      return Math.abs(area.y + area.height - (bounds.y + bounds.height));
+    case "left":
+      return Math.abs(bounds.x - area.x);
+    case "right":
+      return Math.abs(area.x + area.width - (bounds.x + bounds.width));
+  }
+}
+
+/** The nearest rail with its along-rail position, for snap-on-release. */
+export function nearestEdge(
+  bounds: EdgeBounds,
+  display: Display,
+): { edge: IslandEdge; distance: number; railT: number } | null {
+  const area = display.workArea;
+  const candidates: Array<{ edge: IslandEdge; distance: number; railT: number }> = [
+    { edge: "top", distance: Math.abs(bounds.y - area.y), railT: bounds.x - area.x },
+    {
+      edge: "bottom",
+      distance: Math.abs(area.y + area.height - (bounds.y + bounds.height)),
+      railT: bounds.x - area.x,
+    },
+    { edge: "left", distance: Math.abs(bounds.x - area.x), railT: bounds.y - area.y },
+    {
+      edge: "right",
+      distance: Math.abs(area.x + area.width - (bounds.x + bounds.width)),
+      railT: bounds.y - area.y,
+    },
+  ];
+  let best: (typeof candidates)[number] | null = null;
+  for (const candidate of candidates) {
+    if (!best || candidate.distance < best.distance) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+/** Where a docked pill sits on its rail; railT null means centered. */
+export function dockPoint(
+  edge: IslandEdge,
+  railT: number | null,
+  size: { width: number; height: number },
+  display: Display,
+): { x: number; y: number } {
+  const area = display.workArea;
+  const margin = ISLAND_TIMING.edgeMarginPx;
+  const topOffset = 6;
+  switch (edge) {
+    case "top": {
+      const x =
+        railT === null
+          ? area.x + Math.round((area.width - size.width) / 2)
+          : area.x + Math.round(railT);
+      return { x, y: area.y + topOffset };
+    }
+    case "bottom": {
+      const x =
+        railT === null
+          ? area.x + Math.round((area.width - size.width) / 2)
+          : area.x + Math.round(railT);
+      return { x, y: area.y + area.height - size.height - margin };
+    }
+    case "left":
+      return {
+        x: area.x + margin,
+        y:
+          railT === null
+            ? area.y + Math.round((area.height - size.height) / 2)
+            : area.y + Math.round(railT),
+      };
+    case "right":
+      return {
+        x: area.x + area.width - size.width - margin,
+        y:
+          railT === null
+            ? area.y + Math.round((area.height - size.height) / 2)
+            : area.y + Math.round(railT),
+      };
+  }
 }
 
 export function resolveIslandFile(appDirectory: string): string {
