@@ -140,6 +140,29 @@ describe.runIf(process.platform !== "win32")("over SSH, against a POSIX machine"
       expect(await files.exists(root(), "src/new.ts")).toBe(true);
     });
 
+    it("creates a file in a root spelled through a link, as /var is on macOS", async () => {
+      // The root's real path is not how it is spelled, and the server answers
+      // a path not created yet in the spelling it was asked in.
+      const links = await makeTempDirectory("ssh-links");
+      try {
+        const spelled = join(links, "workspace");
+        await symlink(directory, spelled, "dir");
+        const { files } = connect();
+        const written = await files.writeText(
+          remoteRoot("conn_1", spelled),
+          "src/linked.ts",
+          "export const linked = true;\n",
+        );
+
+        expect(written.path).toBe("src/linked.ts");
+        expect((await files.readText(root(), "src/linked.ts")).content).toBe(
+          "export const linked = true;\n",
+        );
+      } finally {
+        await removeTempDirectory(links);
+      }
+    });
+
     it("never returns binary content as text", async () => {
       const { files } = connect();
       const file = await files.readText(root(), "picture.bin");

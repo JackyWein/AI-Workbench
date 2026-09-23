@@ -213,18 +213,33 @@ export class SshWorkspaceFileSystem implements WorkspaceFileSystem {
   ): Promise<string> {
     const target = resolvePosixInsideRoot(rootPath, relativePath);
     const realRoot = await realPath(sftp, rootPath);
-
-    let realTarget: string;
-    try {
-      realTarget = await realPath(sftp, target);
-    } catch {
-      // The path does not exist yet, so the lexical check above is all there
-      // is — the same answer the local implementation gives.
-      return target;
-    }
     // Re-checked against the real root: a link is only safe if where it
     // actually lands is still inside.
-    return resolvePosixInsideRoot(realRoot, realTarget);
+    return resolvePosixInsideRoot(realRoot, await landing(sftp, target));
+  }
+}
+
+/**
+ * Where a path really lands on the other machine. A path that exists lands
+ * where the machine's own real path says. One not created yet has no real
+ * path, and servers answer differently for it — OpenSSH resolves its parent,
+ * others only tidy the spelling, which on macOS leaves `/var/...` next to a
+ * root that is really `/private/var/...`. So it lands where its deepest
+ * existing parent really is, with the rest of its name after it.
+ */
+async function landing(sftp: SFTPWrapper, path: string): Promise<string> {
+  const missing: string[] = [];
+  let current = path;
+  for (;;) {
+    if (await exists(sftp, current)) {
+      return posix.join(await realPath(sftp, current), ...missing.reverse());
+    }
+    const parent = posix.dirname(current);
+    if (parent === current) {
+      return path;
+    }
+    missing.push(posix.basename(current));
+    current = parent;
   }
 }
 
@@ -266,6 +281,13 @@ function realPath(sftp: SFTPWrapper, path: string): Promise<string> {
 function stat(sftp: SFTPWrapper, path: string): Promise<Stats> {
   return new Promise((resolve, reject) => {
     sftp.stat(path, (error, stats) => (error ? reject(error) : resolve(stats)));
+  });
+}
+
+/** Whether the entry itself is there; a link counts even if it leads nowhere. */
+function exists(sftp: SFTPWrapper, path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    sftp.lstat(path, (error) => resolve(!error));
   });
 }
 
