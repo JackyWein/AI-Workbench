@@ -12,24 +12,76 @@ Weighted contribution = weight x completion.
 |---|---|---:|---:|---:|---:|---:|
 | G0 | Repository / Foundation | 5% | 12 | 12 | 100% | 5.00 |
 | G1 | Functional desktop vertical slice | 15% | 20 | 19 | 95% | 14.25 |
-| G2 | Provider platform | 15% | 20 | 18 | 90% | 13.50 |
+| G2 | Provider platform | 15% | 20 | 20 | 100% | 15.00 |
 | G3 | Workspace / developer tooling | 10% | 14 | 14 | 100% | 10.00 |
 | G4 | Skills, plugins & MCP | 10% | 15 | 15 | 100% | 10.00 |
 | G5 | Autonomous team system | 20% | 28 | 27 | 96% | 19.29 |
 | G6 | Status Island & background runtime | 10% | 22 | 19 | 86% | 8.64 |
 | G7 | UX, security, reliability & performance | 10% | 19 | 13 | 68% | 6.84 |
 | G8 | Extensibility, SDK & packaging | 5% | 10 | 1 | 10% | 0.50 |
-| **TOTAL** | | **100%** | **160** | **138** | | **88.02%** |
+| **TOTAL** | | **100%** | **160** | **140** | | **89.52%** |
 
 ## Current focus
 
 **G7 — UX, security, reliability and performance.** As of 2026-09-23 the
-approved design rollout, the SSH remote workspaces and the move to bun are one
-branch, and `bun run verify` passes on it end to end: lockfile, lint,
-typecheck, 375 tests, the build and both startup phases (129 checks, none
-failing). What remains in G6 is the tray, multi-monitor handling and the
-idle-unobtrusiveness judgement; in G5, two real providers collaborating; in
-G2, running the Codex and Antigravity profiles against those tools.
+approved design rollout, the SSH remote workspaces, the move to bun and the
+island for every terminal agent are one branch, and `bun run verify` passes on
+it end to end: lockfile, lint, typecheck, 412 tests, the build and both
+startup phases (163 checks, none failing). What remains in G6 is the tray,
+multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
+real providers collaborating. Antigravity (`agy`) could not be installed or
+read about here and stays unverified.
+
+### Every terminal agent on the island (2026-09-23)
+
+Codex, OpenCode and Gemini CLI tiles now do what Claude Code's did: the
+island shows each with its own mark when it waits, with Allow and Deny (and a
+question's choices, for OpenCode), says when it works and when it rests, and
+the tile shows what its session used. Each rests on that tool's own channel,
+measured against the real tool before it was built (recorded at the top of
+each provider package's module):
+
+| Tool | Waiting and working from | Answer from outside | Numbers from |
+|---|---|---|---|
+| Claude Code 2.1.280 | its hooks, given per run | the waiting hook's answer | its status line |
+| Codex 0.156.1 | its hooks, given per run (`-c hooks.*`) | the keys its dialog takes (`y`, Esc) | its session log |
+| OpenCode 1.18.32 | its own server, started by its interface on a free port with a password only that run knows | its reply routes (`once`, `reject`, a question's label) | the same server |
+| Gemini CLI 0.60 | its hooks, from a small extension installed once | the keys its dialog takes (`1`, Esc) | its session transcript |
+
+Gemini CLI cannot be given hooks for one run (the only layer that could, the
+system settings file, is skipped unless root owns it, by design). So the
+Providers screen offers a one-time "Status island" setup, which runs Gemini
+CLI's own `extensions install` in a terminal tile where the person answers its
+questions; outside the Workbench the extension's hooks do nothing. The setup
+step is provider-neutral: any tool can offer one.
+
+Models and usage, per tool, as the tool reports them:
+
+- Codex: its models (with reasoning efforts) from its app server, which
+  answers without an account; limits need a signed-in account.
+- OpenCode: every model of every provider it can reach, with names, context
+  sizes and efforts; today's and this week's tokens and cost from `stats`
+  (1.18.32 has no `--json`; its table is read, rounded as it prints it).
+- Gemini CLI: its own aliases (auto, pro, flash, flash-lite); headless turns
+  now report tokens, tool calls and a resumable session.
+- The model picker says whose each model is (tool, upstream provider, built
+  in or added by you) and finds models by it.
+
+Verified against the real tools with only the model replaced by a local
+stand-in (`real-codex-attention.test.ts`, `real-opencode-attention.test.ts`,
+`real-gemini-attention.test.ts`, run deliberately, see below: OpenCode and
+Gemini CLI passed three runs in a row, Codex two): models through the adapter, chat turns with resume and
+a tool call, Allow running a command from outside the terminal, Deny ending
+the turn, idle afterwards, and (OpenCode) a question answered from outside.
+In the application, the startup check runs stand-ins for Codex, OpenCode and
+Gemini CLI (its setup included) through the island and clicks Allow.
+
+Not covered, and said so: real accounts (limits, which models an account may
+use) for Codex, OpenCode and Gemini CLI; `bun run check:providers` reads
+them on a machine that has them, without spending anything. The Windows hook
+bridges (PowerShell) are written but were not run. Codex and Gemini CLI answer
+only shell commands from the island; other tools' approvals show there and
+are answered in the tile.
 
 ### Design rollout (2026-09-23)
 
@@ -86,11 +138,9 @@ way Claude Code does: the island shows the Claude mark, Allow and Deny, a
 click on Allow reaches the hook in Claude Code's format, and the finished turn
 rests.
 
-Not covered: Codex, Gemini, Antigravity and OpenCode tiles report neither
-waiting nor working; the island shows them as "running" rather than claiming
-work. A team agent's question still appears as a waiting entry whose Approve
-opens the run. The Windows (PowerShell) hook bridge is written but was not run
-here.
+Not covered: a team agent's question still appears as a waiting entry whose
+Approve opens the run. The Windows (PowerShell) hook bridge is written but
+was not run here. (Codex, OpenCode and Gemini CLI tiles: see above.)
 
 ## How this file is verified
 
@@ -100,9 +150,9 @@ Everything ticked below is proven by `bun run verify`, which runs:
   every `package.json`, so a frozen install cannot fail only on a build machine
 - `lint` — ESLint over the workspace
 - `typecheck` — strict TypeScript over Node and web projects
-- `test` — 375 unit and integration tests (8 more are skipped here: 6 spend
-  real provider quota, see below, and 2 exercise the Windows status line
-  bridge and only run on Windows)
+- `test` — 412 unit and integration tests (20 more are skipped here: the
+  ones that drive installed tools, see below, and 2 that exercise the Windows
+  status line bridge and only run on Windows)
 - `build` — electron-vite production build
 - `verify:app` — starts the built application headlessly (Xvfb) and drives
   the real renderer through the preload bridge: a streamed answer, a collapsed
@@ -129,7 +179,10 @@ Everything ticked below is proven by `bun run verify`, which runs:
   Claude Code does — reports that it waits for a permission and is working;
   the island shows it with Claude's mark and Allow and Deny, a click on Allow
   reaches the permission hook in Claude Code's own answer format, and the
-  finished turn leaves the agent resting. It then runs a second time against
+  finished turn leaves the agent resting. The same runs for stand-ins of
+  Codex (Allow arrives as its `y` key), OpenCode (its server's reply route)
+  and Gemini CLI (its one-time setup first, then its `1` key). The palette
+  finds a tool's models by the tool's name. It then runs a second time against
   the same database to prove a conversation, its provider session, the island's preferences and
   the remote workspace with its host key survive a restart.
 
@@ -144,8 +197,17 @@ Additionally, and deliberately outside the default run:
   and the hook bridge. Run on 2026-09-23 with the smallest model: all four
   cases passed (Allow, Deny, a question then a permission, and idle after an
   interrupt).
+- `AI_WORKBENCH_REAL_CODEX=1`, `AI_WORKBENCH_REAL_OPENCODE=1` and
+  `AI_WORKBENCH_REAL_GEMINI=1` run the installed Codex 0.156.1, OpenCode
+  1.18.32 and Gemini CLI 0.60 the same way, each against a local stand-in
+  for its model API, so no account is needed. Run on 2026-09-23: Codex 4
+  cases (passed twice), OpenCode 5 and Gemini CLI 3 (each passed three runs
+  in a row).
+- `bun run check:providers` reads every installed tool with the person's own
+  accounts (version, sign-in, models, usage, island setup) and spends
+  nothing. It is how the real-account parts above get checked.
 
-Last full run: 2026-09-23, all checks passed (both startup phases, 129 checks).
+Last full run: 2026-09-23, all checks passed (both startup phases, 163 checks).
 
 A packaged Linux build (`electron-builder --linux dir` under bun) was also
 started and ran the startup check: terminal, database and SSH worked from
@@ -165,15 +227,14 @@ run.
 - **aggregated usage hover/focus (G1)** is verified with one registered
   provider; aggregation across several providers is covered by the
   `UsageService` tests, not yet by a running multi-provider setup.
-- **Codex and Gemini adapters (G2)** ship as profiles built on the same,
-  verified machinery, but their flags and event shapes were not run against
-  those tools here. They are marked unverified in the application itself, and
-  the criteria stay unticked until someone runs them. Google replaced the
-  Gemini CLI with the Antigravity CLI (`agy`), so a profile for it ships too,
-  equally unverified; the Gemini profile stays for the plans that kept it.
-  None of these tools has a command that lists the models an account may use,
-  so only Claude Code ships a model list and the others are filled in on the
-  Providers screen.
+- **Codex and Gemini adapters (G2)** are ticked since their flags, event
+  streams, resume, tool calls and interactive interfaces were run against
+  Codex 0.156.1 and Gemini CLI 0.60 (see above). The model behind them was a
+  local stand-in: what an account adds — its limits, the models it may use —
+  was not run here and is what `bun run check:providers` reads. Google
+  replaced the Gemini CLI with the Antigravity CLI (`agy`); its profile ships
+  but could not be installed or read about here, so it stays marked
+  unverified in the application.
 - **authentication state reporting (G2)** is ticked for the mechanism, which is
   tested across authenticated, sign-in-required and unknown states. The Claude
   Code profile has no non-interactive auth probe, so for that provider the
@@ -246,8 +307,8 @@ run.
 - [x] session resume supported where provider supports it
 - [x] first real provider works end-to-end
 - [x] Claude adapter implemented if supported
-- [ ] Codex adapter implemented if supported
-- [ ] Gemini adapter implemented if supported
+- [x] Codex adapter implemented if supported
+- [x] Gemini adapter implemented if supported
 - [x] missing provider does not break app
 - [x] API/custom provider config architecture exists
 

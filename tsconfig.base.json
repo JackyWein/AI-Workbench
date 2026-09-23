@@ -76,9 +76,6 @@
       "@ai-workbench/terminal": [
         "./packages/terminal/src/index.ts"
       ],
-      "@ai-workbench/test-support": [
-        "./packages/test-support/src/index.ts"
-      ],
       "@ai-workbench/ui": [
         "./packages/ui/src/index.ts"
       ],

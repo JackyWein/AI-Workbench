@@ -14,7 +14,7 @@ branch `design/approved-rollout` is merged into it.
 |---|---|
 | G0 Foundation | done (12/12) |
 | G1 First vertical slice | 19/20 — the native folder dialog needs a desktop |
-| G2 Provider platform | 18/20 — Codex and Gemini/Antigravity not run for real |
+| G2 Provider platform | done (20/20) — real accounts beyond Claude Code not run; Antigravity unverified |
 | G3 Workspace tooling | done, plus workspaces on another machine over SSH |
 | G4 Skills, plugins, MCP | done (15/15) |
 | G5 Autonomous teams | 27/28 — two real providers collaborating not run |
@@ -22,14 +22,19 @@ branch `design/approved-rollout` is merged into it.
 | G7 Hardening | 13/19 — performance and polish pass |
 | G8 SDK / packaging | 1/10 |
 
-`bun run verify` passes end to end: lockfile, lint, typecheck, 375 tests,
-build, and both startup phases (129 checks).
+`bun run verify` passes end to end: lockfile, lint, typecheck, 412 tests,
+build, and both startup phases (163 checks).
 
-Newest: Claude Code in a terminal tile reports through its own hooks when it
-waits for a permission or asks a question, and whether it is working or idle.
-The island shows that with Claude's mark and answers it in place (Allow/Deny,
-or the question's choices). Verified against the real Claude Code 2.1.280;
-see `PROGRESS.md`, "Agents that wait on the person".
+Newest: every terminal agent reports on the island. Claude Code, Codex,
+OpenCode and Gemini CLI tiles say when they wait on the person (with the
+tool's mark, Allow/Deny, and OpenCode's questions), when they work and when
+they rest, and what their session used. Each through the tool's own channel,
+measured against the real tool first; see `PROGRESS.md`, "Every terminal
+agent on the island". Gemini CLI needs a one-time setup from the Providers
+screen (a small extension installed with Gemini CLI's own installer).
+
+To check the real-account parts on a machine that has the accounts:
+`bun run check:providers` (reads only; spends nothing).
 
 ## How to run it
 
@@ -53,13 +58,11 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
 
 ## What is not built yet
 
-1. **Waiting and working for tools other than Claude Code.** Only Claude Code
-   tiles report that they wait on the person, and whether they work or idle.
-   Codex, Gemini, Antigravity and OpenCode tiles report neither; the island
-   shows them as "running" and cannot answer them. Each would need its own
-   channel in its provider package, measured against the real tool first, as
-   `packages/providers/claude/src/attention.ts` was. A team agent's question
-   still appears as a waiting entry whose Approve only opens the run.
+1. **Antigravity (`agy`)** could not be installed or read about here; it has a
+   profile, no island channel, and stays marked unverified. A team agent's
+   question still appears as a waiting entry whose Approve only opens the run.
+   Codex and Gemini CLI answer only shell commands from the island; their
+   other approvals show there and are answered in the tile.
 2. **Agents in a remote workspace.** Files on another machine can be browsed,
    opened, edited and saved over SSH. Git reports "no repository" there and a
    terminal still opens on this computer, so agents cannot work remotely yet.
@@ -72,8 +75,10 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
    work, but they are not in the design's grammar yet (Settings groups and
    Providers rows). There is no approved mock for them.
 5. **Packaging.** A Linux unpacked build under bun was started and passed the
-   startup check; the installers and a clean install elsewhere were not run.
-   The release workflow now uses bun and has not run since.
+   startup check; a clean install elsewhere was not run. The 0.0.3 release
+   run failed on every platform because electron-builder published by itself
+   when it saw the tag, without a token; the package step now passes
+   `--publish never` and the release job alone publishes.
 
 ## Things that will bite you
 
@@ -122,3 +127,26 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
 - `opencode was not found` is logged every few minutes when OpenCode is not
   installed: the usage reader asks a tool that is not there. Noise, not a
   failure.
+- **Each tool's channel is different, on purpose.** Claude Code and Codex get
+  hooks per run (`--settings`, `-c hooks.*`); Codex asks the person once to
+  trust them, so their command must never change between runs (the run's
+  folder travels in `AI_WORKBENCH_HOOK_DIR`). OpenCode is read from the server
+  its own interface starts (`--port`, `OPENCODE_SERVER_PASSWORD`). Gemini CLI
+  only takes hooks from settings root owns or from an extension; the island
+  uses an extension the person installs once, versioned in
+  `packages/providers/gemini/src/attention.ts` — raise its version when its
+  files change, so an update is offered.
+- **Answers typed as keys** (Codex `y`/Esc, Gemini `1`/Esc) wait 1.5 s after
+  the request so the tool's dialog is up, and re-read that it still waits.
+- **OpenCode through a pipe loses the end of its output** when it exits (the
+  long `models --verbose` list arrives cut at a different length each time),
+  so its plain list says which models exist. **Two OpenCode processes started
+  together in a fresh data folder collide** setting up its database; the
+  OpenCode package runs its commands one at a time. On a first ever start the
+  app may still start a tile or turn alongside, which can fail once.
+- **OpenCode 2.0.13** is what the earlier OpenCode code was written against
+  (`opencode api`, `stats --json`); npm's release is 1.18.32, which has
+  neither. Both paths are kept and tried first.
+- **Real-tool tests** (`real-{claude,codex,opencode,gemini}-attention.test.ts`)
+  each need their tool installed and a variable set (see `PROGRESS.md`); all
+  but Claude's use a local stand-in model and no account.
