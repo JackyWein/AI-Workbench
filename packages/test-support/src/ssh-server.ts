@@ -61,8 +61,11 @@ export async function startSshTestServer(
 
   const hostKey = options.hostKey ?? utils.generateKeyPairSync("ed25519", {}).private;
   let connections = 0;
+  const clients = new Set<{ end(): unknown }>();
 
   const server = new Server({ hostKeys: [hostKey] }, (client) => {
+    clients.add(client);
+    client.on("close", () => clients.delete(client));
     client.on("authentication", (ctx) => {
       if (ctx.method === "password" && ctx.username === username && ctx.password === password) {
         connections += 1;
@@ -107,9 +110,14 @@ export async function startSshTestServer(
     fingerprint,
     hostKey,
     connectionCount: () => connections,
+    // Closing ends the connections too; otherwise it waits until every
+    // client lets go on its own, which an application may take minutes to do.
     close: () =>
       new Promise<void>((done) => {
         server.close(() => done());
+        for (const client of clients) {
+          client.end();
+        }
       }),
   };
 }
