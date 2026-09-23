@@ -383,13 +383,41 @@ function parseUpdateInfo(value: unknown): {
   return { version, releaseNotes: normalizeReleaseNotes(record["releaseNotes"]) };
 }
 
+/**
+ * Notes as plain text. A release's own notes file arrives as written; notes
+ * that electron-updater takes from GitHub's release feed arrive as HTML, which
+ * Settings would otherwise show tag by tag.
+ */
+export function plainReleaseNotes(text: string): string {
+  if (!/<\/?(p|ul|ol|li|h[1-6]|br|code|a|strong|em|div|pre|blockquote)\b[^>]*>/i.test(text)) {
+    return text;
+  }
+  return text
+    .replace(/>\s*\n\s*</g, "><")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "- ")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/(p|h[1-6]|ul|ol|div|pre|blockquote)>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function normalizeReleaseNotes(value: unknown): string | null {
   // Release notes are stored in state and cross the IPC bridge on every
   // update event, so they are capped at 2000 characters — enough for a human
   // to review in Settings, small enough that a huge changelog cannot bloat
   // the renderer store. Longer notes are cut with an ellipsis marker.
-  const truncate = (text: string): string =>
-    text.length > 2000 ? `${text.slice(0, 2000)}…` : text;
+  const truncate = (text: string): string => {
+    const plain = plainReleaseNotes(text);
+    return plain.length > 2000 ? `${plain.slice(0, 2000)}…` : plain;
+  };
   if (typeof value === "string") {
     const trimmed = value.trim();
     return trimmed.length === 0 ? null : truncate(trimmed);

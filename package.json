@@ -1,7 +1,7 @@
 {
   "name": "ai-workbench",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "description": "Local desktop environment for multiple AI providers, sessions, skills and autonomous teams",
   "engines": {

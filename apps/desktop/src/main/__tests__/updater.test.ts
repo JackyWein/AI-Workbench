@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveAutoUpdater } from "../updater.js";
+import { plainReleaseNotes, resolveAutoUpdater } from "../updater.js";
 
 function fakeUpdater(): Record<string, unknown> {
   return {
@@ -39,5 +39,21 @@ describe("resolveAutoUpdater", () => {
     expect(
       resolveAutoUpdater({ __esModule: true, default: { autoUpdater: fakeUpdater() } }),
     ).not.toBeNull();
+  });
+});
+
+describe("release notes", () => {
+  it("keeps notes that are text as they are", () => {
+    expect(plainReleaseNotes("AI Workbench 0.0.4\n\n- One <thing> & more")).toBe(
+      "AI Workbench 0.0.4\n\n- One <thing> & more",
+    );
+  });
+
+  it("turns notes from GitHub's release feed into text", () => {
+    const html =
+      "<h3>Every agent on the island</h3>\n<ul>\n<li>Codex &amp; OpenCode</li>\n<li>Gemini CLI</li>\n</ul>\n<p>Known <code>limits</code></p>";
+    expect(plainReleaseNotes(html)).toBe(
+      "Every agent on the island\n\n- Codex & OpenCode\n- Gemini CLI\n\nKnown limits",
+    );
   });
 });

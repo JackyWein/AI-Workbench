@@ -29,12 +29,19 @@ npmRebuild: false
 # The provider setting only decides which metadata electron-builder writes
 # next to the artifacts (latest*.yml). Nothing is uploaded from here: the
 # release workflow copies the artifacts and that metadata to the GitHub
-# release, and the packaged app reads updates back from there. No --publish
-# flag is passed, so a local or CI build never publishes by itself.
+# release, and the packaged app reads updates back from there. The package
+# script passes --publish never: without it electron-builder publishes by
+# itself when it builds a tag in CI, which failed the 0.0.3 release (no
+# token), and the release job is what publishes.
 publish:
   provider: github
   owner: JackyWein
   repo: AI-Workbench
+
+# The notes the updater shows before an update; the same file is the body of
+# the GitHub release.
+releaseInfo:
+  releaseNotesFile: release-notes.md
 
 win:
   target:

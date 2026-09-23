@@ -106,6 +106,36 @@ jobs:
           find artifacts -type f -exec cp {} release-files/ \;
           ls -la release-files
 
+      - uses: actions/checkout@v4
+        with:
+          path: source
+
+      # What changed, from the same file the updater shows, then how to
+      # install.
+      - name: Release notes
+        run: |
+          {
+            if [ -f source/apps/desktop/release-notes.md ]; then
+              tail -n +2 source/apps/desktop/release-notes.md
+              echo
+            fi
+            cat <<'EOF'
+          ### Install
+
+          | Platform | File |
+          |---|---|
+          | Windows | `*-windows-x64.exe` (installer) or the `portable` build |
+          | macOS | `*-macos-arm64.dmg` (Apple silicon) or `*-macos-x64.dmg` (Intel) |
+          | Linux | `*-linux-x86_64.AppImage` or `*-linux-x64.tar.gz` |
+
+          The packages are **not code signed**. Windows SmartScreen and macOS
+          Gatekeeper will warn on first launch; on macOS open it once via
+          right click → Open, or run
+          `xattr -dr com.apple.quarantine "/Applications/AI Workbench.app"`.
+          EOF
+          } | sed 's/^          //' > release-body.md
+          cat release-body.md
+
       - uses: softprops/action-gh-release@v2
         with:
           # A manual run tags the current commit with the application version,
@@ -113,17 +143,4 @@ jobs:
           tag_name: v${{ needs.package.outputs.version }}
           name: AI Workbench v${{ needs.package.outputs.version }}
           files: release-files/*
-          generate_release_notes: true
-          body: |
-            Desktop packages for Windows, macOS and Linux.
-
-            | Platform | File |
-            |---|---|
-            | Windows | `*-windows-x64.exe` (installer) or the `portable` build |
-            | macOS | `*-macos-arm64.dmg` (Apple silicon) or `*-macos-x64.dmg` (Intel) |
-            | Linux | `*-linux-x86_64.AppImage` or `*-linux-x64.tar.gz` |
-
-            The packages are **not code signed**. Windows SmartScreen and macOS
-            Gatekeeper will warn on first launch; on macOS open it once via
-            right click → Open, or run
-            `xattr -dr com.apple.quarantine "/Applications/AI Workbench.app"`.
+          body_path: release-body.md
