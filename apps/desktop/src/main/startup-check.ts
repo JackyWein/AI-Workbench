@@ -288,13 +288,16 @@ export async function runStartupCheck(
   });
 
   await checkMain("the island returns when focus leaves the app", async () => {
-    window.blur();
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
+      // Asked for again on every round: without a window manager (Xvfb in
+      // CI) a focus event left over from the step before can arrive after
+      // the blur and take the focus back, which failed this once in CI.
+      window.blur();
+      await new Promise((resolve) => setTimeout(resolve, 200));
       if (island.visible) {
         return true;
       }
-      await new Promise((resolve) => setTimeout(resolve, 200));
     }
     return false;
   });
