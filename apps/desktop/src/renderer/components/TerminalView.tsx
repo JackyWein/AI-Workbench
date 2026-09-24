@@ -1,23 +1,14 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal, type IDisposable } from "@xterm/xterm";
+import type { IDisposable, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { describeError, invoke } from "../lib/client.js";
+import { createTerminal, disposeTerminal, liveWriter, tailForReplay } from "../lib/xterm.js";
 
 interface TerminalViewProps {
   readonly sessionId: string;
   readonly onError: (message: string) => void;
 }
-
-/**
- * Lines kept in the rendered buffer; the main process keeps the full history
- * and only a bounded tail is replayed (see XtermPane for the shared caps).
- */
-const RENDER_SCROLLBACK_LINES = 2000;
-/** Characters of history replayed when attaching to a running shell. */
-const MAX_REATTACH_CHARS = 50_000;
-/** Live output held while a frame is pending, so it cannot grow unbounded. */
-const MAX_PENDING_CHARS = 200_000;
 
 /**
  * A real shell for the session (spec §26). The process lives in the main
@@ -39,59 +30,8 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     let terminalId: string | null = null;
     let detach: (() => void) | null = null;
     let input: IDisposable | null = null;
-    // Live output is coalesced to one write per frame so a fast command
-    // cannot schedule a parse per IPC event. Fallback keeps hidden windows moving.
-    let live = "";
-    let liveFrame: number | null = null;
-    let liveFallback: ReturnType<typeof setTimeout> | null = null;
-    const flushLive = (): void => {
-      liveFrame = null;
-      if (liveFallback !== null) {
-        clearTimeout(liveFallback);
-        liveFallback = null;
-      }
-      if (live.length === 0 || disposed) {
-        live = "";
-        return;
-      }
-      const chunk = live;
-      live = "";
-      terminal.write(chunk);
-    };
-    const scheduleLive = (chunk: string): void => {
-      live += chunk;
-      if (live.length > MAX_PENDING_CHARS) {
-        live = live.slice(live.length - MAX_PENDING_CHARS);
-      }
-      liveFrame ??= requestAnimationFrame(flushLive);
-      liveFallback ??= setTimeout(() => {
-        liveFallback = null;
-        if (liveFrame !== null) {
-          cancelAnimationFrame(liveFrame);
-        }
-        flushLive();
-      }, 100);
-    };
-
-    const styles = getComputedStyle(document.documentElement);
-    const token = (name: string, fallback: string): string =>
-      styles.getPropertyValue(name).trim() || fallback;
-
-    const terminal = new Terminal({
-      fontFamily: token("--font-mono", "monospace"),
-      fontSize: 12,
-      lineHeight: 1.3,
-      cursorBlink: true,
-      scrollback: RENDER_SCROLLBACK_LINES,
-      // The terminal uses the same surface tokens as the rest of the app.
-      theme: {
-        background: token("--surface-sunken", "#0a0b0d"),
-        foreground: token("--text-primary", "#e8eaed"),
-        cursor: token("--accent", "#6ea8fe"),
-        selectionBackground: token("--surface-selected", "#2a2d33"),
-      },
-      allowProposedApi: true,
-    });
+    const terminal = createTerminal({ fontSize: 12, lineHeight: 1.3 });
+    const live = liveWriter(terminal);
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(container);
@@ -101,6 +41,15 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
       // Not laid out yet; the resize observer below catches up.
     }
     terminalRef.current = terminal;
+    setScrolledUp(false);
+
+    // Scrolling up to read stays put; a quiet way back to the newest line
+    // appears instead of the view jumping under the reader. Followed on this
+    // session's terminal, so it still works after switching sessions.
+    const scroll = terminal.onScroll(() => {
+      const { baseY, viewportY } = terminal.buffer.active;
+      setScrolledUp(baseY - viewportY > 1);
+    });
 
     const start = async (): Promise<void> => {
       try {
@@ -117,11 +66,7 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
         }
         terminalId = info.id;
         if (scrollback) {
-          terminal.write(
-            scrollback.length <= MAX_REATTACH_CHARS
-              ? scrollback
-              : scrollback.slice(scrollback.length - MAX_REATTACH_CHARS),
-          );
+          terminal.write(tailForReplay(scrollback));
         }
 
         detach = window.workbench.onTerminalEvent((event) => {
@@ -129,12 +74,9 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
             return;
           }
           if (event.type === "data") {
-            scheduleLive(event.chunk);
+            live.push(event.chunk);
           } else {
-            if (liveFrame !== null) {
-              cancelAnimationFrame(liveFrame);
-              flushLive();
-            }
+            live.flush();
             terminal.writeln(`\r\n[process exited with code ${event.exitCode}]`);
             terminalId = null;
           }
@@ -217,34 +159,13 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
       detach?.();
       input?.dispose();
       input = null;
-      if (liveFrame !== null) {
-        cancelAnimationFrame(liveFrame);
-        liveFrame = null;
-      }
-      if (liveFallback !== null) {
-        clearTimeout(liveFallback);
-        liveFallback = null;
-      }
-      live = "";
-      terminal.dispose();
+      scroll.dispose();
+      live.dispose();
+      disposeTerminal(terminal);
       terminalRef.current = null;
       // The shell itself is deliberately left running.
     };
   }, [sessionId, onError]);
-
-  // Scrolling up to read stays put; a quiet way back to the newest line
-  // appears instead of the view jumping under the reader.
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    if (!terminal) {
-      return;
-    }
-    const subscription = terminal.onScroll(() => {
-      const { baseY, viewportY } = terminal.buffer.active;
-      setScrolledUp(baseY - viewportY > 1);
-    });
-    return () => subscription.dispose();
-  }, []);
 
   return (
     <div className="terminal" ref={containerRef}>

@@ -1,8 +1,9 @@
 import { type JSX, useEffect, useRef, useState } from "react";
 import { FitAddon } from "@xterm/addon-fit";
-import { Terminal } from "@xterm/xterm";
+import type { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { invoke } from "../lib/client.js";
+import { boundPending, createTerminal, disposeTerminal, liveWriter, tailForReplay } from "../lib/xterm.js";
 
 interface XtermPaneProps {
   /** The live terminal to show; null shows an empty, inert surface. */
@@ -11,27 +12,6 @@ interface XtermPaneProps {
   readonly focused?: boolean;
   readonly onFocus?: () => void;
   readonly fontSize?: number;
-}
-
-/**
- * Lines kept in the rendered buffer. The process keeps its own full history
- * in the main process; the view only needs a bounded window of it.
- */
-const RENDER_SCROLLBACK_LINES = 2000;
-/**
- * Characters of history replayed when attaching. A runaway command can leave
- * far more behind than a view can parse without jank, so only the tail comes
- * across (the manager keeps the rest for a later page-in, if ever needed).
- */
-const MAX_REATTACH_CHARS = 50_000;
-/** Live output held while a replay is still on its way, bounded the same way. */
-const MAX_PENDING_CHARS = 200_000;
-
-/** Keeps the tail of a replay so attaching to a noisy terminal stays fast. */
-function tailForReplay(scrollback: string): string {
-  return scrollback.length <= MAX_REATTACH_CHARS
-    ? scrollback
-    : scrollback.slice(scrollback.length - MAX_REATTACH_CHARS);
 }
 
 /**
@@ -61,46 +41,12 @@ export function XtermPane({
     if (!container) {
       return;
     }
-    const styles = getComputedStyle(document.documentElement);
-    const token = (name: string, fallback: string): string =>
-      styles.getPropertyValue(name).trim() || fallback;
-
-    const terminal = new Terminal({
-      fontFamily: token("--font-mono", "monospace"),
-      fontSize: initialFontSize,
-      lineHeight: 1.25,
-      cursorBlink: true,
-      scrollback: RENDER_SCROLLBACK_LINES,
-      allowProposedApi: true,
-      theme: {
-        background: token("--surface-sunken", "#0c0d0f"),
-        foreground: token("--text-primary", "#ecedf0"),
-        cursor: token("--accent", "#8c9dff"),
-        cursorAccent: token("--surface-sunken", "#0c0d0f"),
-        selectionBackground: token("--accent-quiet", "#2a2d33"),
-      },
-    });
+    const terminal = createTerminal({ fontSize: initialFontSize, lineHeight: 1.25 });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(container);
     terminalRef.current = terminal;
     fitRef.current = fit;
-
-    // Copy a selection with Ctrl+C, the way a desktop terminal does; without a
-    // selection Ctrl+C still reaches the program as an interrupt.
-    terminal.attachCustomKeyEventHandler((event) => {
-      const copy =
-        event.type === "keydown" &&
-        (event.ctrlKey || event.metaKey) &&
-        event.key.toLowerCase() === "c" &&
-        terminal.hasSelection();
-      if (copy) {
-        void navigator.clipboard.writeText(terminal.getSelection()).catch(() => undefined);
-        terminal.clearSelection();
-        return false;
-      }
-      return true;
-    });
 
     const input = terminal.onData((data) => {
       const id = idRef.current;
@@ -138,11 +84,7 @@ export function XtermPane({
       input.dispose();
       terminalRef.current = null;
       fitRef.current = null;
-      // xterm 5.5 schedules a measurement when it opens (a timeout) and on a
-      // reset (a frame). Disposed before those run, it reads a renderer that
-      // is gone ("reading 'dimensions'"), which a quick switch between the
-      // conversation and the agents did. Its own pending work runs first.
-      setTimeout(() => terminal.dispose(), 50);
+      disposeTerminal(terminal);
     };
     // Created once: a font size change must not rebuild the terminal and
     // lose its buffer; it arrives through `terminal.options` below.
@@ -179,40 +121,7 @@ export function XtermPane({
     let pending = "";
     let replayed = false;
     const timeouts = new Set<ReturnType<typeof setTimeout>>();
-    // Live output is coalesced to one write per frame so a fast command
-    // cannot schedule a parse per IPC event. rAF stalls in hidden windows,
-    // so a timeout fallback keeps the stream moving (like event-stream).
-    let live = "";
-    let liveFrame: number | null = null;
-    let liveFallback: ReturnType<typeof setTimeout> | null = null;
-    const flushLive = (): void => {
-      liveFrame = null;
-      if (liveFallback !== null) {
-        clearTimeout(liveFallback);
-        liveFallback = null;
-      }
-      if (live.length === 0 || disposed) {
-        live = "";
-        return;
-      }
-      const chunk = live;
-      live = "";
-      terminal.write(chunk);
-    };
-    const scheduleLive = (chunk: string): void => {
-      live += chunk;
-      if (live.length > MAX_PENDING_CHARS) {
-        live = live.slice(live.length - MAX_PENDING_CHARS);
-      }
-      liveFrame ??= requestAnimationFrame(flushLive);
-      liveFallback ??= setTimeout(() => {
-        liveFallback = null;
-        if (liveFrame !== null) {
-          cancelAnimationFrame(liveFrame);
-        }
-        flushLive();
-      }, 100);
-    };
+    const live = liveWriter(terminal);
 
     const detach = window.workbench.onTerminalEvent((event) => {
       if (event.terminalId !== terminalId) {
@@ -222,18 +131,12 @@ export function XtermPane({
         // Output that arrives while the scrollback is still on its way is
         // held back, so it cannot land before the history it follows.
         if (replayed) {
-          scheduleLive(event.chunk);
+          live.push(event.chunk);
         } else {
-          pending += event.chunk;
-          if (pending.length > MAX_PENDING_CHARS) {
-            pending = pending.slice(pending.length - MAX_PENDING_CHARS);
-          }
+          pending = boundPending(pending + event.chunk);
         }
       } else {
-        if (liveFrame !== null) {
-          cancelAnimationFrame(liveFrame);
-          flushLive();
-        }
+        live.flush();
         terminal.write(`\r\n\x1b[2m[process exited with code ${event.exitCode}]\x1b[0m\r\n`);
       }
     });
@@ -296,15 +199,7 @@ export function XtermPane({
         clearTimeout(timeout);
       }
       timeouts.clear();
-      if (liveFrame !== null) {
-        cancelAnimationFrame(liveFrame);
-        liveFrame = null;
-      }
-      if (liveFallback !== null) {
-        clearTimeout(liveFallback);
-        liveFallback = null;
-      }
-      live = "";
+      live.dispose();
       pending = "";
       detach();
     };
