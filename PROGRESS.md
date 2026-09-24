@@ -34,6 +34,16 @@ or 0.0.6 work below: it deepens criteria already ticked or is a judgement
 (G7 "dark mode polished", "visual hierarchy follows Quiet UI principles")
 that stays the person's.
 
+### Every theme light and dark (2026-09-24, after 0.0.6)
+
+Verified here by tests and the startup check: each of the six themes has a
+light and a dark mode; the contrast test measures all twelve from the
+stylesheets; in the built app each is picked in Settings in both modes,
+drawn with the matching colour scheme and readable title and sidebar text,
+with its typeface loaded. Settings stored by 0.0.6 and earlier keep the
+look they had (unit test of the upgrade). Not verified: the modes against
+a real Windows or macOS system theme switch.
+
 ### Release 0.0.6 (2026-09-24)
 
 Verified here by tests and the startup check:

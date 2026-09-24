@@ -105,13 +105,14 @@ session.
 
 ### Make it look the way you like
 
-<img src="docs/images/themes.png" alt="The same conversation in six themes: Quiet Dark, Atelier, Mission Control, Playground, Aurora and Swiss" />
+<img src="docs/images/themes.png" alt="The same conversation in six themes, each shown light on the left and dark on the right: Quiet, Atelier, Mission Control, Playground, Aurora and Swiss" />
 
 Pick a **theme** under Settings and the whole app changes with it — colours, type, shapes, the
-terminals and the status island: **Quiet** (dark, light or following your system), warm
-**Atelier** with serif headings, dense **Mission Control** in lime on black, bold
-**Playground** with thick outlines, **Aurora** in night blue and violet light, and strict black
-and red **Swiss**. The typefaces ship with the app, and every theme is checked to stay readable.
+terminals and the status island: calm **Quiet**, warm **Atelier** with serif headings, dense
+**Mission Control** with lime signals, bold **Playground** with thick outlines, **Aurora** in
+violet and cyan light, and strict black, white and red **Swiss**. Every theme comes **light and
+dark** — pick one, or let it follow your system. The typefaces ship with the app, and every
+theme is checked to stay readable in both modes.
 
 ## How it works
 

@@ -14,10 +14,19 @@ branch `design/approved-rollout` is merged into it and can be deleted.
 tests (20 real-tool tests skipped without their tools), the build and both
 startup phases (198 checks, none failing).
 
-What changed since 0.0.5, each verified by tests and the startup check:
+Since 0.0.6 (not released yet): **every theme has a light and a dark
+mode.** The setting is split into `theme` (Quiet, Atelier, Mission
+Control, Playground, Aurora, Swiss) and `mode` (system, light, dark);
+0.0.6's single choice is read through `upgradeStoredSettings`, so nobody's
+look changes on update. Settings has a Mode control under the theme picker,
+whose swatches show each theme light and dark; the command palette has
+"Theme: …" and "Mode: …". The contrast test and the startup check cover
+all twelve. How it is put together: `DEVELOPMENT.md` → Themes.
 
-- **Themes.** Eight appearances in a picker under Settings (Quiet dark,
-  light and system; Atelier, Mission Control, Playground, Aurora, Swiss),
+What changed in 0.0.6 over 0.0.5, each verified by tests and the startup check:
+
+- **Themes.** A picker under Settings (Quiet in dark, light and system;
+  Atelier, Mission Control, Playground, Aurora, Swiss in one mode each),
   also in the command palette. A theme is token values only; how they are
   laid out and how to add one is in `DEVELOPMENT.md` → Themes. Every raw
   colour and radius in the components became a token for this, the
@@ -85,8 +94,9 @@ straight into a fresh database, the app started as that user with a clean
 environment, and each view captured over the DevTools protocol at 1440×900
 and twice the pixel density, then scaled to 2160 px wide. The island picture
 is the real island, with a stand-in for Claude Code asking for a permission,
-laid over a blurred agents view. `themes.png` is the conversation in six
-themes, each picked in Settings, set side by side. Retake them the same way
+laid over a blurred agents view. `themes.png` is the conversation in the six
+themes, each picked in Settings and cut on a slant between its light and
+dark mode. Retake them the same way
 when a view changes; the README says they show demo data.
 
 ## How to run it
