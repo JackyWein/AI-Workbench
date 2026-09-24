@@ -1,111 +1,220 @@
+<div align="center">
+
+<img src="docs/images/icon.png" width="80" alt="AI Workbench icon" />
+
 # AI Workbench
 
-A local desktop environment for using multiple AI providers, persistent project
-sessions, shared skills, plugins and MCP servers, and autonomous multi-agent
-teams — from one application.
+**One calm desktop app for all your AI coding agents.**
 
-**Simple by default. Powerful on demand. Provider-independent from the first
-line of code.**
+Claude Code, Codex, Gemini CLI and OpenCode in chats, terminals and teams that work together —
+with your services, your skills, and a small island that tells you when one of them needs you.
 
-## Current state
+[![Latest release](https://img.shields.io/github/v/release/JackyWein/AI-Workbench?label=release&color=8c9dff)](https://github.com/JackyWein/AI-Workbench/releases/latest)
+[![CI](https://github.com/JackyWein/AI-Workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/JackyWein/AI-Workbench/actions/workflows/ci.yml)
+![Windows · macOS · Linux](https://img.shields.io/badge/platforms-Windows%20·%20macOS%20·%20Linux-5bc8a7)
 
-The foundation and the first vertical slice work end to end:
+[**Download**](https://github.com/JackyWein/AI-Workbench/releases/latest) ·
+[How it works](#how-it-works) ·
+[Supported tools](#supported-tools) ·
+[Build from source](#build-from-source)
 
-- create a workspace from a folder, create sessions inside it
-- pick a provider and a model, send a message, watch the answer stream in
-- stop a running answer; the partial turn is kept
-- everything is persisted in SQLite and restored after a restart, including the
-  provider-native session, so the conversation continues where it left off
-- provider usage in a compact indicator with an aggregated popover that opens on
-  hover, keyboard focus or click
-- command palette (Ctrl+K / Cmd+K), settings and a providers overview
-- a real shell per session (Ctrl+`), a workspace file browser and the git
-  branch and changes, all bounded to the session's working directory
+</div>
 
-Providers are pluggable and the core never names one:
+<br />
 
-- **MockProvider** — a full local simulation of streaming, delays, status
-  changes, tool calls, errors, usage and session resume, used by the tests
-- **Claude Code** — the real CLI, driven non-interactively. Verified end to end:
-  detection, streaming answers, account usage reported by the tool itself, and
-  conversations resumed across turns and restarts
-- **Codex**, **Antigravity** and the older **Gemini CLI** — shipped as profiles
-  built on the same machinery, but not yet verified against those tools, which
-  the app says plainly
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/chat-light.png" />
+  <img src="docs/images/chat-dark.png" alt="A conversation with Claude Code about a rounding bug, with the session's tokens, cost and context beside it" />
+</picture>
 
-A command line provider is described by a profile — executable, flags, output
-shape — so adding or fixing one is configuration, not a code change. None of
-these tools can print the models an account may use, so only Claude Code ships
-a list; for the others you enter the models you have under **Providers**, and
-they become the session's model picker.
+<sub>The screenshots show demo data: a small shop project and made-up conversations, rendered by the real application.</sub>
 
-Skills, plugins and MCP servers are part of the application, not of a provider:
+## Why
 
-- **Skills** are provider-neutral instructions, switched on globally, per
-  workspace or per session, with the narrowest scope winning. They are imported
-  from a folder of Markdown or Claude-style skills and composed into whatever
-  the provider is given for that turn
-- **Plugins** carry access to an external service, and the account behind one is
-  connected once and shared by every plugin of the same service
-- **MCP servers** are configured once and each session decides which of them it
-  may use. A server that will not start is reported with the reason; remote
-  transports are honestly marked unsupported rather than faked
-- **Secrets** go into the operating system's own storage. Where there is none,
-  the application refuses to store them rather than writing them in the clear
+You probably use more than one AI coding tool. Each lives in its own terminal, with its own
+sign-in, its own idea of your project and no idea what the others are doing.
 
-**Teams** work on one goal together. A lead breaks it into tasks, the other
-agents pick them up and run concurrently, publish what they produce and report
-back, and the lead closes the goal — with no prompt relayed by hand. Every run
-is bounded (calls, tasks, depth, runtime, failures, concurrency, messages,
-delegations), persisted as it happens, and resumable after a restart. Agents
-reach each other through the team, either through `ai-workbench-team-mcp` or,
-for providers without MCP, through the same operations written as action
-blocks.
+AI Workbench puts them side by side on your projects **without replacing them**. It drives the
+real command line tools you already installed, with the accounts you already signed in to —
+nothing is proxied, scraped or re-sold. On top it adds what none of them has alone: one place for
+your workspaces, teams of agents that hand work to each other, services every agent can use after
+one sign-in, and a quiet companion that tells you when an agent is waiting for you.
 
-See `PROGRESS.md` for what is verified, measured only from acceptance criteria
-that a run of `bun run verify` actually proves.
+**Simple by default. Powerful on demand.**
 
-## Quick start
+## What you can do
+
+### Talk to any tool, in any project
+
+A **workspace** is a folder on your computer. Inside it, every **session** is one conversation
+with one tool and model — pick them in the box you type in, and
+switch whenever you like. Answers stream in with their tool calls folded away, code is ready to
+copy, and **+** attaches files and screenshots. The panel beside the chat shows what the session
+has cost so far, from the tool's own numbers; <kbd>Ctrl</kbd> <kbd>`</kbd> opens a shell, the
+files and the git changes of the workspace. Close the app and come back tomorrow: the conversation
+continues where it stopped. Folders on another machine can be opened over SSH, to browse and edit
+their files.
+
+### Run agents side by side
+
+<img src="docs/images/agents.png" alt="Four terminal tiles: tests passing, a dev server, the git history and a request to the server" />
+
+The **Agents** view is a grid of real terminals: the tools' own interactive interfaces or plain
+shells, as many as you need. They keep running when you switch views or close the window, and
+each tile shows what its session used, where the tool reports it. <kbd>Ctrl</kbd> <kbd>Shift</kbd> <kbd>A</kbd> switches
+between chat and agents.
+
+### Let a team work on one goal
+
+<img src="docs/images/team.png" alt="A team of three agents adding a dark mode switch: the goal, a progress bar, the members, a conversation of their work and the plan" />
+
+Pick a **team** in any session and give it a goal. A lead breaks the goal into tasks and hands
+them out; the members — each on the tool and model you chose — work at the same time, ask each
+other questions, publish files, record decisions and report back. You watch it as a
+conversation, follow one member, add a note for the lead, or pause and stop the run. Every run
+has limits (calls, tasks, runtime, failures), so a team cannot burn through an account overnight.
+
+### Never miss an agent that needs you
+
+<img src="docs/images/island.png" alt="The status island: Claude Code wants to run bun test src/cart, with Deny and Allow" />
+
+The **status island** floats above your other windows. It says which agents are working and when
+one has finished — and when one waits for a permission, you answer right there: Claude Code,
+Codex, OpenCode and Gemini CLI each ask through their own permission system, which stays in
+charge. Drag the island to any edge of the screen, or switch it off.
+
+### Give your agents your services — sign in once
+
+<img src="docs/images/connectors.png" alt="The connector catalog: Gmail, Google Calendar, Google Drive, Notion, Linear, GitHub, Sentry, Atlassian and more" />
+
+**Connectors** are the services agents work with: mail, calendars, issues, docs, deployments.
+Choose one, sign in in your browser, and every chat, terminal agent and team can use it — or only
+the workspaces you choose. Your own MCP servers are added the same way. Sign-in tokens stay in
+your system's keychain; the tools reach a service through a small gateway on your computer and
+never see them.
+
+### Teach them how you work
+
+<img src="docs/images/skills.png" alt="Skills: code review, conventional commits, database migrations, React components, release notes and a security check" />
+
+**Skills** are short instructions your agents follow where they apply — how you review a change,
+write a commit, name things. Write one yourself, let one of your tools draft it from a sentence,
+or bring over the skills you already made for Claude Code, Codex, Gemini CLI or OpenCode — a skill
+made for one tool then works for all of them. Switch each on everywhere, per workspace or per
+session.
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph UI["Window and status island"]
+    direction TB
+    chat["Chats"]
+    tiles["Agent tiles"]
+    team["Team view"]
+  end
+
+  subgraph core["AI Workbench core (provider-neutral)"]
+    direction TB
+    sessions["Sessions"]
+    orchestrator["Team orchestrator"]
+    terminals["Terminals"]
+    skills["Skills"]
+    gateway["Connectors and MCP gateway"]
+  end
+
+  subgraph tools["Your tools, your accounts"]
+    direction TB
+    claude["Claude Code"]
+    codex["Codex"]
+    gemini["Gemini CLI"]
+    opencode["OpenCode"]
+    compatible["OpenAI-compatible servers"]
+  end
+
+  UI -- "typed, validated IPC" --> core
+  core -- "provider adapters" --> tools
+  gateway --> services["MCP services: Gmail, GitHub, Linear, ..."]
+  core --> storage[("SQLite on your computer")]
+  core --> keychain[("System keychain")]
+```
+
+- **Your tools stay in charge.** Each tool is reached through an adapter that starts the real
+  program the way you would, and turns what it prints into one common stream of events.
+  Permissions, sandboxes and sign-ins remain the tool's own; the app never works around them.
+- **One core for all of them.** Sessions, teams, terminals, skills and connectors never branch on
+  a tool's name. A new tool is an adapter, mostly a profile of its flags and output.
+- **Nothing is invented.** Usage, limits and cost are what the tools report. Where a tool reports
+  nothing, the app says so instead of estimating.
+- **Local and private.** Everything lives in a SQLite database on your computer. Secrets go to
+  the system's keychain — without one, the app refuses to store them rather than writing them in
+  the clear. The window has no access to Node or to your secrets; every request it makes is
+  validated.
+
+## Supported tools
+
+| Tool | Chat sessions | Agent tiles | Status island | Models |
+|---|:---:|:---:|:---:|---|
+| **Claude Code** | ✓ | ✓ | Allow and deny | Claude Code's own model names |
+| **Codex** | ✓ | ✓ | Allow and deny shell commands | The list Codex reports |
+| **Gemini CLI** | ✓ | ✓ | Allow and deny shell commands ¹ | Gemini CLI's model names |
+| **OpenCode** | ✓ | ✓ | Allow, deny and answer questions | Every model OpenCode can reach |
+| **OpenAI-compatible servers** — Ollama, llama.cpp, vLLM, a company gateway | experimental | — | — | The server's list |
+
+¹ After a one-time setup under Providers, which installs a small extension with Gemini CLI's own
+installer.
+
+Each tool's path through the app was checked against the real program, driven by a local
+stand-in model. What a real account adds — its limits and the models it may use — is verified for
+Claude Code; for Codex, OpenCode and Gemini CLI it is not tested yet. A profile for the
+Antigravity CLI ships but is not verified, and the app says so.
+
+## Download
+
+Get the latest version from [Releases](https://github.com/JackyWein/AI-Workbench/releases/latest).
+
+| Platform | File | Updates |
+|---|---|---|
+| Windows | `…-windows-x64.exe` (installer) or `…-windows-portable-x64.exe` | The installer updates itself; the portable version tells you |
+| macOS | `…-macos-arm64.dmg` (Apple silicon) or `…-macos-x64.dmg` (Intel) | The app tells you, you install |
+| Linux | `…-linux-x86_64.AppImage` or `…-linux-x64.tar.gz` | The AppImage updates itself; the archive tells you |
+
+The packages are **not code signed** yet. Windows SmartScreen and macOS Gatekeeper warn on the
+first start; on macOS open the app once with right click → Open, or run
+`xattr -dr com.apple.quarantine "/Applications/AI Workbench.app"`.
+
+Install the tools you want to use (Claude Code, Codex, Gemini CLI, OpenCode) and sign in to them
+as usual; AI Workbench finds them on its own and shows what it found under **Providers**.
+
+## Build from source
+
+You need [bun](https://bun.sh) 1.3 and Node.js 22.
 
 ```bash
 bun install
-bun run dev
+bun run dev        # the app, with hot reload
+bun run verify     # lint, typecheck, tests, build and a real start of the app, twice
 ```
 
-Then: add a workspace with the button next to the title, create a session, and
-send a message. Try `/tool`, `/error` or `/slow` in a message to exercise the
-MockProvider's simulated tool calls, failures and delays.
+A built-in **Mock Provider** lets you try everything without spending any quota: type `/tool`,
+`/error` or `/slow` in a message to see simulated tool calls, failures and delays.
 
-Open **Providers** to see which command line tools were found on your machine,
-and to correct an executable path if one lives somewhere unusual.
+## Project status
 
-To check a production build the way CI does:
-
-```bash
-bun run verify
-```
+AI Workbench is young (0.0.x) and moves quickly. [`PROGRESS.md`](PROGRESS.md) lists what is
+verified — measured only from acceptance criteria that `bun run verify` actually proves — and
+what is still open. [`HANDOFF.md`](HANDOFF.md) says where things stand right now.
 
 ## Documentation
 
 | File | Contents |
 |---|---|
-| `AI_WORKBENCH.md` | The authoritative specification |
-| `CLAUDE.md` | Rules for coding agents working in this repository |
-| `ARCHITECTURE.md` | How the running system is put together |
-| `PROVIDERS.md` | The provider contract and how to add one |
-| `SECURITY.md` | Renderer isolation, IPC validation, secrets |
-| `TEAM_SYSTEM.md` | Planned autonomous team architecture (G5) |
-| `STATUS_ISLAND.md` | Planned floating companion window (G6) |
-| `DEVELOPMENT.md` | Setup, commands, layout, conventions |
-| `PROGRESS.md` | Verified progress against the specification |
-| `docs/adr/` | Architecture decision records |
-
-## Principles that shape the code
-
-- **Provider independence.** No generic service branches on a provider name.
-  The UI enables features from capabilities, and every provider normalizes its
-  output into the same event stream.
-- **The renderer is untrusted.** Context isolation, no Node integration, a
-  sandboxed renderer and a narrow IPC contract where every payload is validated.
-- **Nothing is invented.** Usage that a provider does not report is shown as
-  unavailable, and progress is derived from real state rather than estimated.
+| [`AI_WORKBENCH.md`](AI_WORKBENCH.md) | The specification |
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | How the running system is put together |
+| [`PROVIDERS.md`](PROVIDERS.md) | The provider contract, and how to add a tool |
+| [`TEAM_SYSTEM.md`](TEAM_SYSTEM.md) | How teams of agents work together |
+| [`STATUS_ISLAND.md`](STATUS_ISLAND.md) | The floating status island |
+| [`SECURITY.md`](SECURITY.md) | Renderer isolation, IPC validation, secrets |
+| [`DEVELOPMENT.md`](DEVELOPMENT.md) | Setup, commands, layout, conventions |
+| [`CLAUDE.md`](CLAUDE.md) | Rules for coding agents working in this repository |
+| [`docs/adr/`](docs/adr) | Architecture decision records |

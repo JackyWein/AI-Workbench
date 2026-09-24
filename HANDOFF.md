@@ -53,6 +53,17 @@ phases (191 checks, none failing). What changed since 0.0.4 (built from
   before them is the branch `backup/before-design-pass`; reverting the two
   commits undoes it.
 
+## README screenshots
+
+`docs/images/` holds the README's pictures: demo data (a small shop project
+in `/home/alex/projects`, a conversation, a running team, skills) written
+straight into a fresh database, the app started as that user with a clean
+environment, and each view captured over the DevTools protocol at 1440×900
+and twice the pixel density, then scaled to 2160 px wide. The island picture
+is the real island, with a stand-in for Claude Code asking for a permission,
+laid over a blurred agents view. Retake them the same way when a view
+changes; the README says they show demo data.
+
 ## How to run it
 
 ```bash
