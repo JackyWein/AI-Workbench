@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
 import { createServices, type AppServices } from "./services.js";
+import { BUILD_COMMIT, SIGNED_MAC } from "./build-info.js";
 import { checkForUpdates, getUpdateState, initUpdater } from "./updater.js";
 import { registerIpcHandlers, removeIpcHandlers } from "./ipc.js";
 import { IslandController } from "./island-controller.js";
@@ -35,7 +36,7 @@ function appVersion(): string {
 const isDevelopment = !app.isPackaged;
 
 /** How often a running app asks whether a newer version was released. */
-const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
 /** Set by `bun run verify:app`, which starts the app headlessly and exits. */
 const startupCheckOnly = process.env["AI_WORKBENCH_STARTUP_CHECK"] === "1";
@@ -76,13 +77,20 @@ async function bootstrap(): Promise<void> {
     fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
   });
 
-  // Update checks run against GitHub Releases in packaged builds only. The
-  // startup check only ever asks which version is current; downloading and
-  // installing each wait for an explicit user action in Settings.
+  // Update checks run against GitHub Releases in packaged builds only. A
+  // release counts as new by its version or, for the same version, by the
+  // commit it was built from. With automatic updates on (the default) a new
+  // one downloads in the background and installs when the app quits; off,
+  // downloading and installing each wait for the person. The startup check
+  // only ever asks which version is current.
+  const storedSettings = await services.settings.get();
   initUpdater({
     logger: services.logger.child("UPDATER"),
     publish: (event) => services?.events.publish(event),
     currentVersion: appVersion(),
+    currentCommit: BUILD_COMMIT,
+    automatic: storedSettings.autoUpdate && !startupCheckOnly,
+    signedMac: SIGNED_MAC,
   });
 
   const preloadFile = join(__dirname, "../preload/index.js");
@@ -131,8 +139,8 @@ async function bootstrap(): Promise<void> {
     // the update.* domain events, and the current state stays readable
     // through update.getStatus.
     void checkForUpdates();
-    // Still only a check: people leave the app open for days, and a new
-    // version should show up without a restart.
+    // Hourly, in the background: people leave the app open for days, and a
+    // new version should reach them without a restart.
     setInterval(() => {
       const status = getUpdateState().status;
       if (status !== "downloading" && status !== "downloaded") {

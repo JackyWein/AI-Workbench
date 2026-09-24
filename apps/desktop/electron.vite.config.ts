@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "electron-vite";
@@ -39,9 +40,32 @@ const alias = {
   "@renderer": resolve(__dirname, "src/renderer"),
 };
 
+/**
+ * The commit this build is made from: CI's own, else the checkout's. The app
+ * compares it with the commit a release names, so a version published again
+ * from a newer commit still reaches it as an update.
+ */
+function buildCommit(): string {
+  if (process.env["GITHUB_SHA"]) {
+    return process.env["GITHUB_SHA"];
+  }
+  try {
+    return execSync("git rev-parse HEAD", { cwd: root, stdio: ["ignore", "pipe", "ignore"] })
+      .toString()
+      .trim();
+  } catch {
+    return "";
+  }
+}
+
 export default defineConfig({
   main: {
     resolve: { alias },
+    define: {
+      __BUILD_COMMIT__: JSON.stringify(buildCommit()),
+      // A Mac build signed with a Developer ID can install its own updates.
+      __SIGNED_MAC__: JSON.stringify(process.platform === "darwin" && Boolean(process.env["CSC_LINK"])),
+    },
     build: {
       // Only real npm dependencies are externalized, so native modules such as
       // the SQLite client load from node_modules while workspace sources and

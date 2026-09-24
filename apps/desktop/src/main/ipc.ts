@@ -22,6 +22,7 @@ import {
   getUpdateState,
   installUpdate,
   openReleasePage,
+  setAutomaticUpdates,
 } from "./updater.js";
 
 type Handler<C extends IpcChannel> = (
@@ -579,6 +580,9 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       const settings = await services.settings.update(input);
       if (input.theme !== undefined || input.mode !== undefined) {
         island.setAppearance({ theme: settings.theme, mode: settings.mode });
+      }
+      if (input.autoUpdate !== undefined) {
+        await setAutomaticUpdates(settings.autoUpdate);
       }
       return settings;
     },

@@ -2,10 +2,18 @@ import { useEffect, useState, type JSX } from "react";
 import type { UpdateState } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
 import { useWorkbench } from "../store/workbench.js";
-import { SettingRow } from "./Controls.js";
+import { SettingRow, Switch } from "./Controls.js";
 
 interface UpdateSectionProps {
   readonly currentVersion: string | null;
+}
+
+/** What is on offer: a new version, or a new build of this one. */
+function offered(state: UpdateState): string {
+  if (state.availableVersion && state.availableVersion === state.currentVersion) {
+    return `A new build of ${state.availableVersion}${state.availableBuild ? ` (${state.availableBuild})` : ""}`;
+  }
+  return state.availableVersion ? `Version ${state.availableVersion}` : "An update";
 }
 
 function statusText(state: UpdateState): string {
@@ -15,15 +23,15 @@ function statusText(state: UpdateState): string {
     case "checking":
       return "Checking for updates…";
     case "available":
-      return state.availableVersion
-        ? `Version ${state.availableVersion} is available.`
-        : "An update is available.";
+      return `${offered(state)} is available.`;
     case "downloading":
       return state.progress === null
-        ? "Downloading…"
-        : `Downloading… ${Math.round(state.progress)}%`;
+        ? `Downloading ${offered(state).toLowerCase()}…`
+        : `Downloading ${offered(state).toLowerCase()}… ${Math.round(state.progress)}%`;
     case "downloaded":
-      return "The update is downloaded and ready to install.";
+      return state.automatic
+        ? `${offered(state)} is ready. It installs when AI Workbench quits, or restart now.`
+        : `${offered(state)} is downloaded and ready to install.`;
     case "not-available":
       return "You are up to date.";
     case "error":
@@ -42,17 +50,24 @@ const DEFAULT_STATUS: UpdateState = {
   installsItself: true,
   manualReason: null,
   releaseUrl: null,
+  currentBuild: null,
+  availableBuild: null,
+  automatic: true,
 };
 
 /**
  * Updates over GitHub Releases, as rows of the About group. The app checks
- * on its own, at start and every few hours; the download and the install
- * each wait for the person. A build that cannot replace itself says why and
- * opens the release page instead.
+ * on its own, at start and every hour. A release is new by its version or,
+ * for the same version, by the commit it was built from. With automatic
+ * updates on it downloads in the background and installs when the app
+ * quits; off, the download and the install each wait for the person. A
+ * build that cannot replace itself says why and opens the release page.
  */
 export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Element {
   const status = useWorkbench((state) => state.update) ?? DEFAULT_STATUS;
   const refreshUpdate = useWorkbench((state) => state.refreshUpdate);
+  const automatic = useWorkbench((state) => state.settings.autoUpdate);
+  const updateSettings = useWorkbench((state) => state.updateSettings);
   const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -107,7 +122,9 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Eleme
   return (
     <>
       <SettingRow
-        label={`AI Workbench ${currentVersion ?? (status.currentVersion || "")}`.trim()}
+        label={`AI Workbench ${currentVersion ?? (status.currentVersion || "")}${
+          status.currentBuild ? ` · build ${status.currentBuild}` : ""
+        }`.trim()}
         description={statusText(status)}
       >
         <button
@@ -120,9 +137,24 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Eleme
         </button>
       </SettingRow>
 
+      <SettingRow
+        label="Update automatically"
+        description={
+          status.installsItself
+            ? "New versions download in the background and install when AI Workbench quits."
+            : "This build can't replace itself; it checks in the background and says when there is a new version."
+        }
+      >
+        <Switch
+          label="Update automatically"
+          checked={automatic}
+          onChange={(autoUpdate) => void updateSettings({ autoUpdate })}
+        />
+      </SettingRow>
+
       {status.status === "available" && status.availableVersion ? (
         <SettingRow
-          label={`Version ${status.availableVersion} is available`}
+          label={`${offered(status)} is available`}
           description={
             <>
               {status.installsItself ? null : (
@@ -151,7 +183,11 @@ export function UpdateSection({ currentVersion }: UpdateSectionProps): JSX.Eleme
       {status.status === "downloaded" ? (
         <SettingRow
           label="Ready to install"
-          description="Installing restarts the app."
+          description={
+            status.automatic
+              ? "It installs by itself when AI Workbench quits. Restart now to have it at once."
+              : "Installing restarts the app."
+          }
         >
           <button type="button" className="primary-button" onClick={handleInstall}>
             Install &amp; restart

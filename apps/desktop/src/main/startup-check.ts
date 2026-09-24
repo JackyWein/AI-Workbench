@@ -1840,6 +1840,21 @@ export async function runStartupCheck(
     return true;
   });
 
+  // Updates compare the commit a release was built from with this build's,
+  // so a version published again still reaches it; the build must know its
+  // own. Automatic updates are on by default and say so.
+  await check(
+    "the build knows the commit it was made from, and updates run in the background by default",
+    `(async () => {
+       const status = await window.workbench.invoke('update.getStatus', undefined);
+       const settings = await window.workbench.invoke('settings.get', undefined);
+       const ok = /^[0-9a-f]{7}$/.test(status.currentBuild ?? '') && settings.autoUpdate === true
+         && [...document.querySelectorAll('.setting__label')].some(node => node.textContent === 'Update automatically')
+           === Boolean(document.querySelector('.theme-picker'));
+       return ok ? true : JSON.stringify({ build: status.currentBuild, autoUpdate: settings.autoUpdate });
+     })()`,
+  );
+
   await check(
     "the app's own mark is its logo",
     `(() => {

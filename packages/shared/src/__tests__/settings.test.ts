@@ -30,6 +30,12 @@ describe("settings from an earlier version", () => {
     expect(upgradeStoredSettings(current)).toEqual(current);
   });
 
+  it("reads settings stored before automatic updates existed, with them on", () => {
+    const { autoUpdate: _autoUpdate, ...rest } = defaultAppSettings;
+    expect(appSettingsSchema.parse({ ...rest, autoUpdate: undefined }).autoUpdate).toBe(true);
+    expect(appSettingsSchema.parse(rest).autoUpdate).toBe(true);
+  });
+
   it("passes anything else through for the schema to refuse", () => {
     expect(upgradeStoredSettings(null)).toBeNull();
     expect(appSettingsSchema.safeParse(upgradeStoredSettings(stored("neon"))).success).toBe(false);

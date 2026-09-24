@@ -63,12 +63,67 @@ jobs:
       - name: Test
         run: bun run test
 
+      # Signed when the project's certificates are stored as repository
+      # secrets (SIGNING.md), unsigned otherwise — the build never stalls
+      # waiting for a certificate that is not there.
       - name: Package
-        # The packages are unsigned; signing needs certificates this project
-        # does not have, and the build must not stall waiting for them.
+        shell: bash
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: bun run package
+          # macOS: a Developer ID Application certificate (.p12, base64) and
+          # the account that notarizes the app with Apple.
+          MAC_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows, either a code signing certificate (.pfx, base64)...
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          # ...or Microsoft's Azure Trusted Signing.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_SIGNING_ENDPOINT: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ vars.AZURE_SIGNING_PROFILE }}
+          AZURE_SIGNING_PUBLISHER: ${{ vars.AZURE_SIGNING_PUBLISHER }}
+        run: |
+          extra=()
+          case "${{ matrix.name }}" in
+            macos)
+              if [ -n "$MAC_CERTIFICATE" ]; then
+                export CSC_LINK="$MAC_CERTIFICATE" CSC_KEY_PASSWORD="$MAC_CERTIFICATE_PASSWORD"
+                echo "Signing for macOS; notarizing: $([ -n "$APPLE_ID" ] && echo yes || echo no)"
+              else
+                export CSC_IDENTITY_AUTO_DISCOVERY=false
+                unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+                echo "No macOS certificate: unsigned"
+              fi
+              ;;
+            windows)
+              if [ -n "$AZURE_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_ENDPOINT" ]; then
+                extra+=(
+                  "-c.win.azureSignOptions.endpoint=$AZURE_SIGNING_ENDPOINT"
+                  "-c.win.azureSignOptions.codeSigningAccountName=$AZURE_SIGNING_ACCOUNT"
+                  "-c.win.azureSignOptions.certificateProfileName=$AZURE_SIGNING_PROFILE"
+                  "-c.win.azureSignOptions.publisherName=$AZURE_SIGNING_PUBLISHER"
+                )
+                echo "Signing for Windows with Azure Trusted Signing"
+              elif [ -n "$WINDOWS_CERTIFICATE" ]; then
+                export WIN_CSC_LINK="$WINDOWS_CERTIFICATE" WIN_CSC_KEY_PASSWORD="$WINDOWS_CERTIFICATE_PASSWORD"
+                echo "Signing for Windows with a certificate"
+              else
+                export CSC_IDENTITY_AUTO_DISCOVERY=false
+                echo "No Windows certificate: unsigned"
+              fi
+              ;;
+            *)
+              export CSC_IDENTITY_AUTO_DISCOVERY=false
+              ;;
+          esac
+          bun run build
+          cd apps/desktop
+          bunx electron-builder --publish never "${extra[@]}"
 
       - name: Collect artifacts
         shell: bash
@@ -105,6 +160,16 @@ jobs:
           mkdir -p release-files
           find artifacts -type f -exec cp {} release-files/ \;
           ls -la release-files
+
+      # The update metadata names the commit it was built from: an installed
+      # build compares it with its own, so a version published again from a
+      # newer commit is still offered as an update.
+      - name: Name the commit in the update metadata
+        run: |
+          for file in release-files/latest*.yml; do
+            printf 'commit: %s\n' "$GITHUB_SHA" >> "$file"
+            echo "$file"; tail -n 2 "$file"
+          done
 
       - uses: actions/checkout@v4
         with:

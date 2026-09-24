@@ -72,6 +72,11 @@ export const appSettingsSchema = z.object({
   /** Developer Mode exposes raw normalized events and logs (spec §111). */
   developerMode: z.boolean(),
   defaultProviderId: z.string().min(1).nullable(),
+  /**
+   * New versions download in the background and install when the app quits.
+   * Defaulted so settings stored before it existed still read.
+   */
+  autoUpdate: z.boolean().default(true),
   /** The floating companion window, off until the user asks for it (spec §95). */
   statusIsland: islandPreferencesSchema,
 });
@@ -83,6 +88,7 @@ export const defaultAppSettings: AppSettings = {
   density: "comfortable",
   developerMode: false,
   defaultProviderId: null,
+  autoUpdate: true,
   statusIsland: defaultIslandPreferences,
 };
 

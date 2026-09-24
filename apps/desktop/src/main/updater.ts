@@ -7,6 +7,12 @@ export interface UpdaterDeps {
   readonly logger: Logger;
   readonly publish: (event: AppEvent) => void;
   readonly currentVersion: string;
+  /** The commit this build was made from; empty when unknown. */
+  readonly currentCommit: string;
+  /** Download in the background and install on quit (the person's setting). */
+  readonly automatic: boolean;
+  /** A Mac build signed with a Developer ID, which may install its updates. */
+  readonly signedMac?: boolean;
 }
 
 /**
@@ -23,6 +29,12 @@ interface AutoUpdaterLike {
   downloadUpdate(): Promise<unknown>;
   quitAndInstall(): void;
   on(event: string, listener: (...args: Array<unknown>) => void): unknown;
+  /**
+   * electron-updater's own gate between "checked" and "available". It says no
+   * to a release of the same version outright; it is wrapped so that one made
+   * from another commit counts as an update.
+   */
+  isUpdateAvailable?: (info: unknown) => Promise<boolean>;
 }
 
 let deps: UpdaterDeps | null = null;
@@ -37,7 +49,39 @@ let state: UpdateState = {
   installsItself: true,
   manualReason: null,
   releaseUrl: null,
+  currentBuild: null,
+  availableBuild: null,
+  automatic: true,
 };
+
+/** A commit as people read it: its first seven characters. */
+function shortCommit(commit: string | null | undefined): string | null {
+  return commit && /^[0-9a-f]{7,40}$/i.test(commit) ? commit.slice(0, 7).toLowerCase() : null;
+}
+
+/**
+ * Whether a release is an update for this build: a newer version, or the
+ * same version made from another commit — a version can be published again
+ * without a new number, and it still has to reach the people on it. A
+ * release that does not name its commit is judged by its version alone.
+ */
+export function isNewerBuild(
+  candidate: { readonly version: string; readonly commit: string | null },
+  current: { readonly version: string; readonly commit: string },
+): boolean {
+  if (isNewerVersion(candidate.version, current.version)) {
+    return true;
+  }
+  if (isNewerVersion(current.version, candidate.version)) {
+    return false;
+  }
+  const theirs = candidate.commit?.toLowerCase() ?? "";
+  const ours = current.commit.toLowerCase();
+  if (!/^[0-9a-f]{7,40}$/.test(theirs) || !/^[0-9a-f]{7,40}$/.test(ours)) {
+    return false;
+  }
+  return !(theirs.startsWith(ours) || ours.startsWith(theirs));
+}
 
 /**
  * Whether this build can replace itself. electron-updater installs over the
@@ -49,6 +93,7 @@ let state: UpdateState = {
 export function selfInstall(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
+  signedMac = false,
 ): { installsItself: boolean; reason: string | null } {
   if (platform === "win32" && env["PORTABLE_EXECUTABLE_FILE"]) {
     return {
@@ -57,7 +102,7 @@ export function selfInstall(
         "The portable version can't replace itself. Download the new one, or install the setup version once to update in place from then on.",
     };
   }
-  if (platform === "darwin") {
+  if (platform === "darwin" && !signedMac) {
     return {
       installsItself: false,
       reason:
@@ -99,7 +144,7 @@ function releasePage(version: string): string | null {
  */
 export function initUpdater(next: UpdaterDeps): void {
   deps = next;
-  const mode = selfInstall(process.platform, process.env);
+  const mode = selfInstall(process.platform, process.env, next.signedMac ?? false);
   state = {
     status: "idle",
     currentVersion: next.currentVersion,
@@ -110,6 +155,9 @@ export function initUpdater(next: UpdaterDeps): void {
     installsItself: mode.installsItself,
     manualReason: mode.reason,
     releaseUrl: null,
+    currentBuild: shortCommit(next.currentCommit),
+    availableBuild: null,
+    automatic: next.automatic,
   };
   setupPromise = null;
   if (app.isPackaged) {
@@ -119,6 +167,23 @@ export function initUpdater(next: UpdaterDeps): void {
 
 export function getUpdateState(): UpdateState {
   return { ...state };
+}
+
+/**
+ * Turns background updates on or off. On, a found update downloads by itself
+ * and installs the next time the app quits; off, both wait for the person.
+ * An update already found starts downloading when this is switched on.
+ */
+export async function setAutomaticUpdates(on: boolean): Promise<void> {
+  setState({ automatic: on });
+  const updater = setupPromise ? await setupPromise : null;
+  if (updater) {
+    updater.autoDownload = on && state.installsItself;
+    updater.autoInstallOnAppQuit = on;
+  }
+  if (on && state.status === "available" && state.installsItself) {
+    await downloadUpdate();
+  }
 }
 
 /**
@@ -198,9 +263,15 @@ async function checkReleasePage(current: UpdaterDeps): Promise<{ started: boolea
       tag_name?: unknown;
       body?: unknown;
       html_url?: unknown;
+      target_commitish?: unknown;
     };
     const version = typeof release.tag_name === "string" ? release.tag_name.replace(/^v/, "") : "";
-    if (!version || !isNewerVersion(version, state.currentVersion)) {
+    // The release job publishes each release from the commit it built.
+    const commit = typeof release.target_commitish === "string" ? release.target_commitish : null;
+    if (
+      !version ||
+      !isNewerBuild({ version, commit }, { version: state.currentVersion, commit: current.currentCommit })
+    ) {
       setState({ status: "not-available", availableVersion: null, releaseNotes: null, releaseUrl: null });
       publish({ type: "update.not-available", version: state.currentVersion });
       return { started: true };
@@ -209,6 +280,7 @@ async function checkReleasePage(current: UpdaterDeps): Promise<{ started: boolea
     setState({
       status: "available",
       availableVersion: version,
+      availableBuild: shortCommit(commit),
       releaseNotes,
       releaseUrl: typeof release.html_url === "string" ? release.html_url : releasePage(version),
       error: null,
@@ -238,9 +310,10 @@ export async function openReleasePage(): Promise<{ opened: boolean }> {
 }
 
 /**
- * Downloads the available update. Called only from the explicit download
- * action in Settings, so a metered connection never pays for a fetch the
- * user did not ask for. Never rejects.
+ * Downloads the available update: by itself when updates are automatic, else
+ * from the download action in Settings, so with them off a metered
+ * connection never pays for a fetch the person did not ask for. Never
+ * rejects.
  */
 export async function downloadUpdate(): Promise<{ started: boolean }> {
   const current = deps;
@@ -276,9 +349,9 @@ export async function downloadUpdate(): Promise<{ started: boolean }> {
 }
 
 /**
- * Installs the downloaded update and restarts. Reached only through the
- * explicit install action in Settings, after the download has finished, so
- * nothing is ever installed silently. Never rejects.
+ * Installs the downloaded update and restarts, from "Restart to update".
+ * With automatic updates on, an update not installed this way installs when
+ * the app quits. Never rejects.
  */
 export async function installUpdate(): Promise<{ installing: boolean }> {
   const current = deps;
@@ -351,16 +424,40 @@ async function setup(): Promise<AutoUpdaterLike | null> {
     if (!updater) {
       return null;
     }
-    // Nothing moves without the user: no background fetch, and a downloaded
-    // update never applies itself when the app quits.
-    updater.autoDownload = false;
-    updater.autoInstallOnAppQuit = false;
+    // In the background when the person leaves it on: a found update
+    // downloads, and installs the next time the app quits. Off, nothing moves
+    // without them.
+    updater.autoDownload = state.automatic && state.installsItself;
+    updater.autoInstallOnAppQuit = state.automatic;
+    acceptNewBuilds(updater, { version: state.currentVersion, commit: current.currentCommit });
     attachListeners(updater, current);
     return updater;
   } catch (error) {
     current.logger.warn("Update setup failed", { error: describeError(error) });
     return null;
   }
+}
+
+/**
+ * Lets a release of the same version made from another commit through
+ * electron-updater's gate, which only compares version numbers. Everything
+ * else stays its decision.
+ */
+export function acceptNewBuilds(
+  updater: Pick<AutoUpdaterLike, "isUpdateAvailable">,
+  current: { readonly version: string; readonly commit: string },
+): void {
+  const original = updater.isUpdateAvailable?.bind(updater);
+  if (!original) {
+    return;
+  }
+  updater.isUpdateAvailable = async (info: unknown): Promise<boolean> => {
+    if (await original(info)) {
+      return true;
+    }
+    const parsed = parseUpdateInfo(info);
+    return parsed !== null && parsed.version === current.version && isNewerBuild(parsed, current);
+  };
 }
 
 /**
@@ -441,8 +538,8 @@ function attachListeners(updater: AutoUpdaterLike, current: UpdaterDeps): void {
         current.logger.warn("Ignoring update without a version");
         return;
       }
-      if (!isNewerVersion(parsed.version, state.currentVersion)) {
-        // Never offer a downgrade or a reinstall of the running version as an
+      if (!isNewerBuild(parsed, { version: state.currentVersion, commit: current.currentCommit })) {
+        // Never offer a downgrade or a reinstall of the running build as an
         // "update": feed mix-ups must not move the app backwards.
         current.logger.warn("Ignoring update that is not newer", {
           available: parsed.version,
@@ -451,12 +548,13 @@ function attachListeners(updater: AutoUpdaterLike, current: UpdaterDeps): void {
         return;
       }
       setState({
-        status: "available",
+        status: state.automatic && state.installsItself ? "downloading" : "available",
         availableVersion: parsed.version,
+        availableBuild: shortCommit(parsed.commit),
         releaseNotes: parsed.releaseNotes,
         releaseUrl: releasePage(parsed.version),
         error: null,
-        progress: null,
+        progress: state.automatic && state.installsItself ? 0 : null,
       });
       publish({
         type: "update.available",
@@ -513,6 +611,7 @@ function attachListeners(updater: AutoUpdaterLike, current: UpdaterDeps): void {
 
 function parseUpdateInfo(value: unknown): {
   version: string;
+  commit: string | null;
   releaseNotes: string | null;
 } | null {
   if (typeof value !== "object" || value === null) {
@@ -523,7 +622,9 @@ function parseUpdateInfo(value: unknown): {
   if (typeof version !== "string" || version.length === 0) {
     return null;
   }
-  return { version, releaseNotes: normalizeReleaseNotes(record["releaseNotes"]) };
+  // The release job writes the commit it built into latest*.yml.
+  const commit = typeof record["commit"] === "string" ? record["commit"] : null;
+  return { version, commit, releaseNotes: normalizeReleaseNotes(record["releaseNotes"]) };
 }
 
 /**

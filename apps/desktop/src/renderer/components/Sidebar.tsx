@@ -256,7 +256,11 @@ export function Sidebar({
           >
             <ArrowUpCircle size={14} strokeWidth={1.75} aria-hidden="true" />
             <span className="row__text">
-              {update.status === "downloaded" ? "Restart to update" : `Update ${update.availableVersion}`}
+              {update.status === "downloaded"
+                ? "Restart to update"
+                : update.availableVersion === update.currentVersion
+                  ? `New build of ${update.availableVersion}`
+                  : `Update ${update.availableVersion}`}
             </span>
           </button>
         ) : null}

@@ -35,5 +35,14 @@ export const updateStateSchema = z.object({
   manualReason: z.string().nullable().default(null),
   /** The release page of the available version, when there is one. */
   releaseUrl: z.string().url().nullable().default(null),
+  /**
+   * The commit this build was made from, and the one the available release
+   * was made from. A release of the same version from another commit is an
+   * update too: a version can be published again without a new number.
+   */
+  currentBuild: z.string().nullable().default(null),
+  availableBuild: z.string().nullable().default(null),
+  /** Whether updates download in the background and install on quit. */
+  automatic: z.boolean().default(true),
 });
 export type UpdateState = z.infer<typeof updateStateSchema>;
