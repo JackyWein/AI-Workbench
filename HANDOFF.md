@@ -8,11 +8,44 @@ you. The long day-by-day history that used to live here is in git
 Everything is on `claude/repo-setup-instructions-8tgcbw`. The design rollout
 branch `design/approved-rollout` is merged into it and can be deleted.
 
-## Where things stand (2026-09-24, release 0.0.6)
+## Where things stand (2026-09-24, release 0.0.7)
 
-`bun run verify` passes end to end: lockfile, lint, typecheck, 882
+`bun run verify` passes end to end: lockfile, lint, typecheck, 942
 tests (20 real-tool tests skipped without their tools), the build and both
-startup phases (200 checks, none failing).
+startup phases (214 checks, none failing).
+
+New in 0.0.7, each verified as recorded in `PROGRESS.md`:
+
+- **Dialogs read from the screen.** Every terminal keeps a display-less
+  xterm.js screen in `TerminalManager` (`packages/terminal/src/screen.ts`);
+  `detectPrompt` (`prompt.ts`) finds a dialog at its foot, and
+  `AgentTerminalService` offers it as the tile's attention when the tool's
+  own channel (hooks, OpenCode's server) reported nothing. Answers go
+  through `TerminalManager.choose`: arrows until the marker is on the chosen
+  option, then Enter. This is the route for Antigravity (no hooks at all)
+  and for any tool whose hooks do not run on a machine; the person reported
+  that nothing reached the island on their Windows machine, and why the
+  hooks did not fire there is still unknown.
+- **Team turns.** A new `team_turns` table (migration `0009`) keeps each
+  member's output and steps; `TeamService.beginTurn/recordTurnOutput/
+  recordTurnStep/endTurn`, written at most every 2 s while running. The
+  team timeline shows them (`TurnBody` in `TeamSessionView.tsx`), the
+  island's team widget reads the running turn.
+- **Turn time limits.** Streaming CLI turns end on silence
+  (`idleTimeoutMs`, profile `timeoutMs` now 15 min of silence), not after a
+  fixed ten minutes; `KEEPALIVE_MS` in the CLI adapter reports "working"
+  while a tool writes output that parses to nothing. New runs replace the
+  old untouched defaults (`upgradeRunLimits`).
+- **Team editor** (`TeamEditor.tsx`, roles and templates in
+  `renderer/lib/team-roles.ts`); a member's own instructions live in
+  `agent.settings.instructions` and reach its prompt as "HOW YOU WORK".
+- **Update question**: `deferInstall`, `update.defer`, the `appUpdate`
+  island widget, `UpdatePrompt.tsx`; `quitAndInstall(true, true)`.
+- **Laya** (the person's decision model) is to be bundled in the app once
+  their fine-tune exists, not reached over an API; nothing of it is in the
+  code yet. What bundling needs is in the conversation of 2026-09-24:
+  an ONNX export of the fine-tuned checkpoint with its decision head, its
+  tokenizer and the exact input format, run with `onnxruntime-node`.
 
 0.0.6 was first published from `0420668` with one mode per theme and
 replaced the same day, at the person's request, by a build of this state
@@ -54,7 +87,7 @@ Also in 0.0.6 over 0.0.5, each verified by tests and the startup check:
   the island's text on a light system theme, and a stored skill or plugin
   that no longer parses no longer stopping the start.
 
-Since the re-published 0.0.6 (not released yet):
+In 0.0.7 as well (built before the items above):
 
 - **Updates by commit, in the background.** Each build knows the commit it
   was made from (`BUILD_COMMIT`, `apps/desktop/src/main/build-info.ts`, set

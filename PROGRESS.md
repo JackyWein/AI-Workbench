@@ -24,15 +24,48 @@ Weighted contribution = weight x completion.
 ## Current focus
 
 **G7 — UX, security, reliability and performance.** As of 2026-09-24
-(release 0.0.6) `bun run verify` passes end to end: lockfile, lint,
-typecheck, 882 tests, the build and both startup phases
-(200 checks, none failing). What remains in G6 is the tray,
+(release 0.0.7) `bun run verify` passes end to end: lockfile, lint,
+typecheck, 942 tests, the build and both startup phases
+(214 checks, none failing). What remains in G6 is the tray,
 multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
 real providers collaborating. Antigravity (`agy`) could not be installed or
 read about here and stays unverified. No criterion was ticked for the 0.0.5
-or 0.0.6 work below: it deepens criteria already ticked or is a judgement
+, 0.0.6 or 0.0.7 work below: it deepens criteria already ticked or is a judgement
 (G7 "dark mode polished", "visual hierarchy follows Quiet UI principles")
 that stays the person's.
+
+### Release 0.0.7 (2026-09-24)
+
+Verified here by tests and the startup check:
+- A dialog on a terminal's screen reaches the island. The detector reads
+  Antigravity's, Claude Code's, Codex's and Gemini CLI's dialogs (drawn
+  through a display-less xterm.js, wrapped options included) and refuses a
+  numbered list without a marker, counting that skips, and a dialog that
+  scrolled away (unit tests). A real program in a real pty is read and
+  answered by its own arrow keys, never with Enter on a wrong option (test
+  that runs on Linux here and on Windows and macOS in CI). In the built
+  app, a stand-in for Antigravity with no hooks shows its dialog as waiting,
+  the island offers its three options, and the answer reaches the tool as
+  option 2 (startup check).
+- Team turns are no longer cut off while the tool reports: a turn that keeps
+  writing outlives the silence limit, one that goes quiet is stopped
+  (process tests); the old defaults are replaced for new runs (unit test).
+- Every member's turn is kept with its output, steps and task, survives a
+  restart through SQLite, and the island's team row names the member and
+  its current task and step (unit and core tests).
+- The team editor creates a team from a template with each member's role
+  and instructions, and a member's instructions reach only its own prompt
+  (startup check, unit test).
+- The update question (Later / Restart now) shows in the window and on the
+  island, and Later in one place answers both; Restart now installs silently
+  and starts the app again (unit test against the updater's flow with a
+  stand-in electron-updater; startup check with a stand-in download).
+- The model picker stays inside the window, scrolls and opens only the
+  session's tool; island shadows fit the island window; Swiss keeps square
+  corners when opened (startup check, CSS test).
+Not verified: the real Antigravity, and real Codex, OpenCode and Gemini
+CLI accounts on the person's Windows machine; a real update installed from
+one published release to the next; a real multi-hour team run.
 
 ### Updates by commit and in the background; signing-ready (2026-09-24)
 

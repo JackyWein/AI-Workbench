@@ -17,7 +17,7 @@
     },
     "apps/desktop": {
       "name": "@ai-workbench/desktop",
-      "version": "0.0.6",
+      "version": "0.0.7",
       "dependencies": {
         "@libsql/client": "^0.15.0",
         "drizzle-orm": "^0.45.0",

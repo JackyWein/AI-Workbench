@@ -50,11 +50,46 @@ cycling steps through the entries that currently have something to say.
 ## Widgets
 
 Built in (`packages/status/src/widgets.ts`), in tie-break order: Needs
-Attention, Errors, Connection Health, Completed Work, Team Progress, Active
-Agents, Provider Usage — plus Idle, shown when nothing has anything to report.
+Attention, Agent Question, Errors, Connection Health, Update Ready, Completed
+Work, Team Progress, Active Agents, Provider Usage — plus Idle, shown when
+nothing has anything to report. Team Progress names who works on what now,
+from each member's running turn and its last step, not the run's goal.
 Each widget builds at most one entry or stays silent, and a finished run stays
 news for 5 minutes before the island settles back. Plugins can register more
 through `StatusAttentionService.register()`.
+
+### Where a waiting terminal comes from
+
+A terminal agent that waits on the person reaches the island in one of two
+ways, the first that applies:
+
+1. **The tool's own channel** — its hooks (Claude Code, Codex, Gemini CLI)
+   or its server (OpenCode), set up per run. These carry the tool's name for
+   what it wants to do and take Allow and Deny.
+2. **Its screen.** Every terminal's output also runs through a display-less
+   xterm.js in the main process (`packages/terminal/src/screen.ts`), so the
+   application sees exactly what the person sees. Once an agent tile's
+   output has been quiet for 300 ms, its screen is read for a dialog
+   (`detectPrompt` in `packages/terminal/src/prompt.ts`): numbered options
+   counting from 1 with exactly one marked (`>`, `❯`, `›`, `●` …), at the
+   foot of the screen, under a question or over a picking hint. That is how
+   a tool without hooks (Antigravity), or one whose hooks do not run on a
+   machine, still reaches the island — with its question, the command it is
+   about and its own options. An answer is the dialog's own keys:
+   `TerminalManager.choose` presses the arrow keys (in the mode the program
+   asked for) until the screen shows the chosen option marked, and only then
+   Enter; when the dialog changed or the marker does not follow, nothing is
+   chosen and the island opens the tile instead. A real-pty test
+   (`packages/terminal/src/__tests__/dialog.test.ts`) runs on Linux, macOS
+   and Windows (ConPTY) in CI; the startup check drives Antigravity's own
+   dialog through a stand-in with no hooks.
+
+### The app's own update
+
+A downloaded update is an entry of its own (`appUpdate`, under the Needs
+Attention switch, priority between a finished run and a broken connection):
+"Later" or "Restart now", answered on the island or in the window — an
+answer in one place is the answer in both (`update.deferred`).
 
 ## Honesty
 
