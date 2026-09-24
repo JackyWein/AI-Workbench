@@ -1248,6 +1248,49 @@ export async function runStartupCheck(
     40_000,
   );
 
+  // A team made in the editor from a template: its members arrive with the
+  // template's roles and each with instructions of its own, the lead first.
+  await check(
+    "a team made from a template in the editor keeps each member's role and instructions",
+    `(async () => {
+       const api = window.workbench;
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(node => node.textContent?.includes('Teams'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 500));
+       [...document.querySelectorAll('button')]
+         .find(node => node.textContent?.trim().endsWith('New team'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       const template = [...document.querySelectorAll('.team-template')]
+         .find(node => node.textContent?.includes('Bug fixing'));
+       if (!template) return 'no templates';
+       template.click();
+       await new Promise(resolve => setTimeout(resolve, 200));
+       const cards = document.querySelectorAll('.member-card');
+       const chips = document.querySelectorAll('.member-card .tool-chip .logo').length;
+       const name = document.querySelector('.team-editor__name');
+       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+       setter.call(name, 'Check template team');
+       name.dispatchEvent(new Event('input', { bubbles: true }));
+       await new Promise(resolve => setTimeout(resolve, 100));
+       [...document.querySelectorAll('.team-editor__actions button')]
+         .find(node => node.textContent?.trim() === 'Create team')?.click();
+       const deadline = Date.now() + 5000;
+       let team = null;
+       while (Date.now() < deadline && !team) {
+         await new Promise(resolve => setTimeout(resolve, 200));
+         team = (await api.invoke('team.list', {})).find(entry => entry.name === 'Check template team') ?? null;
+       }
+       if (!team) return 'the team was not created';
+       const roles = team.agents.map(agent => agent.displayName).join('|');
+       const instructed = team.agents.every(agent =>
+         typeof agent.settings.instructions === 'string' && agent.settings.instructions.length > 80);
+       const lead = team.agents.find(agent => agent.id === team.leadAgentId)?.displayName;
+       await api.invoke('team.delete', { teamId: team.id });
+       return (cards.length === 3 && chips >= 3 && roles === 'Lead|Debugger|Tester' && instructed && lead === 'Lead')
+         || JSON.stringify({ cards: cards.length, chips, roles, instructed, lead });
+     })()`,
+  );
+
   // --- status island: widgets, priority, deep links ---------------------------
 
   await check(

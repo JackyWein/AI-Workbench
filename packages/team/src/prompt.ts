@@ -1,4 +1,4 @@
-import type { AgentDefinition, TeamMessage, TeamTask } from "@ai-workbench/shared";
+import { agentInstructions, type AgentDefinition, type TeamMessage, type TeamTask } from "@ai-workbench/shared";
 import { TEAM_PROTOCOL_INSTRUCTIONS } from "./protocol.js";
 import type { TeamService } from "./service.js";
 
@@ -25,6 +25,11 @@ export function buildAgentPrompt(input: {
     `YOU\n${agent.id} — ${agent.displayName}${agent.role ? `\nRole: ${agent.role}` : ""}` +
       `\nYou are ${isLead ? "the lead agent" : "a team member"}.`,
   );
+  // How this member works in its role, as the person set it for the team.
+  const own = agentInstructions(agent);
+  if (own) {
+    sections.push(`HOW YOU WORK\n${own}`);
+  }
   // Members know who leads, so a question can go to a mate that is actually
   // there instead of interrupting the lead by default.
   const leadId = service.team.leadAgentId;

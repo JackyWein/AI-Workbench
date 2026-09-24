@@ -25,6 +25,18 @@ export const agentDefinitionSchema = z.object({
 export type AgentDefinition = z.infer<typeof agentDefinitionSchema>;
 export type AgentDefinitionInput = z.input<typeof agentDefinitionSchema>;
 
+/** Characters of a member's own instructions that reach its prompt. */
+export const AGENT_INSTRUCTIONS_LIMIT = 8_000;
+
+/**
+ * A member's own instructions — how it works in its role, e.g. a reviewer's
+ * checklist — kept in its settings. Empty when it has none.
+ */
+export function agentInstructions(agent: Pick<AgentDefinition, "settings">): string {
+  const value = agent.settings["instructions"];
+  return typeof value === "string" ? value.trim().slice(0, AGENT_INSTRUCTIONS_LIMIT) : "";
+}
+
 /**
  * Bounds on an autonomous run (spec §51). Autonomy without limits is how a
  * team burns an account overnight, so every run carries them.

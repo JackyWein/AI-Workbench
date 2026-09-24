@@ -11,6 +11,7 @@ import { InMemoryTeamRunStore } from "../store.js";
 import { TeamLimitError, TeamRuleError, TeamService } from "../service.js";
 import { TeamOrchestrator } from "../orchestrator.js";
 import { parseTeamActions } from "../protocol.js";
+import { buildAgentPrompt } from "../prompt.js";
 import { hasStalled, wouldCycle } from "../task-graph.js";
 import { wouldPingPong } from "../limits.js";
 import { newRunId, newTeamId } from "../ids.js";
@@ -223,6 +224,24 @@ describe("mailbox, decisions and artifacts", () => {
     const state = service.getState();
     expect(state.decisions[0]).toContain("Use SQLite");
     expect(state.artifacts[0]).toContain("notes.md");
+  });
+});
+
+describe("a member's own instructions", () => {
+  it("reach that member's prompt, and only that member's", () => {
+    const reviewer = {
+      ...agent("reviewer", "Reviewer"),
+      role: "reviews changes",
+      settings: { instructions: "Report findings ordered by severity." },
+    };
+    const { service } = boot([agent("lead", "Lead"), reviewer]);
+    const own = buildAgentPrompt({ service, agent: reviewer, isLead: false, task: null, inbox: [] });
+    expect(own).toContain("HOW YOU WORK\nReport findings ordered by severity.");
+    expect(own).toContain("Role: reviews changes");
+    const lead = buildAgentPrompt({ service, agent: agent("lead", "Lead"), isLead: true, task: null, inbox: [] });
+    expect(lead).not.toContain("Report findings ordered by severity.");
+    // The rest of the team sees the short role, not the instructions.
+    expect(lead).toContain("Reviewer — reviews changes");
   });
 });
 

@@ -280,6 +280,8 @@ interface WorkbenchState {
       providerId: string;
       modelId?: string;
       role: string;
+      /** The member's own settings, e.g. its instructions. */
+      settings?: Record<string, unknown>;
     }>;
   }): Promise<void>;
   deleteTeam(teamId: string): Promise<void>;
@@ -1153,7 +1155,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
           skills: [],
           plugins: [],
           mcpServers: [],
-          settings: {},
+          settings: agent.settings ?? {},
         })),
       });
       await get().refreshTeams();
