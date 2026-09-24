@@ -446,6 +446,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       });
 
       void get().refreshUpdate();
+      // A session bound to a team shows that team; without the teams loaded
+      // it fell back to an empty conversation after every restart.
+      await get().refreshTeams();
       const firstWorkspace = workspaces[0];
       if (firstWorkspace) {
         await get().selectWorkspace(firstWorkspace.id);

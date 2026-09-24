@@ -408,6 +408,24 @@ export async function runStartupCheck(
   });
 
   if (mode === "resume") {
+    // A session that works with a team opens as that team after a restart,
+    // before anything else has asked for the teams. It used to open as an
+    // empty conversation until the Teams screen or the model menu was opened.
+    await check(
+      "a team session is still a team session after a restart",
+      `(async () => {
+         const row = [...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Team space'));
+         if (!row) return 'no sidebar row for the team workspace';
+         row.click();
+         const shown = await ${waitFor("document.querySelector('.team-run__goal, .team-intro')", 4000)};
+         [...document.querySelectorAll('.sidebar__scroll .row')]
+           .find(node => node.textContent?.includes('Check workspace'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 400));
+         return shown ? true : 'the session opened without its team';
+       })()`,
+    );
+
     // The create phase left the island enabled at a custom position, with
     // finished runs and unanswered questions behind it.
     await check(
