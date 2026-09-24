@@ -361,6 +361,23 @@ export class McpManager {
   }
 
   /** Tools of the servers a session is allowed to use (spec §38). */
+  /**
+   * What each connected server says about how to use it (the MCP
+   * `instructions` of its initialize answer), for the servers a session may
+   * use. Handed on so an agent reading the tools through the application
+   * gets the same guidance it would get connecting to the server itself.
+   */
+  instructionsFor(serverIds: readonly string[]): Array<{ serverId: string; instructions: string }> {
+    const found: Array<{ serverId: string; instructions: string }> = [];
+    for (const id of serverIds) {
+      const text = this.#connections.get(id)?.client.getInstructions()?.trim();
+      if (text) {
+        found.push({ serverId: id, instructions: text.slice(0, 4000) });
+      }
+    }
+    return found;
+  }
+
   toolsForSession(enabledServerIds: readonly string[]): Array<McpTool & { serverId: string }> {
     const tools: Array<McpTool & { serverId: string }> = [];
     for (const id of enabledServerIds) {

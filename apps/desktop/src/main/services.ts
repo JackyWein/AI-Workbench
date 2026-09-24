@@ -20,7 +20,7 @@ import {
   createLogger,
 } from "@ai-workbench/core";
 import { CredentialManager } from "@ai-workbench/credentials";
-import { McpGateway, McpManager, McpOAuth } from "@ai-workbench/mcp";
+import { McpGateway, McpManager, McpOAuth, addMemory } from "@ai-workbench/mcp";
 import { ClaudeSkillImporter, MarkdownSkillImporter } from "@ai-workbench/skills";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import {
@@ -299,6 +299,7 @@ async function createServicesInner(
     // connections to the servers.
     tools: {
       list: (serverIds) => mcpManager.toolsForSession(serverIds),
+      instructions: (serverIds) => mcpManager.instructionsFor(serverIds),
       call: async (serverId, name, args) => {
         const result = await mcpManager.callTool(serverId, name, args);
         return result.ok
@@ -379,6 +380,14 @@ async function createServicesInner(
     providers,
     mcp,
     attachmentsDirectory: join(options.userDataPath, "attachments"),
+    // A finished goal lands in the shared vault when one is set up, so the
+    // next session or team finds it with memory_search.
+    recordMemory: async (note) => {
+      const server = await mcp.get("obsidian-memory");
+      if (server?.enabled && server.cwd) {
+        await addMemory(server.cwd, note.title, note.content);
+      }
+    },
   });
 
   const settings = new SettingsService({ db: database.db, logger });

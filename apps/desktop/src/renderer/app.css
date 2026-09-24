@@ -1132,7 +1132,12 @@ span.pill {
 }
 
 .chat__inner {
-  max-width: 680px;
+  /*
+   * The conversation grows with the window instead of staying a narrow
+   * column in a wide one: comfortable at 680px, up to a width where lines
+   * and code still read well.
+   */
+  max-width: var(--conversation-width);
   margin: 0 auto;
   padding: var(--space-6) 20px var(--space-4);
   display: flex;
@@ -1660,7 +1665,7 @@ input[type="checkbox"].mini-switch:disabled {
 }
 
 .composer__inner {
-  max-width: 680px;
+  max-width: var(--conversation-width);
   margin: 0 auto;
   display: flex;
   flex-direction: column;

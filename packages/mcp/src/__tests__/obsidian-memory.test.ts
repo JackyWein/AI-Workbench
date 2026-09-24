@@ -45,6 +45,10 @@ describe("shared Obsidian Markdown memory", () => {
       expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
         "memory_search", "memory_read", "memory_add",
       ]);
+      // Agents are told when to use the memory, not only that it exists.
+      const instructions = client.getInstructions() ?? "";
+      expect(instructions).toContain("Before non-trivial work, call memory_search");
+      expect(instructions).toContain("call memory_add");
       const added = await client.callTool({ name: "memory_add", arguments: { title: "Team memory", content: "Remember the project boundary." } });
       expect(added.isError).not.toBe(true);
       const found = await client.callTool({ name: "memory_search", arguments: { query: "boundary" } });

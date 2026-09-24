@@ -135,6 +135,12 @@ export interface TeamManagerOptions {
    */
   readonly attachmentsDirectory?: string;
   /**
+   * Keeps a note of every goal a team finishes — what it was, what came out,
+   * what was decided — in the shared long-term memory, so the next session or
+   * team starts from it instead of from nothing. Without one, nothing is kept.
+   */
+  readonly recordMemory?: (note: { readonly title: string; readonly content: string }) => Promise<void>;
+  /**
    * How a provider spawns its scoped team MCP server. Without it no team
    * server is handed out: there is no default, because the stdio bridge
    * serving a live run does not exist yet — the scope in the server's
@@ -164,6 +170,7 @@ export class TeamManager {
   readonly #mcp: McpService | undefined;
   readonly #teamMcp: TeamMcpStdio | undefined;
   readonly #attachmentsDirectory: string | undefined;
+  readonly #recordMemory: TeamManagerOptions["recordMemory"];
   readonly #toolBridge = new ToolBridge();
   readonly #active = new Map<string, ActiveRun>();
 
@@ -176,6 +183,7 @@ export class TeamManager {
     this.#mcp = options.mcp;
     this.#teamMcp = options.teamMcp;
     this.#attachmentsDirectory = options.attachmentsDirectory;
+    this.#recordMemory = options.recordMemory;
   }
 
   // --- teams ---------------------------------------------------------------
@@ -957,12 +965,68 @@ export class TeamManager {
         });
         return service.stop("failed", "tooManyFailures");
       })
+      .then((run) => {
+        if (run.status === "completed" && run.stopReason === "goalFinished") {
+          void this.#rememberGoal(service);
+        }
+        return run;
+      })
       .finally(() => {
         void orchestrator.dispose();
         this.#active.delete(snapshot.run.id);
       });
 
     this.#active.set(snapshot.run.id, { service, orchestrator, finished });
+  }
+
+  /**
+   * Writes the finished goal to the shared memory. Best effort: a vault that
+   * is gone or full never fails the run it describes.
+   */
+  async #rememberGoal(service: TeamService): Promise<void> {
+    if (!this.#recordMemory) {
+      return;
+    }
+    try {
+      const snapshot = service.snapshot();
+      const run = snapshot.run;
+      const team = service.team;
+      const members = team.agents.map((agent) => {
+        const lead = agent.id === team.leadAgentId ? ", lead" : "";
+        const model = agent.modelId ? ` · ${agent.modelId}` : "";
+        return `- ${agent.displayName} (${agent.providerId}${model}${lead})${agent.role ? `: ${agent.role}` : ""}`;
+      });
+      const decisions = snapshot.decisions
+        .filter((decision) => !decision.title.startsWith("Finished: "))
+        .map((decision) => `- ${decision.title}: ${decision.decision.slice(0, 400)}`);
+      const done = snapshot.tasks.filter((task) => task.status === "completed");
+      const lines = [
+        `Team "${team.name}" finished a goal on ${new Date().toISOString().slice(0, 10)}.`,
+        `Working folder: ${team.agents[0]?.workingDirectory ?? "unknown"}`,
+        "",
+        "## Goal",
+        run.goal.slice(0, 2000),
+        "",
+        "## Outcome",
+        (run.outcome ?? "No outcome was written.").slice(0, 4000),
+        "",
+        `## Tasks (${done.length} of ${snapshot.tasks.length} done)`,
+        ...done.slice(0, 30).map((task) => `- ${task.title}`),
+        ...(decisions.length > 0 ? ["", "## Decisions", ...decisions.slice(0, 20)] : []),
+        "",
+        "## Team",
+        ...members,
+      ];
+      await this.#recordMemory({
+        title: `Team goal: ${run.goal.replace(/\s+/g, " ").slice(0, 80)}`,
+        content: lines.join("\n"),
+      });
+    } catch (error) {
+      this.#logger.warn("Finished goal could not be kept in memory", {
+        runId: service.run.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   #publish(event: TeamEvent): void {

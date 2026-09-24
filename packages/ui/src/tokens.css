@@ -353,6 +353,8 @@
   --context-width: 248px;
   --header-height: 46px;
   --tile-header-height: 34px;
+  /* Chat and composer width: follows the window, within readable bounds. */
+  --conversation-width: clamp(680px, 58vw, 1120px);
   --composer-max-height: 220px;
 }
 

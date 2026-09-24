@@ -30,6 +30,8 @@ interface TestApp {
   readonly workspaces: WorkspaceManager;
   readonly teams: TeamManager;
   readonly teamEvents: TeamEvent[];
+  /** Notes the team manager kept in the shared memory. */
+  readonly memoryNotes: Array<{ title: string; content: string }>;
   dispose(): Promise<void>;
 }
 
@@ -54,7 +56,16 @@ async function bootApp(directory: string): Promise<TestApp> {
   await providers.register(mock);
 
   const workspaces = new WorkspaceManager({ db: database.db, events, logger });
-  const teams = new TeamManager({ db: database.db, events, logger, providers });
+  const memoryNotes: Array<{ title: string; content: string }> = [];
+  const teams = new TeamManager({
+    db: database.db,
+    events,
+    logger,
+    providers,
+    recordMemory: async (note) => {
+      memoryNotes.push({ ...note });
+    },
+  });
 
   return {
     events,
@@ -63,6 +74,7 @@ async function bootApp(directory: string): Promise<TestApp> {
     workspaces,
     teams,
     teamEvents,
+    memoryNotes,
     dispose: async () => {
       await teams.shutdown();
       await providers.dispose();
@@ -372,6 +384,21 @@ describe("team runs in the application", () => {
     expect(stored.turns.length).toBeGreaterThanOrEqual(stored.tasks.length);
     expect(stored.turns.every((turn) => turn.status !== "running" && turn.output.length > 0)).toBe(true);
     expect(stored.turns.every((turn) => turn.startedAt instanceof Date)).toBe(true);
+  });
+
+  it("keeps a finished goal in the shared memory", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Remember what we did" });
+    await settle(app, run.id);
+    // The note is written right after the run ends.
+    for (let attempt = 0; attempt < 50 && app.memoryNotes.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect((await app.teams.getSnapshot(run.id)).run.stopReason).toBe("goalFinished");
+    expect(app.memoryNotes).toHaveLength(1);
+    expect(app.memoryNotes[0]?.title).toBe("Team goal: Remember what we did");
+    expect(app.memoryNotes[0]?.content).toContain("## Outcome");
+    expect(app.memoryNotes[0]?.content).toContain("Builder (mock");
   });
 
   it("settles a run a crash left going, so it can be resumed", async () => {

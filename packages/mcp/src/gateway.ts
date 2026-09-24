@@ -21,6 +21,8 @@ export interface McpGatewayRoute {
 export interface McpGatewayTools {
   list(serverIds: readonly string[]): Array<McpTool & { serverId: string }>;
   call(serverId: string, name: string, args: Record<string, unknown>): Promise<unknown>;
+  /** The servers' own usage instructions, passed on through the combined endpoint. */
+  instructions?(serverIds: readonly string[]): Array<{ serverId: string; instructions: string }>;
 }
 
 export interface McpGatewayOptions {
@@ -258,9 +260,15 @@ export class McpGateway {
       return;
     }
     const body = await readBody(request);
+    // The combined endpoint stands in for several servers, so it carries
+    // their instructions too — without them an agent sees a server's tools
+    // but not when it is meant to use them.
+    const instructions = (tools.instructions?.(serverIds) ?? [])
+      .map((entry) => `Tools named ${entry.serverId}__*: ${entry.instructions}`)
+      .join(" | ");
     const server = new McpProtocolServer(
       { name: "ai-workbench", version: "1.0.0" },
-      { capabilities: { tools: {} } },
+      { capabilities: { tools: {} }, ...(instructions ? { instructions } : {}) },
     );
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
       tools: tools.list(serverIds).map((tool) => ({

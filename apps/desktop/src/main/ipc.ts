@@ -13,6 +13,7 @@ import {
   type IpcHandlerInput,
   type DiscoveredSkill,
   type IpcOutput,
+  type Theme,
 } from "@ai-workbench/shared";
 import { draftSkill, inspectAttachments, removeWorkspace } from "@ai-workbench/core";
 import { importSkillFile, importSkillFolder } from "@ai-workbench/skills";
@@ -44,6 +45,8 @@ export interface RegisterIpcOptions {
   readonly island: IslandController;
   /** Keeps what the interface reports and knows how the last run ended. */
   readonly crashGuard: CrashGuard;
+  /** Repaints the app icon when the theme changes. */
+  readonly onThemeChanged?: (theme: Theme) => void;
 }
 
 /** Subscriptions that push main-process events to the renderer. */
@@ -722,6 +725,9 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       const settings = await services.settings.update(input);
       if (input.theme !== undefined || input.mode !== undefined) {
         island.setAppearance({ theme: settings.theme, mode: settings.mode });
+      }
+      if (input.theme !== undefined) {
+        options.onThemeChanged?.(settings.theme);
       }
       if (input.autoUpdate !== undefined) {
         await setAutomaticUpdates(settings.autoUpdate);

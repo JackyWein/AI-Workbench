@@ -145,6 +145,7 @@ export class IslandController {
   /** Repaints the island in the theme and mode the app was just set to. */
   setAppearance(appearance: Appearance): void {
     this.#window.setAppearance(appearance);
+    this.#tray.setTheme(appearance.theme);
   }
 
   get state(): IslandState {
@@ -191,6 +192,7 @@ export class IslandController {
 
     const settings = await this.#services.settings.get();
     this.#window.setAppearance({ theme: settings.theme, mode: settings.mode });
+    this.#tray.setTheme(settings.theme);
     // The window always learns the preferences, so showing it later works
     // even when it did not start visible with the app.
     this.#window.configure(settings.statusIsland);

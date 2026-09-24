@@ -3,8 +3,10 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
+import type { Theme } from "@ai-workbench/shared";
 import { createServices, type AppServices } from "./services.js";
 import { CrashGuard } from "./crash-guard.js";
+import { appIconImage } from "./app-icon.js";
 import { BUILD_COMMIT, SIGNED_MAC } from "./build-info.js";
 import {
   checkForUpdates,
@@ -55,6 +57,33 @@ const startupCheckOnly = process.env["AI_WORKBENCH_STARTUP_CHECK"] === "1";
  */
 const crashGuard = new CrashGuard();
 crashGuard.installProcessHandlers();
+
+/** The theme the app icon is drawn in; set from settings, then on every change. */
+let iconTheme: Theme = "quiet";
+
+/**
+ * Draws the app icon in the theme's colours and puts it on the window, and so
+ * on the taskbar, and on the macOS dock. The installed shortcut keeps the
+ * packaged icon: that one belongs to the file, not to the running app.
+ */
+function applyAppIcon(theme: Theme): void {
+  iconTheme = theme;
+  try {
+    const image = appIconImage(theme);
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.setIcon(image);
+      }
+    }
+    if (process.platform === "darwin") {
+      app.dock?.setIcon(image);
+    }
+  } catch (error) {
+    services?.logger.warn("The app icon could not be drawn", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 let services: AppServices | null = null;
 let island: IslandController | null = null;
@@ -160,7 +189,9 @@ async function bootstrap(): Promise<void> {
     userDataPath,
     island,
     crashGuard,
+    onThemeChanged: (theme) => applyAppIcon(theme),
   });
+  applyAppIcon(storedSettings.theme);
 
   // The island starts in check mode too: `verify:app` proves the companion
   // window, the tray and the attention service in the running application,
@@ -235,6 +266,14 @@ function openAppWindow(): BrowserWindow {
   });
   mainWindow = window;
   crashGuard.watchWindow(window);
+  // A window made later (from the tray, on macOS activate) wears the theme too.
+  if (services) {
+    try {
+      window.setIcon(appIconImage(iconTheme));
+    } catch {
+      // Drawing failed once already at startup; the default icon stays.
+    }
+  }
   // Closing the main window may leave the runtime going (spec §104).
   attachMainWindowCloseBehavior(window);
   attachMainWindowFocusTracking(window);

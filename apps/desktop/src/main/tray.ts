@@ -1,11 +1,6 @@
-import {
-  Menu,
-  Tray,
-  nativeImage,
-  type BrowserWindow,
-  type MenuItemConstructorOptions,
-} from "electron";
-import type { Logger } from "@ai-workbench/shared";
+import { Menu, Tray, type BrowserWindow, type MenuItemConstructorOptions } from "electron";
+import type { Logger, Theme } from "@ai-workbench/shared";
+import { trayIconImage } from "./app-icon.js";
 
 /**
  * The system tray (spec §104).
@@ -34,6 +29,8 @@ export class StatusTray {
   readonly #logger: Logger;
   readonly #options: StatusTrayOptions;
   #tray: Tray | null = null;
+  /** The mark follows the theme the app is set to, as the window icon does. */
+  #theme: Theme = "quiet";
 
   constructor(options: StatusTrayOptions) {
     this.#options = options;
@@ -51,7 +48,7 @@ export class StatusTray {
     try {
       // A tiny generated glyph, so packaging needs no separate asset and the
       // tray is never a blank square.
-      this.#tray = new Tray(trayIcon());
+      this.#tray = new Tray(trayIconImage(this.#theme));
       this.#tray.setToolTip("AI Workbench");
       this.#tray.on("click", () => this.#openMainWindow());
       this.refresh();
@@ -63,6 +60,17 @@ export class StatusTray {
       });
       this.#tray = null;
       return false;
+    }
+  }
+
+  /** Repaints the tray mark in a theme's colours. */
+  setTheme(theme: Theme): void {
+    if (theme === this.#theme) {
+      return;
+    }
+    this.#theme = theme;
+    if (this.available) {
+      this.#tray?.setImage(trayIconImage(theme));
     }
   }
 
@@ -180,93 +188,4 @@ function activityLine(sessions: number, runs: number): string {
     parts.push(`${runs} team ${runs === 1 ? "run" : "runs"}`);
   }
   return parts.join(" · ");
-}
-
-/**
- * The app mark, drawn rather than shipped so there is no asset to lose in
- * packaging: a dark rounded square with three blue bars, as on the app icon.
- * Drawn at 1× and 2× so the tray stays sharp on scaled displays.
- */
-function trayIcon(): Electron.NativeImage {
-  const image = nativeImage.createFromBuffer(drawMark(16), {
-    width: 16,
-    height: 16,
-    scaleFactor: 1,
-  });
-  image.addRepresentation({ buffer: drawMark(32), width: 32, height: 32, scaleFactor: 2 });
-  return image;
-}
-
-interface Shape {
-  readonly x0: number;
-  readonly y0: number;
-  readonly x1: number;
-  readonly y1: number;
-  readonly radius: number;
-  /** Premultiplied later; straight BGR here. */
-  readonly color: readonly [number, number, number];
-  readonly alpha: number;
-}
-
-/** Coverage of a rounded rectangle at a point, in 16-unit design space. */
-function covers(shape: Shape, x: number, y: number): boolean {
-  if (x < shape.x0 || x > shape.x1 || y < shape.y0 || y > shape.y1) {
-    return false;
-  }
-  const cx = Math.min(Math.max(x, shape.x0 + shape.radius), shape.x1 - shape.radius);
-  const cy = Math.min(Math.max(y, shape.y0 + shape.radius), shape.y1 - shape.radius);
-  return (x - cx) ** 2 + (y - cy) ** 2 <= shape.radius ** 2;
-}
-
-function drawMark(size: number): Buffer {
-  const blue: [number, number, number] = [0xff, 0xa8, 0x6a];
-  const shapes: Shape[] = [
-    { x0: 0.5, y0: 0.5, x1: 15.5, y1: 15.5, radius: 3.6, color: [0x1d, 0x19, 0x16], alpha: 1 },
-    { x0: 3.6, y0: 3.7, x1: 12.4, y1: 5.9, radius: 1.1, color: blue, alpha: 1 },
-    { x0: 3.6, y0: 6.9, x1: 10.2, y1: 9.1, radius: 1.1, color: blue, alpha: 1 },
-    { x0: 3.6, y0: 10.1, x1: 7.8, y1: 12.3, radius: 1.1, color: blue, alpha: 0.6 },
-  ];
-  const samples = 4;
-  const buffer = Buffer.alloc(size * size * 4);
-  const scale = 16 / size;
-  for (let py = 0; py < size; py += 1) {
-    for (let px = 0; px < size; px += 1) {
-      let b = 0;
-      let g = 0;
-      let r = 0;
-      let a = 0;
-      for (let sy = 0; sy < samples; sy += 1) {
-        for (let sx = 0; sx < samples; sx += 1) {
-          const x = (px + (sx + 0.5) / samples) * scale;
-          const y = (py + (sy + 0.5) / samples) * scale;
-          // Paint shapes back to front, straight alpha "over".
-          let cb = 0;
-          let cg = 0;
-          let cr = 0;
-          let ca = 0;
-          for (const shape of shapes) {
-            if (covers(shape, x, y)) {
-              const t = shape.alpha;
-              cb = shape.color[0] * t + cb * (1 - t);
-              cg = shape.color[1] * t + cg * (1 - t);
-              cr = shape.color[2] * t + cr * (1 - t);
-              ca = t + ca * (1 - t);
-            }
-          }
-          b += cb;
-          g += cg;
-          r += cr;
-          a += ca;
-        }
-      }
-      const n = samples * samples;
-      const offset = (py * size + px) * 4;
-      // BGRA, premultiplied: colours were accumulated against transparency.
-      buffer[offset] = Math.round(b / n);
-      buffer[offset + 1] = Math.round(g / n);
-      buffer[offset + 2] = Math.round(r / n);
-      buffer[offset + 3] = Math.round((a / n) * 255);
-    }
-  }
-  return buffer;
 }

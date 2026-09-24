@@ -229,13 +229,30 @@ export async function addMemory(root: string, title: string, content: string): P
   return { path, sha256: createHash("sha256").update(text).digest("hex") };
 }
 
+/**
+ * When an agent should reach for the memory, sent as the server's own MCP
+ * instructions. A memory that is only there when someone says "look it up"
+ * or "write that down" does not remember anything: these tell every agent,
+ * whatever tool it runs in, to read before it starts and to write what the
+ * next agent would otherwise have to find out again.
+ */
+export const OBSIDIAN_MEMORY_INSTRUCTIONS = [
+  "This is the shared long-term memory of every agent working with this person, across tools, sessions and teams.",
+  "Before non-trivial work, call memory_search with the project, component or topic to find earlier decisions, conventions, known problems and preferences; read a matching note with memory_read only when an excerpt is not enough.",
+  "When you learn something durable, call memory_add once with a short note: a decision and why it was made, a convention of the project, the fix for a problem that could come back, setup or build steps that were hard to find, a preference the person stated.",
+  "Do not store secrets, credentials, personal data, whole files or transient progress. One topic per note, a title that says what it is about.",
+].join(" ");
+
 /** A tool-neutral MCP server. Every MCP-capable agent gets the same vault. */
 export function createObsidianMemoryServer(root: string): Server {
-  const server = new Server({ name: "ai-workbench-memory", version: "0.0.7" }, { capabilities: { tools: {} } });
+  const server = new Server(
+    { name: "ai-workbench-memory", version: "0.0.7" },
+    { capabilities: { tools: {} }, instructions: OBSIDIAN_MEMORY_INSTRUCTIONS },
+  );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [
-    { name: "memory_search", description: "Find short excerpts in the shared Obsidian Markdown vault. Read a matching note only when needed.", inputSchema: { type: "object" as const, properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, required: ["query"] } },
-    { name: "memory_read", description: "Read up to 12,000 characters from one Markdown note by relative path; use offset for the next part.", inputSchema: { type: "object" as const, properties: { path: { type: "string" }, offset: { type: "integer", minimum: 0 } }, required: ["path"] } },
-    { name: "memory_add", description: "Add a new Markdown note to the shared vault without replacing existing notes.", inputSchema: { type: "object" as const, properties: { title: { type: "string" }, content: { type: "string" } }, required: ["title", "content"] } },
+    { name: "memory_search", description: "Search the shared long-term memory (an Obsidian vault) before non-trivial work: earlier decisions, project conventions, known problems and the person's preferences. Returns short excerpts; read a note only when an excerpt is not enough.", inputSchema: { type: "object" as const, properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, required: ["query"] } },
+    { name: "memory_read", description: "Read up to 12,000 characters from one note of the shared memory by relative path; use offset for the next part.", inputSchema: { type: "object" as const, properties: { path: { type: "string" }, offset: { type: "integer", minimum: 0 } }, required: ["path"] } },
+    { name: "memory_add", description: "Save something the next agent should know: a decision and its reason, a project convention, the fix for a problem that could return, hard-won setup steps, a preference the person stated. One short note per topic; never secrets or transient progress. Adds a new note and never replaces one.", inputSchema: { type: "object" as const, properties: { title: { type: "string" }, content: { type: "string" } }, required: ["title", "content"] } },
   ] }));
   server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolReply> => {
     const args = request.params.arguments ?? {};
