@@ -10,7 +10,7 @@ branch `design/approved-rollout` is merged into it and can be deleted.
 
 ## Where things stand (2026-09-24, release 0.0.5)
 
-`bun run verify` passes end to end: lockfile, lint, typecheck, 487 tests
+`bun run verify` passes end to end: lockfile, lint, typecheck, 488 tests
 (20 real-tool tests skipped without their tools), the build and both startup
 phases (191 checks, none failing). What changed since 0.0.4 (built from
 `d318d08`), each verified by tests and the startup check:

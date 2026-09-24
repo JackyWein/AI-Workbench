@@ -2208,11 +2208,10 @@ export async function runStartupCheck(
     const stored = await readFile(hostKeyFile, "utf8").catch(() => null);
     // Loaded only here, so the shipped application does not carry a server
     // it never runs.
-    const { startSshTestServer } = await import("@ai-workbench/test-support");
+    const { startSshTestServer, generateEd25519KeyPair } = await import("@ai-workbench/test-support");
     // A passphrase-protected key, the way most people's keys are, as a file
     // on this computer; the machine knows its public half.
-    const { default: ssh2 } = await import("ssh2");
-    const key = ssh2.utils.generateKeyPairSync("ed25519", {
+    const key = generateEd25519KeyPair({
       passphrase: CHECK_KEY_PASSPHRASE,
       cipher: "aes256-ctr",
       rounds: 16,

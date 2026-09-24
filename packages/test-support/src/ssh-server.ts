@@ -9,6 +9,7 @@ import {
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import ssh2 from "ssh2";
+import { generateEd25519KeyPair } from "./ssh-keys.js";
 
 const { Server, utils } = ssh2;
 const { OPEN_MODE, STATUS_CODE } = utils.sftp;
@@ -65,7 +66,7 @@ export async function startSshTestServer(
   const username = options.username ?? "dev";
   const password = options.password ?? "s3cret";
 
-  const hostKey = options.hostKey ?? utils.generateKeyPairSync("ed25519", {}).private;
+  const hostKey = options.hostKey ?? generateEd25519KeyPair().private;
   const authorized = (options.authorizedKeys ?? []).map((text) => {
     const key = utils.parseKey(text);
     if (key instanceof Error) {

@@ -2,6 +2,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import ssh2 from "ssh2";
 import {
+  generateEd25519KeyPair,
   makeTempDirectory,
   removeTempDirectory,
   startSshTestServer,
@@ -26,8 +27,8 @@ const nullLogger = {
   child: () => nullLogger,
 };
 
-const plain = utils.generateKeyPairSync("ed25519");
-const locked = utils.generateKeyPairSync("ed25519", {
+const plain = generateEd25519KeyPair();
+const locked = generateEd25519KeyPair({
   passphrase: "correct horse",
   cipher: "aes256-ctr",
   rounds: 16,
@@ -58,6 +59,18 @@ function converted(text: string): string {
   }
   return prepared.privateKey;
 }
+
+describe("keys the tests make", () => {
+  // ssh2 writes about one Ed25519 key in two hundred that it cannot read
+  // back; the tests used to fail at random on such a key.
+  it("always read back", () => {
+    for (let index = 0; index < 400; index += 1) {
+      const pair = generateEd25519KeyPair();
+      expect(utils.parseKey(pair.public)).not.toBeInstanceOf(Error);
+      expect(utils.parseKey(pair.private)).not.toBeInstanceOf(Error);
+    }
+  });
+});
 
 describe("reading a private key", () => {
   it("takes an OpenSSH key as it is", () => {
@@ -198,7 +211,7 @@ describe.runIf(process.platform !== "win32")("signing in with a key", () => {
   });
 
   it("reports a key the machine does not know as rejected credentials", async () => {
-    const stranger = utils.generateKeyPairSync("ed25519").private;
+    const stranger = generateEd25519KeyPair().private;
     await expect(listWith(stranger)).rejects.toThrow(/rejected the credentials/);
   });
 });

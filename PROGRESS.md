@@ -25,7 +25,7 @@ Weighted contribution = weight x completion.
 
 **G7 — UX, security, reliability and performance.** As of 2026-09-24
 (release 0.0.5) `bun run verify` passes end to end: lockfile, lint,
-typecheck, 487 tests, the build and both startup phases (191 checks, none
+typecheck, 488 tests, the build and both startup phases (191 checks, none
 failing). What remains in G6 is the tray, multi-monitor handling and the
 idle-unobtrusiveness judgement; in G5, two real providers collaborating.
 Antigravity (`agy`) could not be installed or read about here and stays
