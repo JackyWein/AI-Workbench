@@ -446,7 +446,8 @@ export class IslandController {
               questions.push({
                 key: attentionKey,
                 title: waiting.summary || `${tile.label} has a question`,
-                detail: tile.label,
+                // What it is about (the command a dialog asks to run) and who asks.
+                detail: [waiting.context, tile.label].filter(Boolean).join(" · "),
                 icon: iconOf(tile.providerId),
                 options: waiting.answerable ? waiting.choices : [],
                 target: { view: "chat", workspaceId: tile.workspaceId, tileId: tile.id },

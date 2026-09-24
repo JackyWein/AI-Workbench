@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type IPty } from "node-pty";
 import type { Logger } from "@ai-workbench/shared";
+import { arrowKey, detectPrompt, type ScreenPrompt } from "./prompt.js";
+import { TerminalScreen } from "./screen.js";
 
 export interface TerminalInfo {
   readonly id: string;
@@ -62,6 +64,8 @@ interface TerminalState {
   title: string | null;
   /** When the program last wrote anything. */
   lastOutputAt: number;
+  /** What the terminal shows, kept as the person's view draws it. */
+  readonly screen: TerminalScreen;
   scrollbackChars: number;
   readonly disposables: Array<{ dispose(): void }>;
 }
@@ -147,16 +151,19 @@ export class TerminalManager {
       scrollbackChars: 0,
       title: null,
       lastOutputAt: Date.now(),
+      screen: new TerminalScreen(cols, rows),
       disposables: [],
     };
     this.#terminals.set(id, state);
+    state.disposables.push({ dispose: () => state.screen.dispose() });
 
     state.disposables.push(
       pty.onData((chunk) => {
         state.lastOutputAt = Date.now();
+        state.screen.write(chunk);
         const title = lastTitle(chunk);
         if (title !== null) {
-          state.title = title;
+          state.title = saysSomething(title) ? title : null;
         }
         appendScrollback(state, chunk, this.#scrollbackLimit);
         this.#options.onData(id, chunk);
@@ -234,6 +241,72 @@ export class TerminalManager {
     state.cols = safeCols;
     state.rows = safeRows;
     state.pty.resize(safeCols, safeRows);
+    state.screen.resize(safeCols, safeRows);
+  }
+
+  /**
+   * The dialog the terminal's program waits on — a question with numbered
+   * options, one of them marked — read from its screen as the person sees
+   * it. Null when the screen shows none, or the terminal is gone.
+   */
+  async prompt(id: string): Promise<ScreenPrompt | null> {
+    const state = this.#terminals.get(id);
+    if (!state) {
+      return null;
+    }
+    await state.screen.settled();
+    return detectPrompt(state.screen.snapshot().lines);
+  }
+
+  /**
+   * Picks option \`index\` of the dialog on screen the way the person would:
+   * arrow keys until the screen shows that option marked, then Enter. Enter
+   * is never pressed on anything but the option asked for — when the dialog
+   * changed, is gone, or its marker does not follow, nothing is chosen and
+   * the answer is false.
+   */
+  async choose(id: string, fingerprint: string, index: number): Promise<boolean> {
+    const state = this.#terminals.get(id);
+    if (!state) {
+      return false;
+    }
+    const read = async (): Promise<{ prompt: ScreenPrompt | null; applicationCursorKeys: boolean }> => {
+      await state.screen.settled();
+      const snapshot = state.screen.snapshot();
+      return { prompt: detectPrompt(snapshot.lines), applicationCursorKeys: snapshot.applicationCursorKeys };
+    };
+    let current = await read();
+    if (
+      !current.prompt ||
+      current.prompt.fingerprint !== fingerprint ||
+      index < 0 ||
+      index >= current.prompt.options.length
+    ) {
+      return false;
+    }
+    for (let step = 0; current.prompt?.selected !== index; step += 1) {
+      const from = current.prompt?.selected ?? -1;
+      if (step >= 12 || from === -1 || !this.#terminals.has(id)) {
+        return false;
+      }
+      state.pty.write(arrowKey(index > from ? "down" : "up", current.applicationCursorKeys));
+      // The program redraws its dialog; wait until the marker has moved.
+      const until = Date.now() + 1500;
+      do {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        current = await read();
+      } while (
+        Date.now() < until &&
+        current.prompt?.fingerprint === fingerprint &&
+        current.prompt.selected === from
+      );
+      if (current.prompt?.fingerprint !== fingerprint || current.prompt.selected === from) {
+        return false;
+      }
+    }
+    state.pty.write("\r");
+    this.#logger.info("Chose an option of a terminal program's dialog", { terminalId: id, option: index + 1 });
+    return true;
   }
 
   close(id: string): boolean {
@@ -321,6 +394,21 @@ function defaultShell(): string {
     return process.env["COMSPEC"] ?? "powershell.exe";
   }
   return process.env["SHELL"] ?? "/bin/bash";
+}
+
+/**
+ * Whether a window title says anything about the work. On Windows the
+ * console names the window after the program's file (C:\\Windows\\system32\\cmd.exe),
+ * which says nothing a person wants to read where the work is described.
+ */
+export function saysSomething(title: string): boolean {
+  const trimmed = title.trim();
+  return !(
+    trimmed === "" ||
+    /^[a-z]:[\\/]/i.test(trimmed) ||
+    /^\\\\/.test(trimmed) ||
+    /\.(exe|cmd|bat|com|ps1)$/i.test(trimmed)
+  );
 }
 
 /**

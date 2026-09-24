@@ -3210,6 +3210,16 @@ input[type="checkbox"].mini-switch:disabled {
   color: var(--text-muted);
 }
 
+/* The tool waits on the person: said first, in the warning colour. */
+.tmetrics__item--waiting {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--warning);
+  font-weight: 600;
+}
+
 .tmetrics__value {
   color: var(--text-primary);
 }

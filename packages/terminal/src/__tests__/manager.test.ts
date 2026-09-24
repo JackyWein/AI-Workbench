@@ -4,6 +4,7 @@ import {
   TerminalLimitError,
   TerminalManager,
   lastTitle,
+  saysSomething,
   TerminalNotFoundError,
 } from "../manager.js";
 
@@ -266,5 +267,13 @@ describe("what a terminal's program says about itself", () => {
     expect(lastTitle("plain output\r\n")).toBeNull();
     // Other OSC sequences (hyperlinks, colours) are not titles.
     expect(lastTitle("\x1b]8;;https://example.com\x07link\x1b]8;;\x07")).toBeNull();
+  });
+
+  it("ignores a window title that only names the program's file", () => {
+    expect(saysSomething("C:\\Windows\\system32\\cmd.exe")).toBe(false);
+    expect(saysSomething("C:/Users/jacky/AppData/Local/agy/bin/agy.exe")).toBe(false);
+    expect(saysSomething("\\\\server\\share\\tool")).toBe(false);
+    expect(saysSomething("agy.exe")).toBe(false);
+    expect(saysSomething("✳ Fix the checkout rounding")).toBe(true);
   });
 });

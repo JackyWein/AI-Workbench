@@ -36,9 +36,17 @@ export function TerminalMetricsStrip({
           <span className="tmetrics__value">{formatClock(elapsed)}</span>
         </span>
       ) : null}
+      {terminal.attention && terminal.state === "running" ? (
+        <span
+          className="tmetrics__item tmetrics__item--waiting"
+          title={[terminal.attention.summary, terminal.attention.context].filter(Boolean).join("\n")}
+        >
+          Waiting for you · {terminal.attention.summary}
+        </span>
+      ) : null}
       {metrics ? <MetricItems metrics={metrics} now={now} /> : null}
-      {!metrics && terminal.state === "running" && !compact ? (
-        <span className="tmetrics__item tmetrics__item--muted">Waiting for the tool to report</span>
+      {!metrics && !terminal.attention && terminal.state === "running" && !compact ? (
+        <span className="tmetrics__item tmetrics__item--muted">No numbers from this tool yet</span>
       ) : null}
     </span>
   );

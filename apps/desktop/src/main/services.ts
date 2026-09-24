@@ -401,7 +401,11 @@ async function createServicesInner(
   let agentTerminalsRef: AgentTerminalService | null = null;
   const terminals = new TerminalManager({
     logger,
-    onData: (terminalId, chunk) => emitTerminal({ type: "data", terminalId, chunk }),
+    onData: (terminalId, chunk) => {
+      emitTerminal({ type: "data", terminalId, chunk });
+      // A tool whose own reports say nothing still shows its dialogs on screen.
+      agentTerminalsRef?.handleOutput(terminalId);
+    },
     onExit: (terminalId, exitCode) => {
       emitTerminal({ type: "exit", terminalId, exitCode });
       agentTerminalsRef?.handleExit(terminalId, exitCode);

@@ -96,7 +96,8 @@ export type TerminalAttentionChoice = z.infer<typeof terminalAttentionChoiceSche
 
 /**
  * Something a terminal agent's tool is waiting on the person for (spec §99),
- * as the tool itself reported it through its own documented channel.
+ * as the tool itself reported it through its own documented channel — or, for
+ * a tool that reports nothing, as its own dialog reads on its screen.
  *
  * The tool's own prompt stays in its terminal and stays answerable there;
  * this only lets the application show that it waits, and — where the tool
@@ -114,6 +115,8 @@ export const terminalAttentionSchema = z.object({
   tool: z.string().min(1).max(120).optional(),
   /** What it wants, in one line: the command, the file, the question. */
   summary: z.string().max(500),
+  /** What the request is about beyond that line, e.g. the command a question asks to run. */
+  context: z.string().max(500).optional(),
   /** The choices of a question; empty for a permission. */
   choices: z.array(terminalAttentionChoiceSchema).max(9).default([]),
   /**

@@ -2480,6 +2480,143 @@ export async function runStartupCheck(
     } else {
       process.env["GEMINI_CLI_HOME"] = previousGeminiHome;
     }
+
+    // A tool whose own reports never reach the application — Antigravity has
+    // no hooks the application could use, and hooks may not run at all on a
+    // machine — still shows its dialog on screen. The stand-in draws
+    // Antigravity's own permission dialog and reads its own arrow keys; the
+    // island reads the dialog from the tile's screen and answers it there.
+    const agyFixture = join(dirname(workspaceDirectory), "fixture-antigravity");
+    const agyStandIn = join(agyFixture, "agy");
+    const agyAnswer = join(agyFixture, "answer.json");
+    await mkdir(agyFixture, { recursive: true });
+    await rm(agyAnswer, { force: true });
+    await writeFile(agyStandIn, STAND_IN_ANTIGRAVITY, { mode: 0o755 });
+    await check(
+      "a tool without hooks shows its dialog as waiting, read from its screen",
+      `(async () => {
+         const api = window.workbench;
+         const workspaceId = window.__checkWorkspaceId;
+         await api.invoke('provider.saveConfig', {
+           providerId: 'antigravity', enabled: true, executablePath: ${JSON.stringify(agyStandIn)},
+         });
+         const tile = await api.invoke('agentTerminal.launch', {
+           workspaceId, providerId: 'antigravity', label: 'Antigravity',
+         });
+         window.__checkScreenTile = tile.id;
+         const deadline = Date.now() + 15000;
+         while (Date.now() < deadline) {
+           const current = (await api.invoke('agentTerminal.list', { workspaceId }))
+             .find(entry => entry.id === tile.id);
+           const waiting = current?.attention;
+           if (waiting) {
+             return waiting.kind === 'question' && waiting.answerable
+               && waiting.summary === 'Run this command?'
+               && waiting.context === 'node -c real-estate/server.js; node -c real-estate/app.js'
+               && waiting.choices.map(choice => choice.label).join('|')
+                 === "Yes, run command|Yes, and always allow in this conversation|No, cancel"
+               || JSON.stringify(waiting);
+           }
+           await new Promise(resolve => setTimeout(resolve, 200));
+         }
+         return 'the tile never showed that it waits';
+       })()`,
+      30_000,
+    );
+
+    await checkMain("the island shows that dialog with the tool's own options, and picks one there", async () => {
+      window.blur();
+      const deadline = Date.now() + 12_000;
+      let seen = "nothing";
+      while (Date.now() < deadline) {
+        const state = await island.refresh();
+        const entry = state.entries.find((item) => item.widget === "agentQuestion" && item.icon === "antigravity");
+        const target = islandWindow();
+        if (entry && target?.isVisible()) {
+          const shown = (await islandJs(
+            `(async () => {
+               const unit = document.querySelector('.isl');
+               if (unit?.dataset.face === 'question' && !document.querySelector('.isl__option')) {
+                 document.querySelector('.isl__circle, .isl__pill')?.click();
+                 await new Promise(resolve => setTimeout(resolve, 600));
+               }
+               const options = [...document.querySelectorAll('.isl__option .isl__optionlabel')]
+                 .map(node => node.textContent?.trim());
+               return {
+                 face: unit?.dataset.face ?? null,
+                 options,
+                 title: document.querySelector('.isl__qtitle')?.textContent ?? '',
+               };
+             })()`,
+          )) as { face: string | null; options: string[]; title: string };
+          seen = JSON.stringify({ shown, options: entry.options, title: entry.title, detail: entry.detail });
+          const offered =
+            entry.title === "Run this command?" &&
+            entry.detail.startsWith("node -c real-estate/server.js") &&
+            entry.options.map((option) => option.label).join("|") ===
+              "Yes, run command|Yes, and always allow in this conversation|No, cancel";
+          // An approval left over from the checks above comes first on the
+          // island; the question waits behind it and is answered the same way
+          // its buttons answer it.
+          const inView =
+            shown.face !== "question" ||
+            (shown.options.length === 3 && shown.title === "Run this command?");
+          if (offered && inView) {
+            // The second option: the island moves the tool's marker down one
+            // with its own arrow key, sees it there, then presses Enter.
+            if (shown.face === "question") {
+              await islandJs(
+                `[...document.querySelectorAll('.isl__option')]
+                   .find(node => node.textContent?.includes('always allow in this conversation'))?.click()`,
+              );
+            } else {
+              const second = entry.options[1]?.id ?? "";
+              const { answered } = await island.respond(entry.key, second);
+              if (!answered) {
+                throw new Error("the island's answer was not taken");
+              }
+            }
+            const until = Date.now() + 10_000;
+            while (Date.now() < until) {
+              const printed = await readFile(agyAnswer, "utf8").catch(() => null);
+              if (printed !== null) {
+                const chosen = (JSON.parse(printed) as { chose?: number }).chose;
+                if (chosen === 2) {
+                  return true;
+                }
+                throw new Error(`the tool took option ${String(chosen)}`);
+              }
+              await new Promise((resolve) => setTimeout(resolve, 150));
+            }
+            throw new Error("the tool never took an answer");
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error(`the island showed ${seen}`);
+    });
+
+    await checkMain("the island lets go of the dialog once the tool took the answer", async () => {
+      const deadline = Date.now() + 8_000;
+      while (Date.now() < deadline) {
+        const state = await island.refresh();
+        if (!state.entries.some((item) => item.widget === "agentQuestion")) {
+          return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      throw new Error("the question stayed on the island");
+    });
+
+    await check(
+      "the stand-in for Antigravity is removed again",
+      `(async () => {
+         const api = window.workbench;
+         const removed = await api.invoke('agentTerminal.remove', { id: window.__checkScreenTile });
+         await api.invoke('provider.saveConfig', { providerId: 'antigravity', executablePath: null });
+         return removed.removed;
+       })()`,
+    );
   }
 
   // The remote workspace is checked after the screenshots, so the screens
@@ -2826,6 +2963,52 @@ setInterval(() => undefined, 60000);
  * Everything else it is asked (a version probe, the app server) gets a short
  * answer. It stays running, like an interactive tool.
  */
+/**
+ * Antigravity's permission dialog, as it showed on a Windows machine, drawn
+ * by a stand-in that reads its own arrow keys and Enter — no hooks at all.
+ */
+const STAND_IN_ANTIGRAVITY = `#!/usr/bin/env node
+const { writeFileSync } = require("node:fs");
+const { join } = require("node:path");
+const args = process.argv.slice(2);
+if (args.includes("--version")) {
+  process.stdout.write("agy 1.0.0\\n");
+  process.exit(0);
+}
+if (args[0] === "models") {
+  process.stdout.write("gemini-3.8-flash\\tGemini 3.8 Flash\\n");
+  process.exit(0);
+}
+const options = ["Yes, run command", "Yes, and always allow in this conversation", "No, cancel"];
+let selected = 0;
+let answered = false;
+const out = (text) => process.stdout.write(text.replace(/\\n/g, "\\r\\n"));
+function draw(first) {
+  if (!first) out("\\x1b[" + (options.length + 3) + "A");
+  out("\\r\\x1b[2KRun this command?\\n");
+  options.forEach((option, index) => out("\\r\\x1b[2K" + (index === selected ? "> " : "  ") + (index + 1) + ". " + option + "\\n"));
+  out("\\r\\x1b[2K\\n\\r\\x1b[2K  \\u2191/\\u2193 Navigate \\u00b7 tab Amend\\n");
+}
+out("\\u25cf Bash(node -c real-estate/server.js; node -c real-estate/app.js)\\n\\nCommand\\n" + "\\u2500".repeat(40) + "\\n\\n");
+out("Requesting permission for:\\n   node -c real-estate/server.js; node -c real-estate/app.js\\n\\n");
+draw(true);
+process.stdin.setRawMode?.(true);
+process.stdin.setEncoding("utf8");
+process.stdin.resume();
+process.stdin.on("data", (key) => {
+  if (answered) return;
+  if (key === "\\r") {
+    answered = true;
+    writeFileSync(join(__dirname, "answer.json"), JSON.stringify({ chose: selected + 1 }));
+    out("\\x1b[" + (options.length + 3) + "A\\x1b[J\\u25cf Ran the command.\\n\\n> ");
+    return;
+  }
+  if (key === "\\x1b[A" || key === "\\x1bOA") selected = Math.max(0, selected - 1);
+  if (key === "\\x1b[B" || key === "\\x1bOB") selected = Math.min(options.length - 1, selected + 1);
+  draw(false);
+});
+`;
+
 const STAND_IN_CODEX = `#!/usr/bin/env node
 const { spawn } = require("node:child_process");
 const { writeFileSync } = require("node:fs");

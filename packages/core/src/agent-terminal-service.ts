@@ -39,6 +39,24 @@ export interface AgentTerminalHost {
   close(terminalId: string): boolean;
   /** Types into a running terminal, as the person would. */
   write(terminalId: string, data: string): void;
+  /**
+   * The dialog the terminal's program shows and waits on (a question with
+   * numbered options, one marked), read from its screen; null when none.
+   */
+  prompt?(terminalId: string): Promise<ScreenDialog | null>;
+  /**
+   * Picks an option of the dialog on screen with the program's own keys;
+   * false when the dialog changed or did not take it.
+   */
+  choose?(terminalId: string, fingerprint: string, index: number): Promise<boolean>;
+}
+
+/** A dialog as a terminal's screen shows it. */
+export interface ScreenDialog {
+  readonly question: string;
+  readonly context: string;
+  readonly options: ReadonlyArray<{ readonly number: number; readonly label: string }>;
+  readonly fingerprint: string;
 }
 
 export interface AgentTerminalServiceOptions {
@@ -87,7 +105,15 @@ interface Runtime {
     | null;
   /** Stops following the tool's reports; null when nothing is followed. */
   stopTelemetry: (() => void) | null;
+  /**
+   * A dialog the tool shows on its screen, when its own reports say nothing
+   * of it: what the island shows and answers for a tool without hooks.
+   */
+  screen?: { attention: TerminalAttention; fingerprint: string } | null;
 }
+
+/** How long a terminal stays quiet before its screen is read for a dialog. */
+const SCREEN_SETTLE_MS = 300;
 
 /** How long a tool may keep writing its final numbers after it exits. */
 const TELEMETRY_GRACE_MS = 4000;
@@ -117,6 +143,8 @@ export class AgentTerminalService {
   /** Sign-in terminals are not persisted; they live only while they run. */
   readonly #transient = new Map<string, AgentTerminal>();
   readonly #byTerminal = new Map<string, string>();
+  /** A pending read of each tile's screen, after its output settles. */
+  readonly #screenTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(options: AgentTerminalServiceOptions) {
     this.#db = options.db;
@@ -284,6 +312,9 @@ export class AgentTerminalService {
     response: TerminalAttentionResponse,
   ): Promise<boolean> {
     const runtime = this.#runtime.get(id);
+    if (!runtime?.attention && runtime?.screen?.attention.id === attentionId) {
+      return this.#answerOnScreen(id, runtime, response);
+    }
     const attention = runtime?.attention;
     if (
       !runtime?.respond ||
@@ -411,6 +442,107 @@ export class AgentTerminalService {
   }
 
   /** Called by the terminal backend when a process ends. */
+  /**
+   * The terminal wrote something. Once it has been quiet for a moment its
+   * screen is read for a dialog — the way to see a tool wait on the person
+   * when its own reports say nothing (a tool without hooks, or hooks that do
+   * not run on this machine).
+   */
+  handleOutput(terminalId: string): void {
+    const id = this.#byTerminal.get(terminalId);
+    if (!id || !this.#terminals.prompt) {
+      return;
+    }
+    const pending = this.#screenTimers.get(id);
+    if (pending) {
+      clearTimeout(pending);
+    }
+    const timer = setTimeout(() => {
+      this.#screenTimers.delete(id);
+      void this.#readScreen(id, terminalId).catch((error: unknown) =>
+        this.#logger.debug("Could not read a terminal's screen", {
+          agentTerminalId: id,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }, SCREEN_SETTLE_MS);
+    timer.unref?.();
+    this.#screenTimers.set(id, timer);
+  }
+
+  async #readScreen(id: string, terminalId: string): Promise<void> {
+    const runtime = this.#runtime.get(id);
+    if (!runtime || runtime.state !== "running" || runtime.terminalId !== terminalId) {
+      return;
+    }
+    const terminal = await this.#require(id).catch(() => null);
+    if (!terminal || terminal.purpose !== "agent") {
+      return;
+    }
+    const dialog = await this.#terminals.prompt?.(terminalId);
+    const current = this.#runtime.get(id);
+    if (!current || current.terminalId !== terminalId) {
+      return;
+    }
+    const before = current.screen ?? null;
+    const next = dialog
+      ? {
+          fingerprint: dialog.fingerprint,
+          attention: {
+            // The same dialog keeps its id and its clock while it stays up.
+            id: before?.fingerprint === dialog.fingerprint ? before.attention.id : createId("screen"),
+            kind: "question" as const,
+            summary: (dialog.question || "Waiting for your choice").slice(0, 500),
+            ...(dialog.context ? { context: dialog.context.slice(0, 500) } : {}),
+            choices: dialog.options.slice(0, 9).map((option, index) => ({
+              id: String(index),
+              label: option.label.slice(0, 200) || `Option ${option.number}`,
+            })),
+            answerable: Boolean(this.#terminals.choose),
+            since: before?.fingerprint === dialog.fingerprint ? before.attention.since : new Date(),
+          },
+        }
+      : null;
+    if (JSON.stringify(next) === JSON.stringify(before)) {
+      return;
+    }
+    current.screen = next;
+    if (next && !before) {
+      this.#logger.info("A terminal agent waits on a dialog on its screen", {
+        agentTerminalId: id,
+        options: next.attention.choices.length,
+      });
+    }
+    if (!current.attention) {
+      this.#publish(await this.#require(id));
+    }
+  }
+
+  /** Answers a dialog on the tool's screen by picking the option with its own keys. */
+  async #answerOnScreen(id: string, runtime: Runtime, response: TerminalAttentionResponse): Promise<boolean> {
+    const screen = runtime.screen;
+    const terminalId = runtime.terminalId;
+    if (!screen || !terminalId || runtime.state !== "running" || !("choice" in response) || !this.#terminals.choose) {
+      return false;
+    }
+    const index = Number(response.choice);
+    if (!Number.isInteger(index) || !screen.attention.choices.some((choice) => choice.id === response.choice)) {
+      return false;
+    }
+    const answered = await this.#terminals.choose(terminalId, screen.fingerprint, index).catch(() => false);
+    this.#logger.info("Answered a dialog on a terminal agent's screen", { agentTerminalId: id, answered });
+    if (answered) {
+      const current = this.#runtime.get(id);
+      if (current?.screen?.fingerprint === screen.fingerprint) {
+        current.screen = null;
+        void this.#require(id)
+          .then((terminal) => this.#publish(terminal))
+          .catch(() => undefined);
+      }
+    }
+    return answered;
+  }
+
   handleExit(terminalId: string, exitCode: number): void {
     const id = this.#byTerminal.get(terminalId);
     if (!id) {
@@ -428,6 +560,7 @@ export class AgentTerminalService {
         attention: null,
         activity: null,
         respond: null,
+        screen: null,
       });
       // The tool may write its last numbers while it shuts down.
       const stop = runtime.stopTelemetry;
@@ -741,7 +874,9 @@ export class AgentTerminalService {
       ...(runtime?.detail ? { detail: runtime.detail } : {}),
       startedAt: runtime?.startedAt ?? null,
       metrics: runtime?.metrics ?? null,
-      attention: runtime?.attention ?? null,
+      // What the tool itself reported comes first; its screen fills in when
+      // it reported nothing.
+      attention: runtime?.attention ?? (runtime?.state === "running" ? runtime.screen?.attention : null) ?? null,
       activity: runtime?.activity ?? null,
       createdAt: row.createdAt,
     };
