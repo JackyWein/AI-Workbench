@@ -23,14 +23,36 @@ Weighted contribution = weight x completion.
 
 ## Current focus
 
-**G7 — UX, security, reliability and performance.** As of 2026-09-23 the
-approved design rollout, the SSH remote workspaces, the move to bun and the
-island for every terminal agent are one branch, and `bun run verify` passes on
-it end to end: lockfile, lint, typecheck, 412 tests, the build and both
-startup phases (163 checks, none failing). What remains in G6 is the tray,
-multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
-real providers collaborating. Antigravity (`agy`) could not be installed or
-read about here and stays unverified.
+**G7 — UX, security, reliability and performance.** As of 2026-09-24
+(release 0.0.5) `bun run verify` passes end to end: lockfile, lint,
+typecheck, 487 tests, the build and both startup phases (191 checks, none
+failing). What remains in G6 is the tray, multi-monitor handling and the
+idle-unobtrusiveness judgement; in G5, two real providers collaborating.
+Antigravity (`agy`) could not be installed or read about here and stays
+unverified. No criterion was ticked for the 0.0.5 work below: it deepens
+criteria already ticked (G4 MCP and credentials, G5 teams, G3 SSH) or is a
+judgement (G7 polish) that stays the person's.
+
+### Release 0.0.5 (2026-09-24)
+
+Verified here by tests and the startup check:
+- Connectors: catalog, OAuth sign-in against a local OAuth-protected MCP
+  test server (discovery, registration, PKCE, token renewal, sign-out), the
+  local gateway, and each of Claude Code, Codex, Gemini CLI and OpenCode
+  calling a connector's tool through it. A sign-in page that is not a web
+  address is refused. Not run: a real service such as Gmail (needs the
+  person's own Google OAuth client and account).
+- Skills: written by hand, drafted by the simulated provider, imported from
+  a tool's skill folder, a Markdown file and a folder.
+- Attachments to a message, handed to each real CLI (Claude Code's
+  `--add-dir`, Codex `--image=`, Gemini `@path`, OpenCode `--file`).
+- SSH sign-in with OpenSSH, PKCS#8 and passphrase-protected keys and a key
+  file, against the in-process SSH server.
+- Removing a workspace stops a turn in flight and its team runs and removes
+  the session's files.
+- Updates: a packaged build posing as an older version found the newer
+  release (checked with 0.0.3 → 0.0.4); builds that cannot update
+  themselves say so.
 
 ### Every terminal agent on the island (2026-09-23)
 
