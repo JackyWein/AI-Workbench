@@ -8,12 +8,36 @@ you. The long day-by-day history that used to live here is in git
 Everything is on `claude/repo-setup-instructions-8tgcbw`. The design rollout
 branch `design/approved-rollout` is merged into it and can be deleted.
 
-## Where things stand (2026-09-24, release 0.0.5)
+## Where things stand (2026-09-24, release 0.0.6)
 
-`bun run verify` passes end to end: lockfile, lint, typecheck, 488 tests
-(20 real-tool tests skipped without their tools), the build and both startup
-phases (191 checks, none failing). What changed since 0.0.4 (built from
-`d318d08`), each verified by tests and the startup check:
+`bun run verify` passes end to end: lockfile, lint, typecheck, 694
+tests (20 real-tool tests skipped without their tools), the build and both
+startup phases (198 checks, none failing).
+
+What changed since 0.0.5, each verified by tests and the startup check:
+
+- **Themes.** Eight appearances in a picker under Settings (Quiet dark,
+  light and system; Atelier, Mission Control, Playground, Aurora, Swiss),
+  also in the command palette. A theme is token values only; how they are
+  laid out and how to add one is in `DEVELOPMENT.md` → Themes. Every raw
+  colour and radius in the components became a token for this, the
+  sidebar, code blocks and the island rebind the tokens to palettes of
+  their own, and terminals follow the theme live (`followTheme` in
+  `renderer/lib/xterm.ts`). Typefaces are bundled from `@fontsource`
+  (Latin only, ~470 KB). A contrast test resolves every theme from the CSS;
+  the startup check picks each one in Settings and checks the window, that
+  its face loaded and that the island followed. The screenshots behind
+  `docs/images/themes.png` were reviewed view by view in every theme; that
+  a theme *looks* right stays the person's call.
+- **The logo** (`AppLogo`, the icon's geometry in the theme's logo colours)
+  replaces the "W" on the start screen (it draws itself in), in the
+  sidebar, on the welcome screens and on the island at rest.
+- **Markdown answers** (`renderer/lib/markdown.ts`, an AST rendered as React
+  elements, never HTML), a team session opening as its team after a restart,
+  the island's text on a light system theme, and a stored skill or plugin
+  that no longer parses no longer stopping the start.
+
+What changed in 0.0.5 (built from `d318d08`):
 
 - **Connectors** replace the MCP and Plugins screens: a catalog
   (`packages/shared/src/catalog/connectors.ts`), OAuth sign-in in the
@@ -61,8 +85,9 @@ straight into a fresh database, the app started as that user with a clean
 environment, and each view captured over the DevTools protocol at 1440×900
 and twice the pixel density, then scaled to 2160 px wide. The island picture
 is the real island, with a stand-in for Claude Code asking for a permission,
-laid over a blurred agents view. Retake them the same way when a view
-changes; the README says they show demo data.
+laid over a blurred agents view. `themes.png` is the conversation in six
+themes, each picked in Settings, set side by side. Retake them the same way
+when a view changes; the README says they show demo data.
 
 ## How to run it
 

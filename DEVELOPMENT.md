@@ -99,10 +99,41 @@ there is no separate build step per package.
 Migrations are embedded in the bundle, so a packaged build does not depend on a
 migrations folder being present at runtime.
 
+## Themes
+
+The app ships eight appearances: Quiet in dark, light or following the
+system, and Atelier, Mission Control, Playground, Aurora and Swiss. A theme
+is only token values, so a new one is mostly one block of CSS:
+
+- `packages/ui/src/tokens.css` — every token, Quiet's values, and the values
+  made from the others (radii from `--radius-scale`, the sidebar's palette,
+  the terminal's ground). Themes are keyed on `data-theme` of any element,
+  not only the root, which is how a picker swatch shows a theme without
+  switching the window.
+- `packages/ui/src/themes.css` — the other themes: colours, the island's own
+  dark palette, the terminal's sixteen colours, the three typefaces, shape
+  (`--radius-scale`, `--radius-pill`) and the outline of grouped surfaces
+  (`--card-*`).
+- `packages/ui/src/fonts.css` — the typefaces, from `@fontsource` packages,
+  Latin only, bundled into the app (the page's policy loads nothing from
+  outside).
+- `apps/desktop/src/renderer/themes.css` — where the character tokens apply
+  (display face, labels, grouped surfaces, the sidebar's palette) and each
+  theme's touches that a token cannot express.
+- `apps/desktop/src/renderer/lib/themes.ts` — the names the picker shows;
+  the ids themselves are the `theme` setting's enum in `packages/shared`.
+
+`packages/ui/src/__tests__/themes.test.ts` resolves every theme's tokens and
+fails when a text colour does not read on its ground (WCAG contrast), in
+the window, the sidebar, code blocks, the terminal and the island. The
+startup check picks every theme in Settings and checks the rendered window,
+that its typeface loaded, and that the island followed.
+
 ## Conventions
 
 - Strict TypeScript, no unjustified `any`
 - Small modules, explicit schemas, dependency injection over globals
 - No provider names in generic code; behaviour comes from capabilities
 - Renderer reaches the system only through the typed IPC contract
-- Colours, spacing, radii and durations come from the design tokens
+- Colours, fonts, spacing, radii, shadows and durations come from the design
+  tokens; a raw value in a component is a theme that cannot change it

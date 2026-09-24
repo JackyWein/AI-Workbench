@@ -24,14 +24,34 @@ Weighted contribution = weight x completion.
 ## Current focus
 
 **G7 — UX, security, reliability and performance.** As of 2026-09-24
-(release 0.0.5) `bun run verify` passes end to end: lockfile, lint,
-typecheck, 488 tests, the build and both startup phases (191 checks, none
-failing). What remains in G6 is the tray, multi-monitor handling and the
-idle-unobtrusiveness judgement; in G5, two real providers collaborating.
-Antigravity (`agy`) could not be installed or read about here and stays
-unverified. No criterion was ticked for the 0.0.5 work below: it deepens
-criteria already ticked (G4 MCP and credentials, G5 teams, G3 SSH) or is a
-judgement (G7 polish) that stays the person's.
+(release 0.0.6) `bun run verify` passes end to end: lockfile, lint,
+typecheck, 694 tests, the build and both startup phases
+(198 checks, none failing). What remains in G6 is the tray,
+multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
+real providers collaborating. Antigravity (`agy`) could not be installed or
+read about here and stays unverified. No criterion was ticked for the 0.0.5
+or 0.0.6 work below: it deepens criteria already ticked or is a judgement
+(G7 "dark mode polished", "visual hierarchy follows Quiet UI principles")
+that stays the person's.
+
+### Release 0.0.6 (2026-09-24)
+
+Verified here by tests and the startup check:
+- Themes: every theme's text reads on its ground at WCAG contrast (body text
+  7:1, secondary 4.5:1, captions and status colours 3:1 or more) in the
+  window, the sidebar, code blocks, the terminal and the island, measured
+  from the stylesheets by a test. In the built app, each of the eight is
+  picked in Settings, repaints the window readably, loads its own typeface
+  under the page's content policy, and the island takes the theme on.
+- The app's logo is the mark in the sidebar (startup check); the start
+  screen's animation was looked at, not asserted.
+- Answers render Markdown (unit tests of the parser, the renderer never
+  sets HTML); a team session is still a team after a restart (startup
+  check, shown to fail without the fix); the island's title is light on a
+  light system theme (startup check); a stored skill or plugin that no
+  longer parses is skipped at start (unit test).
+Not verified: how each theme looks on a real Windows or macOS desktop, and
+whether the themes are to the person's taste.
 
 ### Release 0.0.5 (2026-09-24)
 

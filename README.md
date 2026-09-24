@@ -103,6 +103,16 @@ or bring over the skills you already made for Claude Code, Codex, Gemini CLI or 
 made for one tool then works for all of them. Switch each on everywhere, per workspace or per
 session.
 
+### Make it look the way you like
+
+<img src="docs/images/themes.png" alt="The same conversation in six themes: Quiet Dark, Atelier, Mission Control, Playground, Aurora and Swiss" />
+
+Pick a **theme** under Settings and the whole app changes with it — colours, type, shapes, the
+terminals and the status island: **Quiet** (dark, light or following your system), warm
+**Atelier** with serif headings, dense **Mission Control** in lime on black, bold
+**Playground** with thick outlines, **Aurora** in night blue and violet light, and strict black
+and red **Swiss**. The typefaces ship with the app, and every theme is checked to stay readable.
+
 ## How it works
 
 ```mermaid

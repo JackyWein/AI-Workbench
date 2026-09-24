@@ -72,6 +72,16 @@ unless told to stay, its lifecycle is independent of it, and it can be
 disabled entirely. Its preload bridge (`workbenchIsland`) is deliberately
 tiny: state, open, dismiss, cycle — nothing else.
 
+## Theme
+
+The island draws in the app's theme — its typeface, shape and accent — and
+switches with it: main pushes the setting on its own channel
+(`ISLAND_THEME_CHANNEL`) when it changes and whenever the island page loads.
+Its body stays dark in every theme, each theme giving it a dark palette of
+its own (`--island-*` tokens), because it floats over windows the app knows
+nothing about, and a light theme's ink on that body once made titles
+unreadable. With nothing running it shows the app's logo.
+
 ## Tray
 
 `StatusTray` keeps background work reachable and controllable: generated glyph
