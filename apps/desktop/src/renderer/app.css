@@ -651,6 +651,32 @@ span.pill {
   }
 }
 
+/* A long list keeps to the room it has (see lib/panel-fit.ts) and scrolls. */
+.popover__panel--scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* At the foot of the window the panel opens upward, rising from its trigger. */
+.popover__panel[data-placement="above"] {
+  top: auto;
+  bottom: calc(100% + var(--space-3));
+  animation-name: popover-in-above;
+}
+
+/* Lined up with the trigger's left edge, growing rightward. */
+.popover__panel[data-align="start"] {
+  left: 0;
+  right: auto;
+}
+
+@keyframes popover-in-above {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
 .popover__title {
   font-size: var(--text-xs);
   font-weight: 600;
@@ -1360,8 +1386,15 @@ input[type="checkbox"].mini-switch:disabled {
   transition: border-color var(--duration-fast) var(--easing-standard);
 }
 
+/* The box is the field: the caret shows where you type, and the text field
+   inside draws no ring of its own that would not follow the box's outline. */
 .composer__inner:focus-within {
   border-color: var(--border-strong);
+}
+
+.composer__input:focus,
+.composer__input:focus-visible {
+  box-shadow: none;
 }
 
 .composer__input {

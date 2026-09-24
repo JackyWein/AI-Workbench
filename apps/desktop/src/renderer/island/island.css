@@ -234,22 +234,22 @@ button {
 @keyframes isl-ghost-in {
   from {
     opacity: 0;
-    clip-path: inset(0 calc(50% - 26px) round 26px);
+    clip-path: inset(0 calc(50% - 26px) round calc(26px * var(--radius-scale)));
   }
   to {
     opacity: 1;
-    clip-path: inset(-2px round 26px);
+    clip-path: inset(-2px round calc(26px * var(--radius-scale)));
   }
 }
 
 @keyframes isl-ghost-in-v {
   from {
     opacity: 0;
-    clip-path: inset(calc(50% - 26px) 0 round 26px);
+    clip-path: inset(calc(50% - 26px) 0 round calc(26px * var(--radius-scale)));
   }
   to {
     opacity: 1;
-    clip-path: inset(-2px round 26px);
+    clip-path: inset(-2px round calc(26px * var(--radius-scale)));
   }
 }
 
@@ -436,27 +436,27 @@ button {
 
 @keyframes isl-pill-in {
   from {
-    clip-path: inset(0 calc(50% - 19px) round 19px);
+    clip-path: inset(0 calc(50% - 19px) round min(19px, var(--radius-2xl)));
     filter: blur(2px);
   }
   60% {
     filter: blur(0);
   }
   to {
-    clip-path: inset(0 round 19px);
+    clip-path: inset(0 round min(19px, var(--radius-2xl)));
   }
 }
 
 @keyframes isl-pill-in-v {
   from {
-    clip-path: inset(calc(50% - 19px) 0 round 19px);
+    clip-path: inset(calc(50% - 19px) 0 round min(19px, var(--radius-2xl)));
     filter: blur(2px);
   }
   60% {
     filter: blur(0);
   }
   to {
-    clip-path: inset(0 round 19px);
+    clip-path: inset(0 round min(19px, var(--radius-2xl)));
   }
 }
 
@@ -487,12 +487,12 @@ button {
    then stays lit until it is dealt with. Quiet, but unmistakable. */
 .isl[data-face="done"] .isl__circle {
   border-color: color-mix(in srgb, var(--success) 60%, transparent);
-  box-shadow: var(--island-drop), 0 0 12px color-mix(in srgb, var(--success) 35%, transparent);
+  box-shadow: var(--island-drop), 0 0 10px color-mix(in srgb, var(--success) 38%, transparent);
 }
 
 .isl[data-face="done"] .isl__pill {
   border-color: color-mix(in srgb, var(--success) 65%, transparent);
-  box-shadow: var(--island-drop), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
+  box-shadow: var(--island-drop), 0 0 10px color-mix(in srgb, var(--success) 36%, transparent),
     inset 0 1px 0 var(--island-highlight);
   animation: isl-done-glow 1.6s var(--easing-standard) 1;
 }
@@ -503,11 +503,11 @@ button {
       inset 0 1px 0 var(--island-highlight);
   }
   35% {
-    box-shadow: var(--island-drop), 0 0 26px color-mix(in srgb, var(--success) 75%, transparent),
+    box-shadow: var(--island-drop), 0 0 12px color-mix(in srgb, var(--success) 80%, transparent),
       inset 0 1px 0 var(--island-highlight);
   }
   100% {
-    box-shadow: var(--island-drop), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
+    box-shadow: var(--island-drop), 0 0 10px color-mix(in srgb, var(--success) 36%, transparent),
       inset 0 1px 0 var(--island-highlight);
   }
 }
@@ -589,6 +589,9 @@ button {
   box-shadow: inset 0 1px 0 var(--island-highlight);
   --pw: 240px;
   --ph: 38px;
+  /* The clip follows the theme's corners: square in Swiss, round elsewhere. */
+  --sheet-round: calc(18px * var(--radius-scale));
+  --pill-round: min(19px, var(--radius-2xl));
   --isl-open: 440ms cubic-bezier(0.32, 1.18, 0.42, 1) both;
   --isl-close: 240ms cubic-bezier(0.5, 0, 0.3, 1) forwards;
   animation: isl-open-top var(--isl-open);
@@ -632,87 +635,87 @@ button {
 @keyframes isl-open-top {
   from {
     clip-path: inset(
-      0 calc(50% - var(--pw) / 2) calc(100% - var(--ph)) calc(50% - var(--pw) / 2) round 19px
+      0 calc(50% - var(--pw) / 2) calc(100% - var(--ph)) calc(50% - var(--pw) / 2) round var(--pill-round)
     );
   }
   to {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
 }
 
 @keyframes isl-open-bottom {
   from {
     clip-path: inset(
-      calc(100% - var(--ph)) calc(50% - var(--pw) / 2) 0 calc(50% - var(--pw) / 2) round 19px
+      calc(100% - var(--ph)) calc(50% - var(--pw) / 2) 0 calc(50% - var(--pw) / 2) round var(--pill-round)
     );
   }
   to {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
 }
 
 @keyframes isl-open-left {
   from {
     clip-path: inset(
-      calc(50% - var(--ph) / 2) calc(100% - var(--pw)) calc(50% - var(--ph) / 2) 0 round 19px
+      calc(50% - var(--ph) / 2) calc(100% - var(--pw)) calc(50% - var(--ph) / 2) 0 round var(--pill-round)
     );
   }
   to {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
 }
 
 @keyframes isl-open-right {
   from {
     clip-path: inset(
-      calc(50% - var(--ph) / 2) 0 calc(50% - var(--ph) / 2) calc(100% - var(--pw)) round 19px
+      calc(50% - var(--ph) / 2) 0 calc(50% - var(--ph) / 2) calc(100% - var(--pw)) round var(--pill-round)
     );
   }
   to {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
 }
 
 @keyframes isl-close-top {
   from {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
   to {
     clip-path: inset(
-      0 calc(50% - var(--pw) / 2) calc(100% - var(--ph)) calc(50% - var(--pw) / 2) round 19px
+      0 calc(50% - var(--pw) / 2) calc(100% - var(--ph)) calc(50% - var(--pw) / 2) round var(--pill-round)
     );
   }
 }
 
 @keyframes isl-close-bottom {
   from {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
   to {
     clip-path: inset(
-      calc(100% - var(--ph)) calc(50% - var(--pw) / 2) 0 calc(50% - var(--pw) / 2) round 19px
+      calc(100% - var(--ph)) calc(50% - var(--pw) / 2) 0 calc(50% - var(--pw) / 2) round var(--pill-round)
     );
   }
 }
 
 @keyframes isl-close-left {
   from {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
   to {
     clip-path: inset(
-      calc(50% - var(--ph) / 2) calc(100% - var(--pw)) calc(50% - var(--ph) / 2) 0 round 19px
+      calc(50% - var(--ph) / 2) calc(100% - var(--pw)) calc(50% - var(--ph) / 2) 0 round var(--pill-round)
     );
   }
 }
 
 @keyframes isl-close-right {
   from {
-    clip-path: inset(0 round 18px);
+    clip-path: inset(0 round var(--sheet-round));
   }
   to {
     clip-path: inset(
-      calc(50% - var(--ph) / 2) 0 calc(50% - var(--ph) / 2) calc(100% - var(--pw)) round 19px
+      calc(50% - var(--ph) / 2) 0 calc(50% - var(--ph) / 2) calc(100% - var(--pw)) round var(--pill-round)
     );
   }
 }
@@ -1245,7 +1248,7 @@ button {
 
 /* Atelier: paper or espresso, a serif word, a terracotta ring in the bubble. */
 [data-theme|="atelier"] {
-  --island-drop: 0 6px 18px var(--island-shade);
+  --island-drop: 0 3px 9px var(--island-shade);
 }
 
 [data-theme|="atelier"] .isl__pilltext {
@@ -1316,7 +1319,7 @@ button {
 
 /* Aurora: a ring of violet into cyan around each part, and a soft glow. */
 [data-theme|="aurora"] {
-  --island-drop: 0 6px 22px color-mix(in srgb, #7d5fff 32%, transparent);
+  --island-drop: 0 2px 10px color-mix(in srgb, #7d5fff 42%, transparent);
   --island-edge-width: 1.5px;
   --island-edge: transparent;
 }

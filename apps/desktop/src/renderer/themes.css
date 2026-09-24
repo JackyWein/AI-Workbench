@@ -258,10 +258,10 @@
   box-shadow: 0 6px 18px rgba(125, 95, 255, 0.28);
 }
 
+/* Glass over the glow; its one outline is the box's own border. */
 [data-theme|="aurora"] .composer__inner {
   background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
   backdrop-filter: blur(18px);
-  box-shadow: var(--shadow-raised), 0 0 0 1px var(--card-border-color);
 }
 
 [data-theme|="aurora"] .usage-bar__fill,

@@ -244,7 +244,7 @@
   --island-danger: #c43d31;
   --island-on-warning: #ffffff;
   --island-on-accent: #ffffff;
-  --island-drop: 0 6px 18px var(--island-shade);
+  --island-drop: 0 3px 9px var(--island-shade);
 
   --surface-base: #f6f6f8;
   --surface-raised: #ffffff;

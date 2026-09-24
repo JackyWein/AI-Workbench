@@ -293,7 +293,7 @@
   --island-danger: #c22c21;
   --island-on-warning: #ffffff;
   --island-on-accent: #ffffff;
-  --island-drop: 0 6px 18px var(--island-shade);
+  --island-drop: 0 3px 9px var(--island-shade);
 
   --surface-base: #f3f5f0;
   --surface-raised: #ffffff;
@@ -657,7 +657,7 @@
   --island-danger: #c92a49;
   --island-on-warning: #ffffff;
   --island-on-accent: #ffffff;
-  --island-drop: 0 6px 18px var(--island-shade);
+  --island-drop: 0 3px 9px var(--island-shade);
 
   --surface-base: #f5f4ff;
   --surface-raised: #ffffff;

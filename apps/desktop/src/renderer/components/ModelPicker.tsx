@@ -2,6 +2,7 @@ import { type JSX, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelInfo } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { isPickableProvider } from "../lib/provider-label.js";
+import { usePanelFit } from "../lib/panel-fit.js";
 
 /**
  * Where a model name comes from, in the same words as the command palette:
@@ -43,6 +44,10 @@ export function ModelPicker(): JSX.Element {
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // In the composer the pill sits at the foot of the window: the list opens
+  // upward there, and scrolls rather than running off the window.
+  const fit = usePanelFit(open, triggerRef, 320, 460);
 
   const session = sessions.find((entry) => entry.id === activeSessionId);
   const provider = providers.find((entry) => entry.metadata.id === session?.providerId);
@@ -141,6 +146,7 @@ export function ModelPicker(): JSX.Element {
   return (
     <div className="popover" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="pill pill--acc"
         onClick={() => setOpen((value) => !value)}
@@ -152,7 +158,14 @@ export function ModelPicker(): JSX.Element {
         {label} ▾
       </button>
       {open && session ? (
-        <div className="popover__panel" role="listbox" aria-label="Models and teams" style={{ minWidth: 300 }}>
+        <div
+          className="popover__panel popover__panel--scroll"
+          data-placement={fit.placement}
+          data-align={fit.align}
+          role="listbox"
+          aria-label="Models and teams"
+          style={{ minWidth: 300, maxHeight: fit.maxHeight }}
+        >
           <input
             ref={inputRef}
             className="text-input"

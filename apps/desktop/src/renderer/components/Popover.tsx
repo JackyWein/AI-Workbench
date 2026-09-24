@@ -1,4 +1,5 @@
 import { type JSX, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePanelFit } from "../lib/panel-fit.js";
 
 interface PopoverProps {
   /** Accessible name of the panel. */
@@ -36,6 +37,8 @@ export function Popover({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  // Near the foot of the window the detail opens upward instead of off it.
+  const fit = usePanelFit(open, triggerRef, 260, 420);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -93,7 +96,13 @@ export function Popover({
         {trigger}
       </button>
       {open ? (
-        <div className="popover__panel" role="dialog" aria-label={title}>
+        <div
+          className="popover__panel popover__panel--scroll"
+          data-placement={fit.placement}
+          role="dialog"
+          aria-label={title}
+          style={{ maxHeight: fit.maxHeight }}
+        >
           <p className="popover__title">{title}</p>
           {children}
         </div>
