@@ -61,7 +61,10 @@ export function upgradeStoredSettings(value: unknown): unknown {
 export const densitySchema = z.enum(["comfortable", "compact"]);
 export type Density = z.infer<typeof densitySchema>;
 
-/** Application settings. Dark mode first (spec §110). */
+/**
+ * Application settings. Dark mode first (spec §110): Quiet's dark is the
+ * house look, and a new install follows the system's light or dark.
+ */
 export const appSettingsSchema = z.object({
   theme: themeSchema,
   mode: colorModeSchema,
@@ -76,7 +79,7 @@ export type AppSettings = z.infer<typeof appSettingsSchema>;
 
 export const defaultAppSettings: AppSettings = {
   theme: "quiet",
-  mode: "dark",
+  mode: "system",
   density: "comfortable",
   developerMode: false,
   defaultProviderId: null,

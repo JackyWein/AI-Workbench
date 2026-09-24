@@ -148,7 +148,8 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-.sidebar__head .icon-button {
+/* The first control after the name takes the free space; the rest follow. */
+.sidebar__head .icon-button:first-of-type {
   margin-left: auto;
 }
 

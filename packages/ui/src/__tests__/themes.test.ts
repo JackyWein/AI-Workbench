@@ -161,7 +161,12 @@ const pairs: ReadonlyArray<readonly [string, string, number, string?]> = [
   ["--island-on-warning", "--island-warning", 4.5],
   ["--island-on-accent", "--island-accent", 4.5],
   ["--island-running", "--island-body", 4.5],
-  ["--island-warning", "--island-body", 4.5],
+  // As text: a link, a count, a row under the pointer.
+  ["--island-accent", "--island-body", 4.5],
+  // As a ring and a badge, not as text: the non-text floor.
+  ["--island-warning", "--island-body", 3],
+  ["--island-success", "--island-sunken", 3],
+  ["--island-danger", "--island-sunken", 3],
   ["--terminal-text", "--terminal-surface", 7],
 ];
 

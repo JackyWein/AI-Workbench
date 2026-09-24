@@ -61,6 +61,12 @@
 
   --card-border: var(--card-border-width) solid var(--card-border-color);
 
+  /* The island's outline, lift and bubble; a theme may draw them its way. */
+  --island-edge-width: 1px;
+  --island-edge: var(--island-line);
+  --island-drop: 0 3px 8px var(--island-shade);
+  --island-bubble-radius: 50%;
+
 }
 
 /*
@@ -151,9 +157,10 @@
   --term-bright-white: #f4f5f7;
 
   /*
-   * The island floats over other programs' windows, so it keeps a dark body
-   * in every theme: a light pill on a light desktop would vanish, and its
-   * text must never inherit a light theme's dark ink.
+   * The island's own palette. It floats over other programs' windows, so it
+   * never borrows the page's: each theme gives it one per mode, dark here and
+   * light in the light modes, with an outline and a shadow that hold it off
+   * any desktop.
    */
   --island-surface: rgba(28, 30, 35, 0.94);
   --island-surface-strong: rgba(28, 30, 35, 0.96);
@@ -214,6 +221,30 @@
 
 [data-theme="light"] {
   color-scheme: light;
+
+  /* The island in the light mode: frosted white, the same calm. */
+  --island-surface: rgba(255, 255, 255, 0.94);
+  --island-surface-strong: rgba(255, 255, 255, 0.97);
+  --island-body: rgba(252, 252, 253, 0.96);
+  --island-solid: #ffffff;
+  --island-sunken: #f0f1f4;
+  --island-highlight: rgba(255, 255, 255, 0.8);
+  --island-shade: rgba(17, 19, 26, 0.2);
+  --island-text: #16171b;
+  --island-text-secondary: #4b505a;
+  --island-text-muted: #6b707a;
+  --island-line: rgba(17, 19, 26, 0.12);
+  --island-line-strong: rgba(17, 19, 26, 0.22);
+  --island-hover: rgba(17, 19, 26, 0.045);
+  --island-active: rgba(17, 19, 26, 0.07);
+  --island-accent: #4a5fd9;
+  --island-running: #0c7560;
+  --island-warning: #a86500;
+  --island-success: #1f8a55;
+  --island-danger: #c43d31;
+  --island-on-warning: #ffffff;
+  --island-on-accent: #ffffff;
+  --island-drop: 0 6px 18px var(--island-shade);
 
   --surface-base: #f6f6f8;
   --surface-raised: #ffffff;

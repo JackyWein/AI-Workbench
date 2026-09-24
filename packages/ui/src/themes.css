@@ -64,6 +64,45 @@
   --logo-bar-dim: rgba(255, 246, 236, 0.62);
   --logo-edge: transparent;
 
+
+  --island-surface: rgba(255, 252, 246, 0.95);
+  --island-surface-strong: rgba(255, 252, 246, 0.97);
+  --island-body: rgba(250, 246, 238, 0.97);
+  --island-solid: #fffcf6;
+  --island-sunken: #f1eadf;
+  --island-highlight: rgba(255, 255, 255, 0.7);
+  --island-shade: rgba(74, 52, 30, 0.22);
+  --island-text: #231e18;
+  --island-text-secondary: #564d42;
+  --island-text-muted: #72675a;
+  --island-line: rgba(74, 52, 30, 0.14);
+  --island-line-strong: rgba(74, 52, 30, 0.26);
+  --island-hover: rgba(74, 52, 30, 0.05);
+  --island-active: rgba(74, 52, 30, 0.08);
+  --island-accent: #a84a25;
+  --island-running: #276a82;
+  --island-warning: #a86500;
+  --island-success: #3a7049;
+  --island-danger: #b0372b;
+  --island-on-warning: #ffffff;
+  --island-on-accent: #ffffff;
+
+  --font-sans: "Instrument Sans Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --display-weight: 500;
+  --display-tracking: -0.005em;
+  --label-weight: 600;
+  --label-tracking: 0.09em;
+
+  --radius-scale: 1.35;
+  --card-shadow: 0 1px 2px rgba(74, 52, 30, 0.06);
+}
+
+/* Atelier by night: espresso and lamplight, the same terracotta warmed up. */
+[data-theme="atelier-dark"] {
+  color-scheme: dark;
+
   --island-surface: rgba(42, 36, 29, 0.95);
   --island-surface-strong: rgba(42, 36, 29, 0.97);
   --island-body: rgba(33, 28, 22, 0.97);
@@ -85,22 +124,6 @@
   --island-danger: #f08a7a;
   --island-on-warning: #2a1d05;
   --island-on-accent: #231e18;
-
-  --font-sans: "Instrument Sans Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
-  --display-weight: 500;
-  --display-tracking: -0.005em;
-  --label-weight: 600;
-  --label-tracking: 0.09em;
-
-  --radius-scale: 1.35;
-  --card-shadow: 0 1px 2px rgba(74, 52, 30, 0.06);
-}
-
-/* Atelier by night: espresso and lamplight, the same terracotta warmed up. */
-[data-theme="atelier-dark"] {
-  color-scheme: dark;
 
   --surface-base: #1c1814;
   --surface-raised: #231e19;
@@ -249,6 +272,29 @@
 [data-theme="mission-light"] {
   color-scheme: light;
 
+  --island-surface: rgba(255, 255, 255, 0.95);
+  --island-surface-strong: rgba(255, 255, 255, 0.97);
+  --island-body: rgba(247, 249, 244, 0.97);
+  --island-solid: #ffffff;
+  --island-sunken: #e8ece4;
+  --island-highlight: rgba(255, 255, 255, 0.8);
+  --island-shade: rgba(10, 20, 10, 0.2);
+  --island-text: #111611;
+  --island-text-secondary: #3d483e;
+  --island-text-muted: #5b675d;
+  --island-line: rgba(20, 40, 20, 0.14);
+  --island-line-strong: rgba(20, 40, 20, 0.28);
+  --island-hover: rgba(20, 40, 20, 0.045);
+  --island-active: rgba(20, 40, 20, 0.075);
+  --island-accent: #3f6600;
+  --island-running: #00709e;
+  --island-warning: #a86500;
+  --island-success: #2c7a31;
+  --island-danger: #c22c21;
+  --island-on-warning: #ffffff;
+  --island-on-accent: #ffffff;
+  --island-drop: 0 6px 18px var(--island-shade);
+
   --surface-base: #f3f5f0;
   --surface-raised: #ffffff;
   --surface-overlay: #ffffff;
@@ -357,27 +403,28 @@
   --logo-bar-dim: rgba(28, 26, 63, 0.5);
   --logo-edge: #1c1a3f;
 
-  --island-surface: rgba(35, 32, 90, 0.96);
-  --island-surface-strong: rgba(35, 32, 90, 0.97);
-  --island-body: rgba(28, 26, 63, 0.97);
-  --island-solid: #23205a;
-  --island-sunken: #1c1a3f;
-  --island-highlight: rgba(255, 255, 255, 0.1);
-  --island-shade: rgba(28, 26, 63, 0.45);
-  --island-text: #ffffff;
-  --island-text-secondary: #d9d7fa;
-  --island-text-muted: #aaa7e6;
-  --island-line: rgba(255, 255, 255, 0.14);
-  --island-line-strong: rgba(255, 255, 255, 0.28);
-  --island-hover: rgba(255, 255, 255, 0.07);
-  --island-active: rgba(255, 255, 255, 0.11);
-  --island-accent: #ffc93c;
-  --island-running: #5eead4;
-  --island-warning: #ffc93c;
-  --island-success: #6ee7b7;
-  --island-danger: #ff8a7a;
+
+  --island-surface: rgba(255, 255, 255, 0.97);
+  --island-surface-strong: rgba(255, 255, 255, 0.98);
+  --island-body: rgba(255, 248, 231, 0.98);
+  --island-solid: #ffffff;
+  --island-sunken: #fff3d6;
+  --island-highlight: rgba(255, 255, 255, 0.6);
+  --island-shade: rgba(28, 26, 63, 0.25);
+  --island-text: #1c1a3f;
+  --island-text-secondary: #46437a;
+  --island-text-muted: #5f5c89;
+  --island-line: rgba(28, 26, 63, 0.16);
+  --island-line-strong: #1c1a3f;
+  --island-hover: rgba(28, 26, 63, 0.05);
+  --island-active: rgba(28, 26, 63, 0.08);
+  --island-accent: #c2381a;
+  --island-running: #2f4be0;
+  --island-warning: #c47c00;
+  --island-success: #0f7654;
+  --island-danger: #c8261b;
   --island-on-warning: #1c1a3f;
-  --island-on-accent: #1c1a3f;
+  --island-on-accent: #ffffff;
 
   --font-sans: "DM Sans Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-display: "Bricolage Grotesque Variable", "DM Sans Variable", -apple-system, sans-serif;
@@ -417,6 +464,28 @@
 /* Playground after dark: night indigo, cream type, the same bright toys. */
 [data-theme="playground-dark"] {
   color-scheme: dark;
+
+  --island-surface: rgba(35, 32, 90, 0.96);
+  --island-surface-strong: rgba(35, 32, 90, 0.97);
+  --island-body: rgba(28, 26, 63, 0.97);
+  --island-solid: #23205a;
+  --island-sunken: #1c1a3f;
+  --island-highlight: rgba(255, 255, 255, 0.1);
+  --island-shade: rgba(28, 26, 63, 0.45);
+  --island-text: #ffffff;
+  --island-text-secondary: #d9d7fa;
+  --island-text-muted: #aaa7e6;
+  --island-line: rgba(255, 255, 255, 0.14);
+  --island-line-strong: rgba(255, 255, 255, 0.28);
+  --island-hover: rgba(255, 255, 255, 0.07);
+  --island-active: rgba(255, 255, 255, 0.11);
+  --island-accent: #ffc93c;
+  --island-running: #5eead4;
+  --island-warning: #ffc93c;
+  --island-success: #6ee7b7;
+  --island-danger: #ff8a7a;
+  --island-on-warning: #1c1a3f;
+  --island-on-accent: #1c1a3f;
 
   --surface-base: #1a1838;
   --surface-raised: #25224f;
@@ -567,6 +636,29 @@
 [data-theme="aurora-light"] {
   color-scheme: light;
 
+  --island-surface: rgba(255, 255, 255, 0.92);
+  --island-surface-strong: rgba(255, 255, 255, 0.96);
+  --island-body: rgba(247, 246, 255, 0.95);
+  --island-solid: #ffffff;
+  --island-sunken: #ecebfb;
+  --island-highlight: rgba(255, 255, 255, 0.8);
+  --island-shade: rgba(40, 30, 120, 0.2);
+  --island-text: #16143a;
+  --island-text-secondary: #45427a;
+  --island-text-muted: #646197;
+  --island-line: rgba(60, 50, 160, 0.14);
+  --island-line-strong: rgba(60, 50, 160, 0.28);
+  --island-hover: rgba(40, 30, 120, 0.045);
+  --island-active: rgba(40, 30, 120, 0.075);
+  --island-accent: #5f4fe0;
+  --island-running: #056a7c;
+  --island-warning: #a86500;
+  --island-success: #0c8250;
+  --island-danger: #c92a49;
+  --island-on-warning: #ffffff;
+  --island-on-accent: #ffffff;
+  --island-drop: 0 6px 18px var(--island-shade);
+
   --surface-base: #f5f4ff;
   --surface-raised: #ffffff;
   --surface-overlay: #ffffff;
@@ -672,27 +764,28 @@
   --logo-bar-dim: rgba(255, 255, 255, 0.65);
   --logo-edge: transparent;
 
-  --island-surface: rgba(10, 10, 10, 0.95);
-  --island-surface-strong: rgba(10, 10, 10, 0.97);
-  --island-body: rgba(0, 0, 0, 0.96);
-  --island-solid: #0a0a0a;
-  --island-sunken: #000000;
-  --island-highlight: rgba(255, 255, 255, 0.07);
-  --island-shade: rgba(0, 0, 0, 0.35);
-  --island-text: #ffffff;
-  --island-text-secondary: #c4c4c4;
-  --island-text-muted: #8f8f8f;
-  --island-line: rgba(255, 255, 255, 0.12);
-  --island-line-strong: rgba(255, 255, 255, 0.25);
-  --island-hover: rgba(255, 255, 255, 0.06);
-  --island-active: rgba(255, 255, 255, 0.1);
-  --island-accent: #ff4d4d;
-  --island-running: #5aa9ff;
-  --island-warning: #ffc233;
-  --island-success: #4cd07d;
-  --island-danger: #ff5c5c;
-  --island-on-warning: #1a1200;
-  --island-on-accent: #0a0a0a;
+
+  --island-surface: rgba(255, 255, 255, 0.97);
+  --island-surface-strong: rgba(255, 255, 255, 0.98);
+  --island-body: rgba(255, 255, 255, 0.97);
+  --island-solid: #ffffff;
+  --island-sunken: #f3f3f1;
+  --island-highlight: rgba(255, 255, 255, 0.8);
+  --island-shade: rgba(0, 0, 0, 0.18);
+  --island-text: #0a0a0a;
+  --island-text-secondary: #3b3b3b;
+  --island-text-muted: #666666;
+  --island-line: rgba(0, 0, 0, 0.14);
+  --island-line-strong: #0a0a0a;
+  --island-hover: rgba(0, 0, 0, 0.04);
+  --island-active: rgba(0, 0, 0, 0.07);
+  --island-accent: #d10511;
+  --island-running: #0050b3;
+  --island-warning: #a86500;
+  --island-success: #00783c;
+  --island-danger: #b00020;
+  --island-on-warning: #ffffff;
+  --island-on-accent: #ffffff;
 
   --font-sans: "Inter Variable", -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --font-display: "Inter Tight Variable", "Inter Variable", "Helvetica Neue", Arial, sans-serif;
@@ -714,6 +807,28 @@
 /* Swiss inverted: white on black, the red kept, the grid in white hairlines. */
 [data-theme="swiss-dark"] {
   color-scheme: dark;
+
+  --island-surface: rgba(10, 10, 10, 0.95);
+  --island-surface-strong: rgba(10, 10, 10, 0.97);
+  --island-body: rgba(0, 0, 0, 0.96);
+  --island-solid: #0a0a0a;
+  --island-sunken: #000000;
+  --island-highlight: rgba(255, 255, 255, 0.07);
+  --island-shade: rgba(0, 0, 0, 0.35);
+  --island-text: #ffffff;
+  --island-text-secondary: #c4c4c4;
+  --island-text-muted: #8f8f8f;
+  --island-line: rgba(255, 255, 255, 0.12);
+  --island-line-strong: rgba(255, 255, 255, 0.25);
+  --island-hover: rgba(255, 255, 255, 0.06);
+  --island-active: rgba(255, 255, 255, 0.1);
+  --island-accent: #ff4d4d;
+  --island-running: #5aa9ff;
+  --island-warning: #ffc233;
+  --island-success: #4cd07d;
+  --island-danger: #ff5c5c;
+  --island-on-warning: #1a1200;
+  --island-on-accent: #0a0a0a;
 
   --surface-base: #0a0a0a;
   --surface-raised: #111111;

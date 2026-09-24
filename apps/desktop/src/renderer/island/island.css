@@ -186,10 +186,10 @@ button {
   width: 42px;
   height: 42px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--island-bubble-radius);
   background: var(--island-surface);
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 3px 8px var(--island-shade), inset 0 1px 0 var(--island-highlight);
+  border: var(--island-edge-width) solid var(--island-edge);
+  box-shadow: var(--island-drop), inset 0 1px 0 var(--island-highlight);
   cursor: pointer;
   transition:
     border-color var(--duration-normal) var(--easing-standard),
@@ -275,23 +275,23 @@ button {
   justify-content: center;
   width: 100%;
   height: 100%;
-  border-radius: 50%;
+  border-radius: var(--island-bubble-radius);
   background: var(--island-solid);
 }
 
 .isl[data-face="working"] .isl__circle {
   border-color: color-mix(in srgb, var(--running) 60%, transparent);
-  box-shadow: 0 3px 8px var(--island-shade), 0 0 0 3px color-mix(in srgb, var(--running) 13%, transparent);
+  box-shadow: var(--island-drop), 0 0 0 3px color-mix(in srgb, var(--running) 13%, transparent);
 }
 
 .isl[data-face="approval"] .isl__circle {
   border-color: color-mix(in srgb, var(--warning) 70%, transparent);
-  box-shadow: 0 3px 8px var(--island-shade), 0 0 0 3px color-mix(in srgb, var(--warning) 15%, transparent);
+  box-shadow: var(--island-drop), 0 0 0 3px color-mix(in srgb, var(--warning) 15%, transparent);
 }
 
 .isl[data-face="question"] .isl__circle {
   border-color: color-mix(in srgb, var(--accent) 70%, transparent);
-  box-shadow: 0 3px 8px var(--island-shade), 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
+  box-shadow: var(--island-drop), 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .isl[data-face="idle"] .isl__circle .isl__mark,
@@ -350,8 +350,8 @@ button {
   padding: 12px 14px;
   border-radius: calc(12px * var(--radius-scale));
   background: var(--island-surface-strong);
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 3px 8px var(--island-shade), inset 0 1px 0 var(--island-highlight);
+  border: var(--island-edge-width) solid var(--island-edge);
+  box-shadow: var(--island-drop), inset 0 1px 0 var(--island-highlight);
 }
 
 .isl__side > .isl__attn {
@@ -404,8 +404,8 @@ button {
   padding: 0 14px;
   border-radius: var(--radius-2xl);
   background: var(--island-body);
-  border: 1px solid var(--border-subtle);
-  box-shadow: 0 3px 8px var(--island-shade), inset 0 1px 0 var(--island-highlight);
+  border: var(--island-edge-width) solid var(--island-edge);
+  box-shadow: var(--island-drop), inset 0 1px 0 var(--island-highlight);
   cursor: pointer;
   transition:
     border-color var(--duration-normal) var(--easing-standard),
@@ -473,13 +473,13 @@ button {
 
 .isl[data-face="approval"] .isl__pill {
   border-color: color-mix(in srgb, var(--warning) 70%, transparent);
-  box-shadow: 0 3px 8px var(--island-shade), 0 0 9px color-mix(in srgb, var(--warning) 28%, transparent),
+  box-shadow: var(--island-drop), 0 0 9px color-mix(in srgb, var(--warning) 28%, transparent),
     inset 0 1px 0 var(--island-highlight);
 }
 
 .isl[data-face="question"] .isl__pill {
   border-color: color-mix(in srgb, var(--accent) 65%, transparent);
-  box-shadow: 0 3px 8px var(--island-shade), 0 0 9px color-mix(in srgb, var(--accent) 30%, transparent),
+  box-shadow: var(--island-drop), 0 0 9px color-mix(in srgb, var(--accent) 30%, transparent),
     inset 0 1px 0 var(--island-highlight);
 }
 
@@ -487,27 +487,27 @@ button {
    then stays lit until it is dealt with. Quiet, but unmistakable. */
 .isl[data-face="done"] .isl__circle {
   border-color: color-mix(in srgb, var(--success) 60%, transparent);
-  box-shadow: 0 3px 8px var(--island-shade), 0 0 12px color-mix(in srgb, var(--success) 35%, transparent);
+  box-shadow: var(--island-drop), 0 0 12px color-mix(in srgb, var(--success) 35%, transparent);
 }
 
 .isl[data-face="done"] .isl__pill {
   border-color: color-mix(in srgb, var(--success) 65%, transparent);
-  box-shadow: 0 3px 8px var(--island-shade), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
+  box-shadow: var(--island-drop), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
     inset 0 1px 0 var(--island-highlight);
   animation: isl-done-glow 1.6s var(--easing-standard) 1;
 }
 
 @keyframes isl-done-glow {
   0% {
-    box-shadow: 0 3px 8px var(--island-shade), 0 0 0 color-mix(in srgb, var(--success) 0%, transparent),
+    box-shadow: var(--island-drop), 0 0 0 color-mix(in srgb, var(--success) 0%, transparent),
       inset 0 1px 0 var(--island-highlight);
   }
   35% {
-    box-shadow: 0 3px 8px var(--island-shade), 0 0 26px color-mix(in srgb, var(--success) 75%, transparent),
+    box-shadow: var(--island-drop), 0 0 26px color-mix(in srgb, var(--success) 75%, transparent),
       inset 0 1px 0 var(--island-highlight);
   }
   100% {
-    box-shadow: 0 3px 8px var(--island-shade), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
+    box-shadow: var(--island-drop), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
       inset 0 1px 0 var(--island-highlight);
   }
 }
@@ -585,7 +585,7 @@ button {
   padding: 12px 14px;
   border-radius: calc(18px * var(--radius-scale));
   background: var(--island-body);
-  border: 1px solid var(--border-subtle);
+  border: var(--island-edge-width) solid var(--island-edge);
   box-shadow: inset 0 1px 0 var(--island-highlight);
   --pw: 240px;
   --ph: 38px;
@@ -1219,4 +1219,141 @@ button {
   .isl__side[data-hiding="true"] {
     transition: none;
   }
+}
+
+/* ------------------------------------------------------------- themes -- */
+
+/*
+ * The island in each theme's own hand. Colours come from the theme's island
+ * palette (light or dark with the mode); what follows is character: the
+ * face its titles are set in, the outline and lift of the pill, the bubble
+ * and the card, and the shape of the bubble.
+ */
+.isl__attitle,
+.isl__qtitle,
+.isl__uhtitle {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+}
+
+.isl__xl,
+.isl__live {
+  font-family: var(--label-font);
+  letter-spacing: var(--label-tracking);
+}
+
+/* Atelier: paper or espresso, a serif word, a terracotta ring in the bubble. */
+[data-theme|="atelier"] {
+  --island-drop: 0 6px 18px var(--island-shade);
+}
+
+[data-theme|="atelier"] .isl__pilltext {
+  font-family: var(--font-display);
+  font-size: 13px;
+}
+
+[data-theme|="atelier"] .isl__blobin {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+/* Mission Control: a readout. Square bubble, monospace capitals, a lit edge. */
+[data-theme|="mission"] {
+  --island-bubble-radius: 7px;
+  --island-edge: color-mix(in srgb, var(--accent) 38%, var(--island-line));
+}
+
+[data-theme|="mission"] .isl__pilltext,
+[data-theme|="mission"] .isl__pillmeta,
+[data-theme|="mission"] .isl__el,
+[data-theme|="mission"] .isl__badge,
+[data-theme|="mission"] .isl__count {
+  font-family: var(--font-mono);
+}
+
+[data-theme|="mission"] .isl__pilltext {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+[data-theme|="mission"] .isl__sheet,
+[data-theme|="mission"] .isl__card,
+[data-theme|="mission"] .isl__side > .isl__attn {
+  box-shadow: var(--island-drop), inset 2px 0 0 var(--accent);
+}
+
+/* Playground: thick ink, a hard shadow, a yellow bubble, badges that pop. */
+[data-theme|="playground"] {
+  --island-edge-width: 2px;
+  --island-edge: var(--island-ink);
+  --island-drop: 3px 3px 0 var(--island-ink);
+  --island-ink: #1c1a3f;
+}
+
+[data-theme="playground-dark"] {
+  --island-ink: #0b0a1c;
+}
+
+[data-theme|="playground"] .isl__blobin {
+  background: #ffc93c;
+}
+
+[data-theme|="playground"] .isl__badge,
+[data-theme|="playground"] .isl__count {
+  border: 2px solid var(--island-ink);
+}
+
+[data-theme|="playground"] .isl__pilltext,
+[data-theme|="playground"] .isl__btn {
+  font-weight: 700;
+}
+
+[data-theme|="playground"] .isl__btn--amber {
+  border: 2px solid var(--island-ink);
+  box-shadow: 2px 2px 0 var(--island-ink);
+}
+
+/* Aurora: a ring of violet into cyan around each part, and a soft glow. */
+[data-theme|="aurora"] {
+  --island-drop: 0 6px 22px color-mix(in srgb, #7d5fff 32%, transparent);
+  --island-edge-width: 1.5px;
+  --island-edge: transparent;
+}
+
+[data-theme|="aurora"] .isl__circle {
+  background:
+    linear-gradient(var(--island-surface), var(--island-surface)) padding-box,
+    linear-gradient(135deg, #a497ff, #5ee7f5) border-box;
+}
+
+[data-theme|="aurora"] .isl__pill,
+[data-theme|="aurora"] .isl__sheet {
+  background:
+    linear-gradient(var(--island-body), var(--island-body)) padding-box,
+    linear-gradient(135deg, #a497ff, #5ee7f5) border-box;
+}
+
+[data-theme|="aurora"] .isl__card,
+[data-theme|="aurora"] .isl__side > .isl__attn {
+  background:
+    linear-gradient(var(--island-surface-strong), var(--island-surface-strong)) padding-box,
+    linear-gradient(135deg, #a497ff, #5ee7f5) border-box;
+}
+
+/* Swiss: square, a full-ink rule, no lift — and the type does the work. */
+[data-theme|="swiss"] {
+  --island-bubble-radius: 0;
+  --island-edge-width: 2px;
+  --island-edge: var(--island-text);
+  --island-drop: 0 0 0 transparent;
+}
+
+[data-theme|="swiss"] .isl__pilltext,
+[data-theme|="swiss"] .isl__btn {
+  font-weight: 700;
+}
+
+[data-theme|="swiss"] .isl__xl {
+  font-weight: 700;
 }

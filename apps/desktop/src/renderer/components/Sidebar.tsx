@@ -16,6 +16,7 @@ import type { Session, Workspace } from "@ai-workbench/shared";
 import { meterTone, tightestLimit, usageProviders, useNow } from "../lib/usage.js";
 import { useWorkbench, type MainView } from "../store/workbench.js";
 import { AppLogo } from "./AppLogo.js";
+import { ModeToggle } from "./ModeToggle.js";
 import { Popover } from "./Popover.js";
 
 interface SidebarProps {
@@ -109,6 +110,7 @@ export function Sidebar({
         <AppLogo className="sidebar__appmark" size={22} />
         <span className="sidebar__title">AI Workbench</span>
         {appVersion ? <span className="sidebar__version">{appVersion}</span> : null}
+        <ModeToggle />
         <button
           type="button"
           className="icon-button"

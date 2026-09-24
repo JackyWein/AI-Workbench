@@ -1754,29 +1754,42 @@ export async function runStartupCheck(
        [...document.querySelectorAll('.theme-picker__option')]
          .find(node => node.querySelector('.theme-picker__option-name')?.textContent === 'Quiet')?.click();
        await settle();
-       await pickMode('Dark');
+       await pickMode('System');
+       // The sidebar's toggle steps System, Light, Dark and back, for any theme.
+       const toggle = document.querySelector('.sidebar__head .mode-toggle-button');
+       const system = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+       const seen = [document.documentElement.dataset.theme];
+       for (let step = 0; step < 3; step += 1) {
+         toggle?.click();
+         await settle();
+         seen.push(document.documentElement.dataset.theme);
+       }
+       if (seen.join(',') !== [system, 'light', 'dark', system].join(',')) {
+         problems.push('the mode toggle went ' + seen.join(' > '));
+       }
        if (count < 6 || new Set(drawn).size !== count * 2) problems.push('drawn: ' + drawn.join(','));
-       return problems.length === 0 && document.documentElement.dataset.theme === 'dark'
-         ? true
-         : JSON.stringify(problems);
+       return problems.length === 0 ? true : JSON.stringify(problems);
      })()`,
     90_000,
   );
 
-  await checkMain("the island takes on the theme picked in the main window", async () => {
-    const pickTheme = (name: string): Promise<unknown> =>
+  await checkMain("the island takes on the theme and mode picked in the main window", async () => {
+    const choose = (theme: string, mode: string): Promise<unknown> =>
       window.webContents.executeJavaScript(
         `(async () => {
            document.querySelector('.theme-picker__trigger')?.click();
            await new Promise(resolve => setTimeout(resolve, 150));
            [...document.querySelectorAll('.theme-picker__option')]
-             .find(node => node.querySelector('.theme-picker__option-name')?.textContent === ${JSON.stringify(name)})
+             .find(node => node.querySelector('.theme-picker__option-name')?.textContent === ${JSON.stringify(theme)})
              ?.click();
+           await new Promise(resolve => setTimeout(resolve, 250));
+           [...document.querySelectorAll('.segmented__item')]
+             .find(node => node.textContent?.trim() === ${JSON.stringify(mode)})?.click();
            await new Promise(resolve => setTimeout(resolve, 300));
            return document.documentElement.dataset.theme;
          })()`,
       );
-    const islandTheme = async (expected: string): Promise<boolean> => {
+    const islandShows = async (expected: string): Promise<boolean> => {
       const deadline = Date.now() + 4000;
       while (Date.now() < deadline) {
         if ((await islandJs("document.documentElement.dataset.theme")) === expected) {
@@ -1786,18 +1799,45 @@ export async function runStartupCheck(
       }
       return false;
     };
-    await pickTheme("Atelier");
-    const followed = await islandTheme("atelier-dark");
-    // Its body stays dark in a light theme: the text is light.
-    const readable = await islandJs(
-      `(() => {
-         const [r, g, b] = (getComputedStyle(document.body).color.match(/\\d+/g) ?? []).map(Number);
-         return 0.299 * (r ?? 0) + 0.587 * (g ?? 0) + 0.114 * (b ?? 0) > 150;
-       })()`,
-    );
-    await pickTheme("Quiet");
-    const back = await islandTheme("dark");
-    return followed && readable === true && back;
+    // The island's ink reads on its own body, dark or light.
+    const readable = (): Promise<unknown> =>
+      islandJs(
+        `(() => {
+           const parse = (value) => (value.match(/[\\d.]+/g) ?? []).map(Number);
+           const style = getComputedStyle(document.documentElement);
+           const probe = document.createElement('span');
+           probe.style.color = style.getPropertyValue('--island-body');
+           document.body.append(probe);
+           const [br = 0, bg = 0, bb = 0, ba = 1] = parse(getComputedStyle(probe).color);
+           probe.remove();
+           const [r = 0, g = 0, b = 0] = parse(getComputedStyle(document.body).color);
+           const lum = (c) => c.map(v => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; })
+             .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+           const [hi, lo] = [lum([r, g, b]), lum([br * ba, bg * ba, bb * ba])].sort((x, y) => y - x);
+           return (hi + 0.05) / (lo + 0.05) >= 7;
+         })()`,
+      );
+    const results: string[] = [];
+    for (const [theme, mode, drawn] of [
+      ["Atelier", "Dark", "atelier-dark"],
+      ["Atelier", "Light", "atelier-light"],
+      ["Playground", "Dark", "playground-dark"],
+    ] as const) {
+      await choose(theme, mode);
+      const followed = await islandShows(drawn);
+      const reads = (await readable()) === true;
+      if (!followed || !reads) {
+        results.push(`${drawn}: followed ${followed}, readable ${reads}`);
+      }
+    }
+    const back = await choose("Quiet", "System");
+    if (!(await islandShows(String(back)))) {
+      results.push(`back to ${String(back)} did not reach the island`);
+    }
+    if (results.length > 0) {
+      throw new Error(results.join("; "));
+    }
+    return true;
   });
 
   await check(
@@ -2099,12 +2139,21 @@ export async function runStartupCheck(
                  buttons: [...document.querySelectorAll('.isl__actions button')]
                    .map(node => node.textContent?.trim()),
                  title: document.querySelector('.isl__attitle')?.textContent ?? '',
-                 // Light text on the island's dark card, whatever the system's
-                 // theme: this machine's is light, which once made it dark.
+                 // The title reads on the island's own card, whichever
+                 // mode it is in: dark ink on a dark card once made it vanish.
                  titleReadable: (() => {
                    const title = document.querySelector('.isl__attitle');
-                   const [r, g, b] = (title ? getComputedStyle(title).color.match(/\\d+/g) ?? [] : []).map(Number);
-                   return 0.299 * (r ?? 0) + 0.587 * (g ?? 0) + 0.114 * (b ?? 0) > 150;
+                   const card = title?.closest('.isl__sheet, .isl__attn, .isl__card');
+                   if (!title || !card) return false;
+                   const parse = (value) => (value.match(/[\\d.]+/g) ?? []).map(Number);
+                   const [r = 0, g = 0, b = 0] = parse(getComputedStyle(title).color);
+                   const [br = 0, bg = 0, bb = 0, ba = 1] = parse(getComputedStyle(card).backgroundColor);
+                   // Over the darkest desktop, the worst case for a translucent card.
+                   const ground = [br * ba, bg * ba, bb * ba];
+                   const lum = (c) => c.map(v => { const x = v / 255; return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; })
+                     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+                   const [hi, lo] = [lum([r, g, b]), lum(ground)].sort((x, y) => y - x);
+                   return (hi + 0.05) / (lo + 0.05) >= 4.5;
                  })(),
                };
              })()`,
