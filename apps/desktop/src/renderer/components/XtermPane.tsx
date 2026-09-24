@@ -3,7 +3,14 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { invoke } from "../lib/client.js";
-import { boundPending, createTerminal, disposeTerminal, liveWriter, tailForReplay } from "../lib/xterm.js";
+import {
+  boundPending,
+  createTerminal,
+  disposeTerminal,
+  followTheme,
+  liveWriter,
+  tailForReplay,
+} from "../lib/xterm.js";
 
 interface XtermPaneProps {
   /** The live terminal to show; null shows an empty, inert surface. */
@@ -77,9 +84,11 @@ export function XtermPane({
     };
     const observer = new ResizeObserver(() => requestAnimationFrame(resize));
     observer.observe(container);
+    const unfollow = followTheme(terminal, resize);
 
     return () => {
       observer.disconnect();
+      unfollow();
       container.removeEventListener("focusin", focusIn);
       input.dispose();
       terminalRef.current = null;

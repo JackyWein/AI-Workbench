@@ -1,0 +1,491 @@
+/*
+ * The themes besides Quiet (tokens.css). Each sets every colour, the fonts,
+ * the shape and the island's own palette, so switching one repaints the
+ * whole application, the terminal and the island together. Component-level
+ * touches that a token cannot express live with the components
+ * (apps/desktop/src/renderer/themes.css); nothing here names a component.
+ *
+ * Every pair of text and ground here is checked for contrast by a test
+ * (src/__tests__/themes.test.ts), so a theme cannot quietly become unreadable.
+ */
+
+/* ---------------------------------------------------------------- Atelier --
+ * Warm paper, serif headings, terracotta. Light, editorial, unhurried. */
+[data-theme="atelier"] {
+  color-scheme: light;
+
+  --surface-base: #f6f1e8;
+  --surface-raised: #fffcf6;
+  --surface-overlay: #fffcf6;
+  --surface-sunken: #eee7da;
+  --surface-message: #efe5d6;
+  --surface-hover: rgba(74, 52, 30, 0.05);
+  --surface-active: rgba(74, 52, 30, 0.08);
+  --surface-selected: rgba(74, 52, 30, 0.1);
+
+  --text-primary: #231e18;
+  --text-secondary: #564d42;
+  --text-muted: #72675a;
+  --text-inverted: #fffcf6;
+
+  --border-subtle: rgba(74, 52, 30, 0.13);
+  --border-strong: rgba(74, 52, 30, 0.26);
+  --border-focus: #a84a25;
+
+  --accent: #a84a25;
+  --accent-quiet: rgba(168, 74, 37, 0.12);
+  --success: #3a7049;
+  --warning: #8a5a0c;
+  --danger: #b0372b;
+  --danger-quiet: rgba(176, 55, 43, 0.1);
+  --running: #276a82;
+  --live: #276a82;
+
+  --overlay-backdrop: rgba(246, 241, 232, 0.62);
+  --shadow-overlay: 0 20px 50px rgba(74, 52, 30, 0.18), 0 0 0 1px rgba(74, 52, 30, 0.06);
+  --shadow-popover: 0 12px 32px rgba(74, 52, 30, 0.14), 0 0 0 1px rgba(74, 52, 30, 0.05);
+  --shadow-raised: 0 8px 24px rgba(74, 52, 30, 0.14);
+
+  --code-surface: #f1eadf;
+  --code-text: #3a3128;
+  --code-muted: #8f8374;
+
+  --scrollbar-thumb: rgba(74, 52, 30, 0.2);
+  --scrollbar-thumb-hover: rgba(74, 52, 30, 0.34);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23564d42' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --logo-tile: #a84a25;
+  --logo-bar: #fff6ec;
+  --logo-bar-dim: rgba(255, 246, 236, 0.62);
+  --logo-edge: transparent;
+
+  --island-surface: rgba(42, 36, 29, 0.95);
+  --island-surface-strong: rgba(42, 36, 29, 0.97);
+  --island-body: rgba(33, 28, 22, 0.97);
+  --island-solid: #2a241d;
+  --island-sunken: #1f1a15;
+  --island-highlight: rgba(255, 240, 220, 0.07);
+  --island-shade: rgba(30, 20, 10, 0.4);
+  --island-text: #f6f1e8;
+  --island-text-secondary: #d2c7b7;
+  --island-text-muted: #a39786;
+  --island-line: rgba(255, 240, 220, 0.09);
+  --island-line-strong: rgba(255, 240, 220, 0.18);
+  --island-hover: rgba(255, 240, 220, 0.05);
+  --island-active: rgba(255, 240, 220, 0.08);
+  --island-accent: #e8a07a;
+  --island-running: #7cc4d8;
+  --island-warning: #e8b861;
+  --island-success: #9ad3a6;
+  --island-danger: #f08a7a;
+  --island-on-warning: #2a1d05;
+  --island-on-accent: #231e18;
+
+  --font-sans: "Instrument Sans Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --display-weight: 500;
+  --display-tracking: -0.005em;
+  --label-weight: 600;
+  --label-tracking: 0.09em;
+
+  --radius-scale: 1.35;
+  --card-shadow: 0 1px 2px rgba(74, 52, 30, 0.06);
+}
+
+/* -------------------------------------------------------- Mission Control --
+ * Near-black on a faint grid, lime signals, monospace detail. Dense and
+ * technical, for a wall of agents. */
+[data-theme="mission"] {
+  color-scheme: dark;
+
+  --surface-base: #0b0d0c;
+  --surface-raised: #101311;
+  --surface-overlay: #151a16;
+  --surface-sunken: #070908;
+  --surface-message: #141915;
+  --surface-hover: rgba(214, 255, 214, 0.04);
+  --surface-active: rgba(214, 255, 214, 0.07);
+  --surface-selected: rgba(198, 244, 50, 0.1);
+
+  --text-primary: #e7eee7;
+  --text-secondary: #a6b1a7;
+  --text-muted: #7a867d;
+  --text-inverted: #0b0d0c;
+
+  --border-subtle: rgba(214, 255, 214, 0.085);
+  --border-strong: rgba(214, 255, 214, 0.17);
+  --border-focus: #c6f432;
+
+  --accent: #c6f432;
+  --accent-quiet: rgba(198, 244, 50, 0.12);
+  --success: #7fe07a;
+  --warning: #ffb020;
+  --danger: #ff6b5e;
+  --danger-quiet: rgba(255, 107, 94, 0.14);
+  --running: #45d1ff;
+  --live: #45d1ff;
+
+  --overlay-backdrop: rgba(3, 5, 4, 0.62);
+  --shadow-overlay: 0 18px 48px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(198, 244, 50, 0.08);
+  --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(198, 244, 50, 0.06);
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  --code-surface: #050706;
+  --code-text: #cfe3cf;
+  --code-muted: #4d5a50;
+
+  --scrollbar-thumb: rgba(214, 255, 214, 0.14);
+  --scrollbar-thumb-hover: rgba(214, 255, 214, 0.26);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23a6b1a7' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --logo-tile: #0b0d0c;
+  --logo-bar: #c6f432;
+  --logo-bar-dim: rgba(198, 244, 50, 0.45);
+  --logo-edge: rgba(198, 244, 50, 0.35);
+
+  --term-green: #9be15d;
+  --term-bright-green: #c6f432;
+  --term-cyan: #45d1ff;
+  --term-bright-cyan: #8ae3ff;
+
+  --island-surface: rgba(12, 15, 13, 0.95);
+  --island-surface-strong: rgba(12, 15, 13, 0.97);
+  --island-body: rgba(5, 7, 6, 0.97);
+  --island-solid: #0b0d0c;
+  --island-sunken: #050706;
+  --island-highlight: rgba(214, 255, 214, 0.06);
+  --island-shade: rgba(0, 0, 0, 0.5);
+  --island-text: #e7eee7;
+  --island-text-secondary: #a6b1a7;
+  --island-text-muted: #7a867d;
+  --island-line: rgba(214, 255, 214, 0.09);
+  --island-line-strong: rgba(214, 255, 214, 0.18);
+  --island-hover: rgba(214, 255, 214, 0.045);
+  --island-active: rgba(214, 255, 214, 0.075);
+  --island-accent: #c6f432;
+  --island-running: #45d1ff;
+  --island-warning: #ffb020;
+  --island-success: #9be15d;
+  --island-danger: #ff6b5e;
+  --island-on-warning: #1a1200;
+  --island-on-accent: #0b0d0c;
+
+  --font-sans: "Geist Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Geist Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --display-weight: 600;
+  --display-tracking: -0.02em;
+  --label-font: var(--font-mono);
+  --label-weight: 500;
+  --label-tracking: 0.12em;
+
+  --radius-scale: 0.35;
+  --radius-pill: 3px;
+  --card-border-color: rgba(214, 255, 214, 0.1);
+}
+
+/* Declared again next to the derived values so a preview recomputes them. */
+[data-theme="mission"] {
+  --backdrop-image: linear-gradient(rgba(214, 255, 214, 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 255, 214, 0.028) 1px, transparent 1px);
+  --backdrop-size: 24px 24px;
+}
+
+/* ------------------------------------------------------------- Playground --
+ * Cream and indigo, thick ink outlines with hard shadows, bright colour.
+ * Bold and friendly. */
+[data-theme="playground"] {
+  color-scheme: light;
+
+  --surface-base: #fff3d6;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-sunken: #fff8e7;
+  --surface-message: #ffe0d6;
+  --surface-hover: rgba(28, 26, 63, 0.05);
+  --surface-active: rgba(28, 26, 63, 0.08);
+  --surface-selected: rgba(61, 90, 254, 0.12);
+
+  --text-primary: #1c1a3f;
+  --text-secondary: #46437a;
+  --text-muted: #5f5c89;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(28, 26, 63, 0.16);
+  --border-strong: #1c1a3f;
+  --border-focus: #3d5afe;
+
+  --accent: #ff6b4a;
+  --accent-quiet: rgba(255, 107, 74, 0.16);
+  --success: #0f7654;
+  --warning: #955500;
+  --danger: #c8261b;
+  --danger-quiet: rgba(200, 38, 27, 0.1);
+  --running: #2f4be0;
+  --live: #2f4be0;
+
+  --overlay-backdrop: rgba(35, 32, 90, 0.35);
+  --shadow-overlay: 6px 6px 0 #1c1a3f;
+  --shadow-popover: 4px 4px 0 #1c1a3f;
+  --shadow-raised: 4px 4px 0 #1c1a3f;
+
+  --code-surface: #1c1a3f;
+  --code-text: #f4f2ff;
+  --code-muted: #8a87c2;
+  --terminal-text: #f4f2ff;
+  --code-label: #b8b5e8;
+  --code-line: rgba(255, 255, 255, 0.12);
+
+  --scrollbar-thumb: rgba(28, 26, 63, 0.25);
+  --scrollbar-thumb-hover: rgba(28, 26, 63, 0.42);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%231c1a3f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --logo-tile: #ffc93c;
+  --logo-bar: #1c1a3f;
+  --logo-bar-dim: rgba(28, 26, 63, 0.5);
+  --logo-edge: #1c1a3f;
+
+  --island-surface: rgba(35, 32, 90, 0.96);
+  --island-surface-strong: rgba(35, 32, 90, 0.97);
+  --island-body: rgba(28, 26, 63, 0.97);
+  --island-solid: #23205a;
+  --island-sunken: #1c1a3f;
+  --island-highlight: rgba(255, 255, 255, 0.1);
+  --island-shade: rgba(28, 26, 63, 0.45);
+  --island-text: #ffffff;
+  --island-text-secondary: #d9d7fa;
+  --island-text-muted: #aaa7e6;
+  --island-line: rgba(255, 255, 255, 0.14);
+  --island-line-strong: rgba(255, 255, 255, 0.28);
+  --island-hover: rgba(255, 255, 255, 0.07);
+  --island-active: rgba(255, 255, 255, 0.11);
+  --island-accent: #ffc93c;
+  --island-running: #5eead4;
+  --island-warning: #ffc93c;
+  --island-success: #6ee7b7;
+  --island-danger: #ff8a7a;
+  --island-on-warning: #1c1a3f;
+  --island-on-accent: #1c1a3f;
+
+  --font-sans: "DM Sans Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "DM Sans Variable", -apple-system, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --display-weight: 800;
+  --display-tracking: -0.02em;
+  --label-font: var(--font-display);
+  --label-weight: 700;
+  --label-tracking: 0.05em;
+
+  --radius-scale: 1.7;
+  --card-border-width: 2px;
+  --card-border-color: #1c1a3f;
+  --card-shadow: 4px 4px 0 #1c1a3f;
+  --button-border: #1c1a3f;
+}
+
+[data-theme="playground"] {
+  --accent-contrast: #1c1a3f;
+  --accent-text: #c2381a;
+
+  /* An indigo sidebar beside the cream page. */
+  --sidebar-surface: #23205a;
+  --sidebar-raised: rgba(255, 255, 255, 0.09);
+  --sidebar-overlay: #2c2870;
+  --sidebar-text: #ffffff;
+  --sidebar-text-secondary: #dcdaf9;
+  --sidebar-text-muted: #b3b0ea;
+  --sidebar-hover: rgba(255, 255, 255, 0.08);
+  --sidebar-active: rgba(255, 255, 255, 0.13);
+  --sidebar-selected: rgba(255, 201, 60, 0.24);
+  --sidebar-line: rgba(255, 255, 255, 0.13);
+  --sidebar-line-strong: rgba(255, 255, 255, 0.28);
+  --sidebar-accent: #ffc93c;
+}
+
+/* ----------------------------------------------------------------- Aurora --
+ * Night blue lit by violet and cyan, soft glass, generous curves. */
+[data-theme="aurora"] {
+  color-scheme: dark;
+
+  --surface-base: #0d0f24;
+  --surface-raised: #13163a;
+  --surface-overlay: #191d47;
+  --surface-sunken: #0a0b1c;
+  --surface-message: #1b1f4a;
+  --surface-hover: rgba(190, 180, 255, 0.06);
+  --surface-active: rgba(190, 180, 255, 0.1);
+  --surface-selected: rgba(164, 151, 255, 0.17);
+
+  --text-primary: #eef0ff;
+  --text-secondary: #b2b6dc;
+  --text-muted: #858bbb;
+  --text-inverted: #0d0f24;
+
+  --border-subtle: rgba(170, 165, 255, 0.12);
+  --border-strong: rgba(170, 165, 255, 0.25);
+  --border-focus: #a497ff;
+
+  --accent: #a497ff;
+  --accent-quiet: rgba(164, 151, 255, 0.18);
+  --success: #5eeba0;
+  --warning: #ffc56b;
+  --danger: #ff7a93;
+  --danger-quiet: rgba(255, 122, 147, 0.14);
+  --running: #5ee7f5;
+  --live: #5ee7f5;
+
+  --overlay-backdrop: rgba(6, 7, 20, 0.6);
+  --shadow-overlay: 0 24px 60px rgba(4, 4, 20, 0.6), 0 0 0 1px rgba(164, 151, 255, 0.14);
+  --shadow-popover: 0 14px 40px rgba(4, 4, 20, 0.55), 0 0 0 1px rgba(164, 151, 255, 0.12);
+  --shadow-raised: 0 10px 30px rgba(4, 4, 20, 0.5);
+
+  --code-surface: #080919;
+  --code-text: #d6d9ff;
+  --code-muted: #4e5387;
+
+  --scrollbar-thumb: rgba(190, 180, 255, 0.18);
+  --scrollbar-thumb-hover: rgba(190, 180, 255, 0.32);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23b2b6dc' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --logo-tile: #191d47;
+  --logo-bar: #b4a9ff;
+  --logo-bar-dim: #5ee7f5;
+  --logo-edge: rgba(164, 151, 255, 0.35);
+
+  --term-blue: #a497ff;
+  --term-bright-blue: #c9c1ff;
+  --term-cyan: #5ee7f5;
+  --term-bright-cyan: #a5f3fb;
+
+  --island-surface: rgba(22, 24, 60, 0.93);
+  --island-surface-strong: rgba(22, 24, 60, 0.96);
+  --island-body: rgba(13, 15, 36, 0.95);
+  --island-solid: #13163a;
+  --island-sunken: #0a0b1c;
+  --island-highlight: rgba(200, 190, 255, 0.1);
+  --island-shade: rgba(4, 4, 20, 0.5);
+  --island-text: #eef0ff;
+  --island-text-secondary: #b2b6dc;
+  --island-text-muted: #858bbb;
+  --island-line: rgba(170, 165, 255, 0.14);
+  --island-line-strong: rgba(170, 165, 255, 0.28);
+  --island-hover: rgba(190, 180, 255, 0.06);
+  --island-active: rgba(190, 180, 255, 0.1);
+  --island-accent: #a497ff;
+  --island-running: #5ee7f5;
+  --island-warning: #ffc56b;
+  --island-success: #5eeba0;
+  --island-danger: #ff7a93;
+  --island-on-warning: #241800;
+  --island-on-accent: #0d0f24;
+
+  --font-sans: "Plus Jakarta Sans Variable", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Sora Variable", "Plus Jakarta Sans Variable", -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --display-weight: 600;
+  --display-tracking: -0.02em;
+  --label-weight: 600;
+  --label-tracking: 0.08em;
+
+  --radius-scale: 1.45;
+  --card-border-color: rgba(170, 165, 255, 0.14);
+  --card-shadow: 0 12px 30px rgba(4, 4, 20, 0.28);
+}
+
+[data-theme="aurora"] {
+  --backdrop-image: radial-gradient(1000px 560px at 28% -8%, rgba(125, 95, 255, 0.22), transparent 64%),
+    radial-gradient(900px 560px at 100% 100%, rgba(40, 200, 230, 0.13), transparent 60%);
+  --backdrop-size: 100% 100%;
+  --sidebar-surface: rgba(8, 9, 24, 0.72);
+}
+
+/* ------------------------------------------------------------------ Swiss --
+ * Black on white, one red, a strict grid, square corners. Loud type, quiet
+ * everything else. */
+[data-theme="swiss"] {
+  color-scheme: light;
+
+  --surface-base: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-sunken: #f3f3f1;
+  --surface-message: #f1f1ef;
+  --surface-hover: rgba(0, 0, 0, 0.04);
+  --surface-active: rgba(0, 0, 0, 0.07);
+  --surface-selected: rgba(0, 0, 0, 0.08);
+
+  --text-primary: #0a0a0a;
+  --text-secondary: #3b3b3b;
+  --text-muted: #666666;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(0, 0, 0, 0.12);
+  --border-strong: #0a0a0a;
+  --border-focus: #e30613;
+
+  --accent: #e30613;
+  --accent-quiet: rgba(227, 6, 19, 0.09);
+  --success: #00783c;
+  --warning: #945300;
+  --danger: #b00020;
+  --danger-quiet: rgba(176, 0, 32, 0.08);
+  --running: #0050b3;
+  --live: #0050b3;
+
+  --overlay-backdrop: rgba(255, 255, 255, 0.72);
+  --shadow-overlay: 0 0 0 1px #0a0a0a, 0 16px 40px rgba(0, 0, 0, 0.12);
+  --shadow-popover: 0 0 0 1px #0a0a0a, 0 8px 24px rgba(0, 0, 0, 0.1);
+  --shadow-raised: 0 0 0 1px #0a0a0a;
+
+  --code-surface: #f3f3f1;
+  --code-text: #0a0a0a;
+  --code-muted: #8a8a8a;
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.22);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.4);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%230a0a0a' stroke-width='1.5' stroke-linecap='square'/></svg>");
+
+  --logo-tile: #e30613;
+  --logo-bar: #ffffff;
+  --logo-bar-dim: rgba(255, 255, 255, 0.65);
+  --logo-edge: transparent;
+
+  --island-surface: rgba(10, 10, 10, 0.95);
+  --island-surface-strong: rgba(10, 10, 10, 0.97);
+  --island-body: rgba(0, 0, 0, 0.96);
+  --island-solid: #0a0a0a;
+  --island-sunken: #000000;
+  --island-highlight: rgba(255, 255, 255, 0.07);
+  --island-shade: rgba(0, 0, 0, 0.35);
+  --island-text: #ffffff;
+  --island-text-secondary: #c4c4c4;
+  --island-text-muted: #8f8f8f;
+  --island-line: rgba(255, 255, 255, 0.12);
+  --island-line-strong: rgba(255, 255, 255, 0.25);
+  --island-hover: rgba(255, 255, 255, 0.06);
+  --island-active: rgba(255, 255, 255, 0.1);
+  --island-accent: #ff4d4d;
+  --island-running: #5aa9ff;
+  --island-warning: #ffc233;
+  --island-success: #4cd07d;
+  --island-danger: #ff5c5c;
+  --island-on-warning: #1a1200;
+  --island-on-accent: #0a0a0a;
+
+  --font-sans: "Inter Variable", -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-display: "Inter Tight Variable", "Inter Variable", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --display-weight: 700;
+  --display-tracking: -0.03em;
+  --label-weight: 700;
+  --label-tracking: 0.1em;
+
+  --radius-scale: 0;
+  --radius-pill: 0;
+  --card-border-color: #0a0a0a;
+}
+
+[data-theme="swiss"] {
+  --accent-text: #c80511;
+}

@@ -35,7 +35,7 @@ export function MessageItem({ message, streaming, onRetry }: MessageItemProps): 
   return (
     <article className="message" data-role={message.role} data-status={message.status}>
       <div className="message__meta">
-        <span>{author ? author.name : "You"}</span>
+        <span className="message__author">{author ? author.name : "You"}</span>
         {author?.model ? <span className="message__model">{author.model}</span> : null}
         <time dateTime={message.createdAt.toISOString()}>
           {message.createdAt.toLocaleTimeString([], {

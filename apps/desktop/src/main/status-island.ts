@@ -3,11 +3,13 @@ import { BrowserWindow, screen, type Display } from "electron";
 import {
   ISLAND_DRAG_CHANNEL,
   ISLAND_STATE_CHANNEL,
+  ISLAND_THEME_CHANNEL,
   type IslandDrag,
   type IslandEdge,
   type IslandPreferences,
   type IslandState,
   type Logger,
+  type Theme,
 } from "@ai-workbench/shared";
 import {
   anchorResize,
@@ -84,6 +86,7 @@ export class StatusIslandWindow {
   #window: BrowserWindow | null = null;
   #preferences: IslandPreferences | null = null;
   #lastState: IslandState | null = null;
+  #theme: Theme = "dark";
   #drag: DragSession | null = null;
   #dragTimer: NodeJS.Timeout | null = null;
   #settling: Settling | null = null;
@@ -157,6 +160,22 @@ export class StatusIslandWindow {
     }
     this.show();
     return this.visible;
+  }
+
+  /** The app's theme; the island draws in the same one. */
+  setTheme(theme: Theme): void {
+    this.#theme = theme;
+    const window = this.#window;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+    try {
+      window.webContents.send(ISLAND_THEME_CHANNEL, theme);
+    } catch (error) {
+      this.#logger.warn("Could not push the theme to the island", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /** Pushes new state; sizing belongs to the page, which reports it back. */
@@ -383,6 +402,13 @@ export class StatusIslandWindow {
     });
 
     window.webContents.on("did-finish-load", () => {
+      try {
+        window.webContents.send(ISLAND_THEME_CHANNEL, this.#theme);
+      } catch (error) {
+        this.#logger.warn("Could not push the theme to the island after load", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
       if (this.#lastState) {
         try {
           window.webContents.send(ISLAND_STATE_CHANNEL, this.#lastState);

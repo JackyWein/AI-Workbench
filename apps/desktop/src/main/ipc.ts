@@ -575,7 +575,13 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "statusIsland.dragEnd": () => island.endDrag(),
 
     "settings.get": () => services.settings.get(),
-    "settings.update": (input) => services.settings.update(input),
+    "settings.update": async (input) => {
+      const settings = await services.settings.update(input);
+      if (input.theme !== undefined) {
+        island.setTheme(settings.theme);
+      }
+      return settings;
+    },
 
     "update.check": () => checkForUpdates(),
     "update.download": () => downloadUpdate(),

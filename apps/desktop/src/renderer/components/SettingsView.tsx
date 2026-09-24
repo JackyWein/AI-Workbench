@@ -16,18 +16,13 @@ import {
 } from "./Controls.js";
 import { ConnectionSettings } from "./ConnectionsView.js";
 import { KeyboardShortcuts } from "./KeyboardShortcuts.js";
+import { ThemePicker } from "./ThemePicker.js";
 import { UpdateSection } from "./UpdateSection.js";
 
 interface SettingsViewProps {
   readonly settings: AppSettings;
   readonly appInfo: { version: string; platform: string; userDataPath: string } | null;
 }
-
-const THEMES: ReadonlyArray<SegmentOption<AppSettings["theme"]>> = [
-  { value: "system", label: "System" },
-  { value: "dark", label: "Dark" },
-  { value: "light", label: "Light" },
-];
 
 const DENSITIES: ReadonlyArray<SegmentOption<AppSettings["density"]>> = [
   { value: "comfortable", label: "Comfortable" },
@@ -57,13 +52,8 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
         <IslandSettings settings={settings} />
 
         <SettingGroup title="Appearance">
-          <SettingRow label="Theme" description="Dark is the default surface.">
-            <Segmented
-              label="Theme"
-              value={settings.theme}
-              options={THEMES}
-              onChange={(theme) => void updateSettings({ theme })}
-            />
+          <SettingRow label="Theme" description="Colours, type and shape of the whole app, the island included.">
+            <ThemePicker value={settings.theme} onChange={(theme) => void updateSettings({ theme })} />
           </SettingRow>
           <SettingRow label="Density" description="Compact tightens spacing.">
             <Segmented

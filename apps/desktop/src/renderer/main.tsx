@@ -2,6 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import "./app.css";
+import "./themes.css";
+import { applyRememberedTheme } from "./lib/themes.js";
+
+applyRememberedTheme();
 
 const container = document.getElementById("root");
 if (!container) {

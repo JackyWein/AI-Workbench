@@ -1,0 +1,302 @@
+/*
+ * The component side of theming. Themes are token values (packages/ui
+ * tokens.css and themes.css); this file says where the few tokens that are
+ * about character rather than colour apply — the display face, the label
+ * style, the outline of a grouped surface, the sidebar's own palette, the
+ * window's backdrop — and holds each theme's signature touches that a token
+ * cannot express. With Quiet every rule here resolves to what the
+ * components already drew, so it changes nothing there.
+ *
+ * Loaded after app.css.
+ */
+
+/* ------------------------------------------------------------- backdrop -- */
+
+/* A theme may texture the window behind everything: a grid, a glow. */
+.app {
+  background-color: var(--surface-base);
+  background-image: var(--backdrop-image);
+  background-size: var(--backdrop-size);
+}
+
+.main {
+  background: transparent;
+}
+
+/* -------------------------------------------------------------- sidebar -- */
+
+/*
+ * The sidebar draws with a palette of its own, the page's by default. Its
+ * menus open inside it and follow the same palette.
+ */
+.sidebar {
+  --text-primary: var(--sidebar-text);
+  --text-secondary: var(--sidebar-text-secondary);
+  --text-muted: var(--sidebar-text-muted);
+  --surface-raised: var(--sidebar-raised);
+  --surface-overlay: var(--sidebar-overlay);
+  --surface-hover: var(--sidebar-hover);
+  --surface-active: var(--sidebar-active);
+  --surface-selected: var(--sidebar-selected);
+  --border-subtle: var(--sidebar-line);
+  --border-strong: var(--sidebar-line-strong);
+  --accent: var(--sidebar-accent);
+  --accent-text: var(--sidebar-accent);
+  background: var(--sidebar-surface);
+  color: var(--sidebar-text);
+}
+
+/* ------------------------------------------------------------ terminals -- */
+
+/* The ground around a terminal is the terminal's own, edge to edge. */
+.terminal,
+.agent-tile__body {
+  background: var(--terminal-surface);
+}
+
+/* A code block reads in the code ground's own colours, whatever the page's. */
+.codeblock {
+  --text-primary: var(--code-text);
+  --text-secondary: var(--code-label);
+  --text-muted: var(--code-label);
+  --border-subtle: var(--code-line);
+  --surface-hover: color-mix(in srgb, var(--code-text) 8%, transparent);
+}
+
+/* ----------------------------------------------------------------- type -- */
+
+/* Titles are set in the theme's display face. */
+.view__title,
+.empty__title,
+.team-run__goal,
+.team-intro__title,
+.md__heading,
+.setting-group__title,
+.header__title,
+.sidebar__title,
+.connector-panel__title,
+.start-tile__title,
+.agents-empty__title,
+.message__author,
+.team-entry__who {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+  letter-spacing: var(--display-tracking);
+}
+
+/* Small labels above a group: sans by default, monospace in some themes. */
+.section__label,
+.sidebar .section__label,
+.popover__title,
+.context__heading,
+.shortcut-list__title,
+.provider-row__subtitle,
+.team-decision__label,
+.team-ending__label {
+  font-family: var(--label-font);
+  font-weight: var(--label-weight);
+  letter-spacing: var(--label-tracking);
+}
+
+/* ----------------------------------------------------------- surfaces -- */
+
+/* Grouped surfaces share one outline and one lift. */
+.setting-group__panel,
+.entry-list,
+.detail-list,
+.context__card,
+.provider-entry,
+.agent-tile,
+.usage-card,
+.run-list,
+.team-now,
+.team-intro__members,
+.connector-card,
+.tool-call,
+.codeblock,
+.md__table {
+  border: var(--card-border);
+  box-shadow: var(--card-shadow);
+}
+
+.composer__inner {
+  border-width: var(--card-border-width);
+}
+
+/* ============================================================ Atelier == */
+
+/* Softer, rounder buttons; headings breathe a little more. */
+[data-theme="atelier"] .primary-button,
+[data-theme="atelier"] .ghost-button,
+[data-theme="atelier"] .composer__send {
+  border-radius: var(--radius-pill);
+}
+
+[data-theme="atelier"] .view__title {
+  font-size: 26px;
+}
+
+[data-theme="atelier"] .team-intro__title {
+  font-size: 24px;
+}
+
+[data-theme="atelier"] .md__heading[data-level="1"] {
+  font-size: 1.45em;
+}
+
+/* ==================================================== Mission Control == */
+
+/* Status reads like a readout: labels and numbers in monospace. */
+[data-theme="mission"] .pill,
+[data-theme="mission"] .row__count,
+[data-theme="mission"] .message__meta time,
+[data-theme="mission"] .header__subtitle,
+[data-theme="mission"] .sidebar__version,
+[data-theme="mission"] .kbd {
+  font-family: var(--font-mono);
+}
+
+[data-theme="mission"] .pill {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 10px;
+}
+
+/* The selected row carries a lit edge, like a channel that is live. */
+[data-theme="mission"] .row[aria-current="true"],
+[data-theme="mission"] .row[aria-selected="true"] {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+[data-theme="mission"] .view__title {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 18px;
+}
+
+/* ========================================================= Playground == */
+
+/* Thick ink outlines with a hard shadow on everything you press. */
+[data-theme="playground"] .primary-button,
+[data-theme="playground"] .ghost-button {
+  border: 2px solid #1c1a3f;
+  border-radius: var(--radius-pill);
+  box-shadow: 2px 2px 0 #1c1a3f;
+  font-weight: 700;
+}
+
+[data-theme="playground"] .primary-button:active:not(:disabled),
+[data-theme="playground"] .ghost-button:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+[data-theme="playground"] .composer__send {
+  border: 2px solid #1c1a3f;
+  border-radius: var(--radius-pill);
+}
+
+[data-theme="playground"] .segmented {
+  border: 2px solid #1c1a3f;
+  background: #ffffff;
+}
+
+[data-theme="playground"] .segmented__item[aria-pressed="true"],
+[data-theme="playground"] .segmented__item[aria-current="true"],
+[data-theme="playground"] .segmented__item[aria-checked="true"] {
+  background: #ffc93c;
+  color: #1c1a3f;
+  box-shadow: none;
+}
+
+[data-theme="playground"] .popover__panel,
+[data-theme="playground"] .menu,
+[data-theme="playground"] .palette,
+[data-theme="playground"] .toast {
+  border: 2px solid #1c1a3f;
+  backdrop-filter: none;
+  background: var(--surface-overlay);
+}
+
+/* The sidebar's popovers sit on indigo; their ink outline is the sidebar's. */
+[data-theme="playground"] .sidebar .popover__panel,
+[data-theme="playground"] .sidebar .menu {
+  border-color: var(--sidebar-line-strong);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="playground"] .tool-call {
+  box-shadow: 2px 2px 0 #1c1a3f;
+}
+
+[data-theme="playground"] .message[data-role="user"] .bubble {
+  border: 2px solid #1c1a3f;
+  box-shadow: 3px 3px 0 #1c1a3f;
+}
+
+[data-theme="playground"] .sidebar .row[aria-current="true"],
+[data-theme="playground"] .sidebar .row[aria-selected="true"] {
+  box-shadow: inset 3px 0 0 #ffc93c;
+}
+
+[data-theme="playground"] .view__title {
+  font-size: 28px;
+}
+
+/* ============================================================= Aurora == */
+
+/* A soft light: the main button glows from violet into cyan. */
+[data-theme="aurora"] .primary-button,
+[data-theme="aurora"] .composer__send {
+  background: linear-gradient(135deg, #a497ff, #5ee7f5);
+  border-color: transparent;
+}
+
+[data-theme="aurora"] .primary-button {
+  box-shadow: 0 6px 18px rgba(125, 95, 255, 0.28);
+}
+
+[data-theme="aurora"] .composer__inner {
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 40px rgba(4, 4, 20, 0.45), 0 0 0 1px rgba(164, 151, 255, 0.1);
+}
+
+[data-theme="aurora"] .usage-bar__fill,
+[data-theme="aurora"] .usage-pill__fill,
+[data-theme="aurora"] .team-run__fill {
+  background: linear-gradient(90deg, #a497ff, #5ee7f5);
+}
+
+/* ============================================================== Swiss == */
+
+/* Hard black rules where other themes use hairlines. */
+[data-theme="swiss"] .header {
+  border-bottom: 2px solid #0a0a0a;
+}
+
+[data-theme="swiss"] .view__title {
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+[data-theme="swiss"] .row[aria-current="true"],
+[data-theme="swiss"] .row[aria-selected="true"] {
+  background: #0a0a0a;
+  color: #ffffff;
+}
+
+[data-theme="swiss"] .row[aria-current="true"] .row__meta,
+[data-theme="swiss"] .row[aria-selected="true"] .row__meta,
+[data-theme="swiss"] .row[aria-current="true"] .row__count,
+[data-theme="swiss"] .row[aria-selected="true"] .row__count {
+  color: #d6d6d6;
+}
+
+[data-theme="swiss"] .primary-button {
+  font-weight: 700;
+}
+
+[data-theme="swiss"] .md__heading {
+  text-transform: none;
+}

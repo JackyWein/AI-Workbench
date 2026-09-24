@@ -1,4 +1,4 @@
-import { Terminal } from "@xterm/xterm";
+import { type ITheme, Terminal } from "@xterm/xterm";
 
 /**
  * What the session shell and the agent tiles share about showing a terminal:
@@ -32,14 +32,80 @@ export function boundPending(text: string): string {
   return text.length > MAX_PENDING_CHARS ? text.slice(text.length - MAX_PENDING_CHARS) : text;
 }
 
+function token(name: string, fallback: string): string {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+}
+
+/** The terminal's colours, from the theme in force. */
+function terminalTheme(): ITheme {
+  const ansi = (name: string, fallback: string): string => token(`--term-${name}`, fallback);
+  return {
+    background: token("--terminal-surface", "#0d0e11"),
+    foreground: token("--terminal-text", "#c9d1d9"),
+    cursor: token("--accent", "#8c9dff"),
+    cursorAccent: token("--terminal-surface", "#0d0e11"),
+    selectionBackground: token("--accent-quiet", "#2a2d33"),
+    black: ansi("black", "#2e3436"),
+    red: ansi("red", "#ef6b6b"),
+    green: ansi("green", "#6fcf8f"),
+    yellow: ansi("yellow", "#e5c35c"),
+    blue: ansi("blue", "#6ea8fe"),
+    magenta: ansi("magenta", "#c49cf2"),
+    cyan: ansi("cyan", "#5bc8c8"),
+    white: ansi("white", "#d3d7cf"),
+    brightBlack: ansi("bright-black", "#6b707a"),
+    brightRed: ansi("bright-red", "#ff8a80"),
+    brightGreen: ansi("bright-green", "#8ee6a8"),
+    brightYellow: ansi("bright-yellow", "#fce27c"),
+    brightBlue: ansi("bright-blue", "#9cc3ff"),
+    brightMagenta: ansi("bright-magenta", "#dab8ff"),
+    brightCyan: ansi("bright-cyan", "#7fe3e3"),
+    brightWhite: ansi("bright-white", "#f4f5f7"),
+  };
+}
+
+/**
+ * Keeps a terminal in the theme in force: its colours and its typeface
+ * change with the theme, and `refit` runs once the new face is measured so
+ * the rows and columns match it. Runs once at the start too, because a
+ * theme's font may still be loading when the terminal opens.
+ */
+export function followTheme(terminal: Terminal, refit: () => void): () => void {
+  let disposed = false;
+  const restyle = (): void => {
+    terminal.options.theme = terminalTheme();
+    const family = token("--font-mono", "monospace");
+    const size = terminal.options.fontSize ?? 12;
+    void document.fonts
+      .load(`${size}px ${family}`)
+      .catch(() => [])
+      .then(() => {
+        if (disposed) {
+          return;
+        }
+        // xterm measures a face when the option changes; the same family
+        // set again would keep the fallback's measurements. The generic
+        // tail makes the value new without changing what is drawn.
+        terminal.options.fontFamily =
+          terminal.options.fontFamily === family ? `${family}, monospace` : family;
+        requestAnimationFrame(refit);
+      });
+  };
+  const observer = new MutationObserver(restyle);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  restyle();
+  return () => {
+    disposed = true;
+    observer.disconnect();
+  };
+}
+
 /**
  * A terminal in the application's own type and colours. Ctrl+C copies a
  * selection, the way a desktop terminal does; without one it still reaches
  * the program as an interrupt.
  */
 export function createTerminal(options: { readonly fontSize: number; readonly lineHeight: number }): Terminal {
-  const styles = getComputedStyle(document.documentElement);
-  const token = (name: string, fallback: string): string => styles.getPropertyValue(name).trim() || fallback;
   const terminal = new Terminal({
     fontFamily: token("--font-mono", "monospace"),
     fontSize: options.fontSize,
@@ -47,13 +113,7 @@ export function createTerminal(options: { readonly fontSize: number; readonly li
     cursorBlink: true,
     scrollback: RENDER_SCROLLBACK_LINES,
     allowProposedApi: true,
-    theme: {
-      background: token("--surface-sunken", "#0c0d0f"),
-      foreground: token("--text-primary", "#ecedf0"),
-      cursor: token("--accent", "#8c9dff"),
-      cursorAccent: token("--surface-sunken", "#0c0d0f"),
-      selectionBackground: token("--accent-quiet", "#2a2d33"),
-    },
+    theme: terminalTheme(),
   });
   terminal.attachCustomKeyEventHandler((event) => {
     const copy =

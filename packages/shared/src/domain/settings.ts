@@ -4,7 +4,21 @@ import {
   islandPreferencesSchema,
 } from "./status-island.js";
 
-export const themeSchema = z.enum(["system", "dark", "light"]);
+/**
+ * How the application looks. "dark", "light" and "system" are the house
+ * theme, Quiet, in its two modes or following the system; the others are
+ * complete themes of their own, each with its own colours, type and shape.
+ */
+export const themeSchema = z.enum([
+  "system",
+  "dark",
+  "light",
+  "atelier",
+  "mission",
+  "playground",
+  "aurora",
+  "swiss",
+]);
 export type Theme = z.infer<typeof themeSchema>;
 
 export const densitySchema = z.enum(["comfortable", "compact"]);

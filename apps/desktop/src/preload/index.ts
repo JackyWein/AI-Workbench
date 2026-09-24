@@ -3,6 +3,7 @@ import {
   APP_EVENT_CHANNEL,
   ISLAND_NAVIGATE_CHANNEL,
   ISLAND_DRAG_CHANNEL,
+  ISLAND_THEME_CHANNEL,
   ISLAND_STATE_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
   isIpcChannel,
@@ -14,6 +15,7 @@ import {
   type IslandState,
   type IslandTarget,
   type TerminalEvent,
+  type Theme,
 } from "@ai-workbench/shared";
 
 /**
@@ -128,6 +130,16 @@ const islandApi = {
 
   async resize(width: number, height: number): Promise<void> {
     await ipcRenderer.invoke("statusIsland.resize", { width, height });
+  },
+
+  onTheme(listener: (theme: Theme) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, payload: Theme): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(ISLAND_THEME_CHANNEL, handler);
+    return () => {
+      ipcRenderer.removeListener(ISLAND_THEME_CHANNEL, handler);
+    };
   },
 
   onDrag(listener: (drag: IslandDrag) => void): () => void {

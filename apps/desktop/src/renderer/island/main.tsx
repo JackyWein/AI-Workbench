@@ -21,8 +21,10 @@ import {
   type IslandState,
   type IslandTarget,
   type IslandUsageRow,
+  type Theme,
 } from "@ai-workbench/shared";
-import { LOGOS } from "@ai-workbench/ui";
+import { LOGOS, resolveTheme } from "@ai-workbench/ui";
+import { AppLogo } from "../components/AppLogo.js";
 import "./island.css";
 
 type HoverMode = "agents" | "usage";
@@ -190,12 +192,31 @@ function Island(): JSX.Element | null {
     return () => window.clearTimeout(timer);
   }, [docked]);
 
-  // The island is always dark, whatever the system or the app is set to: its
-  // surfaces are painted dark on purpose, and following a light system
-  // theme gave them dark text — titles nobody could read.
+  // The island draws in the app's theme: its type, shape and accent. Its
+  // body stays dark in every theme (each theme gives it a dark palette of
+  // its own), because a light theme's dark ink on that body once made
+  // titles nobody could read.
   useEffect(() => {
-    document.documentElement.dataset["theme"] = "dark";
-  }, []);
+    const root = document.documentElement;
+    root.dataset["theme"] = "dark";
+    if (!bridge) {
+      return undefined;
+    }
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    let preference: Theme = "dark";
+    const apply = (): void => {
+      root.dataset["theme"] = resolveTheme(preference, media.matches);
+    };
+    media.addEventListener("change", apply);
+    const off = bridge.onTheme((theme) => {
+      preference = theme;
+      apply();
+    });
+    return () => {
+      off();
+      media.removeEventListener("change", apply);
+    };
+  }, [bridge]);
 
   // Every hook runs on every render, unconditionally: the null-guards below
   // return early, and an early return above a hook is what unmounted this
@@ -790,17 +811,13 @@ function circleHint(face: Face, hoverMode: HoverMode): string {
   }
 }
 
-/** The unit's own mark: the app's "W" when nothing runs, else the tool's. */
+/** The unit's own mark: the app's logo when nothing runs, else the tool's. */
 function FaceMark({ derived, size }: { readonly derived: Derived; readonly size: number }): JSX.Element {
   // With neither a mark nor a name there is nothing honest to put in the
   // circle but the application's own mark.
   const nameless = !derived.markIcon && derived.markName.trim() === "";
   if (derived.face === "none" || (derived.face === "idle" && !derived.markIcon) || nameless) {
-    return (
-      <span className="isl__app" style={{ fontSize: Math.round(size * 0.75) }} aria-hidden="true">
-        W
-      </span>
-    );
+    return <AppLogo className="isl__app" size={size} />;
   }
   return <Mark icon={derived.markIcon} label={derived.markName} size={size} />;
 }

@@ -688,6 +688,9 @@ export const ISLAND_STATE_CHANNEL = "workbench:island" as const;
 /** Live drag state (the rail under the pointer), pushed to the island only. */
 export const ISLAND_DRAG_CHANNEL = "workbench:island-drag" as const;
 
+/** The theme the app is set to, pushed to the island so both look alike. */
+export const ISLAND_THEME_CHANNEL = "workbench:island-theme" as const;
+
 /** Where the island asked the main window to go (spec §98). */
 export const ISLAND_NAVIGATE_CHANNEL = "workbench:navigate" as const;
 

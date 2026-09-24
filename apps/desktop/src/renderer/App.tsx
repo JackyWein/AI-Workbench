@@ -1,7 +1,8 @@
 import { type JSX, useEffect, useState } from "react";
-import { FolderOpen, MessageSquare, TerminalSquare } from "lucide-react";
+import { MessageSquare, TerminalSquare } from "lucide-react";
 import type { ChatMessage, ProviderSummary } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
+import { rememberTheme } from "./lib/themes.js";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
 import { useWorkbench } from "./store/workbench.js";
@@ -10,6 +11,7 @@ import { ChatView } from "./components/ChatView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
+import { AppLogo } from "./components/AppLogo.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { RendererErrorBoundary } from "./components/ErrorBoundary.js";
 import { ConnectorsView } from "./components/ConnectorsView.js";
@@ -98,6 +100,9 @@ export function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    if (!state.ready) {
+      return undefined;
+    }
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = (): void => {
       document.documentElement.dataset["theme"] = resolveTheme(
@@ -106,9 +111,10 @@ export function App(): JSX.Element {
       );
     };
     apply();
+    rememberTheme(state.settings.theme);
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [state.settings.theme]);
+  }, [state.ready, state.settings.theme]);
 
   useEffect(() => {
     document.documentElement.dataset["density"] = state.settings.density;
@@ -137,9 +143,7 @@ export function App(): JSX.Element {
   if (!state.ready) {
     return (
       <div className="boot" role="status" aria-label="Starting AI Workbench">
-        <span className="boot__mark" aria-hidden="true">
-          W
-        </span>
+        <AppLogo className="boot__mark" size={56} animated />
         <p className="boot__text">Starting AI Workbench…</p>
       </div>
     );
@@ -148,9 +152,7 @@ export function App(): JSX.Element {
   if (state.bootError) {
     return (
       <div className="boot" role="alert" aria-label="AI Workbench failed to start">
-        <span className="boot__mark" aria-hidden="true">
-          W
-        </span>
+        <AppLogo className="boot__mark" size={56} />
         <p className="boot__text">Could not start AI Workbench</p>
         <p className="boot__error">{state.bootError}</p>
         <button
@@ -240,13 +242,7 @@ export function App(): JSX.Element {
         {state.view === "chat" && state.workspaceMode === "chat" && !session ? (
           <div className="main__body">
             <EmptyState
-              icon={
-                state.workspaces.length === 0 ? (
-                  <FolderOpen size={20} strokeWidth={1.5} />
-                ) : (
-                  <MessageSquare size={20} strokeWidth={1.5} />
-                )
-              }
+              brand
               title={state.workspaces.length === 0 ? "Start with a folder" : "No session open"}
               description={
                 state.workspaces.length === 0

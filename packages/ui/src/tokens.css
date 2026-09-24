@@ -1,11 +1,67 @@
+@import "./fonts.css";
+
 /*
- * Design tokens (spec §87). Every colour, spacing step, radius, shadow and
- * duration in the application resolves to one of these variables; components
- * must not introduce raw values.
+ * Design tokens (spec §87). Every colour, spacing step, radius, shadow, font
+ * and duration in the application resolves to one of these variables;
+ * components must not introduce raw values. A theme is nothing but a set of
+ * values for them, so a theme changes everything and breaks nothing.
  *
- * Dark mode is the primary theme (spec §74). The light theme is a full
- * counterpart, not an afterthought.
+ * Quiet is the house theme: dark first (spec §74), with a light counterpart
+ * that is a full theme rather than an afterthought. The other themes live in
+ * themes.css, which is loaded after this file so its values win. Themes are keyed on `data-theme` of any element, not only the
+ * root, so a preview can show one without switching the whole window.
  */
+
+/*
+ * Values made from the others. Declared on every themed element, so a
+ * preview carrying its own data-theme computes them from its own theme, and
+ * first, so any theme below may still set one of them outright.
+ */
+:root,
+[data-theme] {
+  --radius-xs: calc(4px * var(--radius-scale));
+  --radius-sm: calc(5px * var(--radius-scale));
+  --radius-row: calc(6px * var(--radius-scale));
+  --radius-md: calc(7px * var(--radius-scale));
+  --radius-card: calc(9px * var(--radius-scale));
+  --radius-lg: calc(11px * var(--radius-scale));
+  --radius-xl: calc(14px * var(--radius-scale));
+  --radius-2xl: calc(19px * var(--radius-scale));
+
+  /* Text set on the accent: the main button, a checked switch, a badge. */
+  --accent-contrast: var(--text-inverted);
+  /* The accent as text on the page; a pale accent may need a deeper ink. */
+  --accent-text: var(--accent);
+
+  /* The window's backdrop behind the content, for themes that texture it. */
+  --backdrop-image: none;
+  --backdrop-size: auto;
+
+  /* The sidebar: by default a sunken strip of the same palette. */
+  --sidebar-surface: var(--surface-sunken);
+  --sidebar-raised: var(--surface-raised);
+  --sidebar-overlay: var(--surface-overlay);
+  --sidebar-text: var(--text-primary);
+  --sidebar-text-secondary: var(--text-secondary);
+  --sidebar-text-muted: var(--text-muted);
+  --sidebar-hover: var(--surface-hover);
+  --sidebar-active: var(--surface-active);
+  --sidebar-selected: var(--surface-selected);
+  --sidebar-line: var(--border-subtle);
+  --sidebar-line-strong: var(--border-strong);
+  --sidebar-accent: var(--accent);
+
+  /* A code block's own labels and rules, readable on the code ground. */
+  --code-label: var(--text-secondary);
+  --code-line: var(--border-subtle);
+
+  /* Terminals sit on the code ground, in the page's own ink. */
+  --terminal-surface: var(--code-surface);
+  --terminal-text: var(--text-primary);
+
+  --card-border: var(--card-border-width) solid var(--card-border-color);
+
+}
 
 /*
  * The palette is graphite with a slight blue cast. Colour is kept for meaning:
@@ -13,7 +69,10 @@
  * the tools' own logos — so eight agents side by side stay easy to tell apart
  * without the interface competing with them.
  */
-:root {
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+
   /* Surfaces: quiet neutrals, separated by luminance rather than borders. */
   --surface-base: #111215;
   --surface-raised: #16171b;
@@ -51,6 +110,180 @@
   --overlay-backdrop: rgba(8, 9, 11, 0.55);
   --overlay-blur: 20px;
 
+  /* Shadows: only for floating surfaces. */
+  --shadow-overlay: 0 18px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  /* A small lift, for a toast or a dragged tile. */
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+  /* Fenced code and the terminal are near-black, like a terminal. */
+  --code-surface: #0d0e11;
+  --code-text: #c9d1d9;
+  --code-muted: #4b505a;
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
+  /* A data URL cannot read a variable: each theme draws its own chevron. */
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23a3a7b0' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  /* The app's mark: a dark tile with three blue bars, as on its icon. */
+  --logo-tile: #14161a;
+  --logo-bar: #6ea8fe;
+  --logo-bar-dim: #496ca0;
+  --logo-edge: rgba(255, 255, 255, 0.08);
+
+  /* The terminal's sixteen colours, readable on a dark ground. */
+  --term-black: #2e3436;
+  --term-red: #ef6b6b;
+  --term-green: #6fcf8f;
+  --term-yellow: #e5c35c;
+  --term-blue: #6ea8fe;
+  --term-magenta: #c49cf2;
+  --term-cyan: #5bc8c8;
+  --term-white: #d3d7cf;
+  --term-bright-black: #6b707a;
+  --term-bright-red: #ff8a80;
+  --term-bright-green: #8ee6a8;
+  --term-bright-yellow: #fce27c;
+  --term-bright-blue: #9cc3ff;
+  --term-bright-magenta: #dab8ff;
+  --term-bright-cyan: #7fe3e3;
+  --term-bright-white: #f4f5f7;
+
+  /*
+   * The island floats over other programs' windows, so it keeps a dark body
+   * in every theme: a light pill on a light desktop would vanish, and its
+   * text must never inherit a light theme's dark ink.
+   */
+  --island-surface: rgba(28, 30, 35, 0.94);
+  --island-surface-strong: rgba(28, 30, 35, 0.96);
+  --island-body: rgba(10, 11, 13, 0.96);
+  --island-solid: #101114;
+  --island-sunken: #0d0e11;
+  --island-highlight: rgba(255, 255, 255, 0.06);
+  --island-shade: rgba(0, 0, 0, 0.45);
+  --island-text: #ecedf0;
+  --island-text-secondary: #a3a7b0;
+  --island-text-muted: #6b707a;
+  --island-line: rgba(255, 255, 255, 0.075);
+  --island-line-strong: rgba(255, 255, 255, 0.15);
+  --island-hover: rgba(255, 255, 255, 0.045);
+  --island-active: rgba(255, 255, 255, 0.07);
+  --island-accent: #8c9dff;
+  --island-running: #5bc8a7;
+  --island-warning: #e5b65c;
+  --island-success: #7ee2a8;
+  --island-danger: #ef7b72;
+  --island-on-warning: #221a08;
+  --island-on-accent: #121317;
+
+  /* Typography */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
+    "Segoe UI", "Inter", "Roboto", "Helvetica Neue", Arial, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "Segoe UI Variable Display", "Segoe UI", "Inter", "Roboto", sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", ui-monospace, SFMono-Regular, "SF Mono",
+    "JetBrains Mono", Menlo, Consolas, monospace;
+  /* Headings: weight and tracking belong to the typeface a theme chose. */
+  --display-weight: 600;
+  --display-tracking: -0.01em;
+  /* Small uppercase labels above groups. */
+  --label-font: var(--font-sans);
+  --label-weight: 600;
+  --label-tracking: 0.06em;
+
+  /*
+   * Shape. Every radius is a multiple of this one number, so a theme can go
+   * square or soft in one place; pills and circles stay what they are unless
+   * a theme says otherwise.
+   */
+  --radius-scale: 1;
+  --radius-pill: 999px;
+
+  /*
+   * Grouped surfaces — a settings group, an entry list, a card, the
+   * composer — share one outline and one lift, so a theme can draw them all
+   * as ruled paper, glass or thick ink in one place.
+   */
+  --card-border-width: 1px;
+  --card-border-color: var(--border-subtle);
+  --card-shadow: none;
+  /* The main button's own outline, for themes that draw one. */
+  --button-border: transparent;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-base: #f6f6f8;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-sunken: #eeeff2;
+  --surface-message: #eceef2;
+  --surface-hover: rgba(17, 19, 26, 0.045);
+  --surface-active: rgba(17, 19, 26, 0.07);
+  --surface-selected: rgba(17, 19, 26, 0.08);
+
+  --text-primary: #16171b;
+  --text-secondary: #4b505a;
+  --text-muted: #767b85;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(17, 19, 26, 0.09);
+  --border-strong: rgba(17, 19, 26, 0.18);
+  --border-focus: #4a5fd9;
+
+  --accent: #4a5fd9;
+  --accent-quiet: rgba(74, 95, 217, 0.12);
+  --success: #218a57;
+  --warning: #a36f00;
+  --danger: #c43d31;
+  --danger-quiet: rgba(196, 61, 49, 0.1);
+  --running: #16977a;
+  --live: #16977a;
+
+  --overlay-backdrop: rgba(238, 239, 242, 0.6);
+  --shadow-overlay: 0 18px 48px rgba(17, 19, 26, 0.16), 0 0 0 1px rgba(17, 19, 26, 0.05);
+  --shadow-popover: 0 10px 30px rgba(17, 19, 26, 0.12), 0 0 0 1px rgba(17, 19, 26, 0.04);
+  --shadow-raised: 0 8px 24px rgba(17, 19, 26, 0.14);
+
+  --scrollbar-thumb: rgba(17, 19, 26, 0.2);
+  --scrollbar-thumb-hover: rgba(17, 19, 26, 0.34);
+  /* Code blocks stay near-black here too; their labels read on that. */
+  --code-label: #a3a7b0;
+  --code-line: rgba(255, 255, 255, 0.075);
+
+  /* The terminal stays on the light ground it has always had here. */
+  --terminal-surface: var(--surface-sunken);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%234b505a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+}
+
+/*
+ * The terminal's colours for a light ground. Shared by every light theme; a
+ * theme may still set its own.
+ */
+[data-theme="light"],
+[data-theme="atelier"],
+[data-theme="swiss"] {
+  --term-black: #24292f;
+  --term-red: #cf222e;
+  --term-green: #116329;
+  --term-yellow: #7d4e00;
+  --term-blue: #0969da;
+  --term-magenta: #8250df;
+  --term-cyan: #1b7c83;
+  --term-white: #6e7781;
+  --term-bright-black: #57606a;
+  --term-bright-red: #a40e26;
+  --term-bright-green: #1a7f37;
+  --term-bright-yellow: #633c01;
+  --term-bright-blue: #0550ae;
+  --term-bright-magenta: #6639ba;
+  --term-bright-cyan: #136061;
+  --term-bright-white: #24292f;
+}
+
+:root {
   /* Spacing scale */
   --space-1: 2px;
   --space-2: 4px;
@@ -61,24 +294,6 @@
   --space-7: 32px;
   --space-8: 48px;
 
-  /* Radii */
-  --radius-sm: 5px;
-  --radius-md: 7px;
-  --radius-lg: 11px;
-  --radius-xl: 14px;
-  --radius-pill: 999px;
-
-  /* Shadows: only for floating surfaces. */
-  --shadow-overlay: 0 18px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
-  --shadow-popover: 0 10px 30px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.03);
-
-  /* Typography */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
-    "Segoe UI", "Inter", "Roboto", "Helvetica Neue", Arial, sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
-    "Segoe UI Variable Display", "Segoe UI", "Inter", "Roboto", sans-serif;
-  --font-mono: "Cascadia Mono", "Cascadia Code", ui-monospace, SFMono-Regular, "SF Mono",
-    "JetBrains Mono", Menlo, Consolas, monospace;
   --text-xs: 11px;
   --text-sm: 12px;
   --text-md: 13px;
@@ -108,39 +323,6 @@
   --header-height: 46px;
   --tile-header-height: 34px;
   --composer-max-height: 220px;
-}
-
-:root[data-theme="light"] {
-  --surface-base: #f6f6f8;
-  --surface-raised: #ffffff;
-  --surface-overlay: #ffffff;
-  --surface-sunken: #eeeff2;
-  --surface-message: #eceef2;
-  --surface-hover: rgba(17, 19, 26, 0.045);
-  --surface-active: rgba(17, 19, 26, 0.07);
-  --surface-selected: rgba(17, 19, 26, 0.08);
-
-  --text-primary: #16171b;
-  --text-secondary: #4b505a;
-  --text-muted: #7c818b;
-  --text-inverted: #ffffff;
-
-  --border-subtle: rgba(17, 19, 26, 0.09);
-  --border-strong: rgba(17, 19, 26, 0.18);
-  --border-focus: #4a5fd9;
-
-  --accent: #4a5fd9;
-  --accent-quiet: rgba(74, 95, 217, 0.12);
-  --success: #218a57;
-  --warning: #a36f00;
-  --danger: #c43d31;
-  --danger-quiet: rgba(196, 61, 49, 0.1);
-  --running: #16977a;
-  --live: #16977a;
-
-  --overlay-backdrop: rgba(238, 239, 242, 0.6);
-  --shadow-overlay: 0 18px 48px rgba(17, 19, 26, 0.16), 0 0 0 1px rgba(17, 19, 26, 0.05);
-  --shadow-popover: 0 10px 30px rgba(17, 19, 26, 0.12), 0 0 0 1px rgba(17, 19, 26, 0.04);
 }
 
 :root[data-density="compact"] {

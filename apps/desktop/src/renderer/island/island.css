@@ -1,4 +1,5 @@
 @import "@ai-workbench/ui/tokens.css";
+@import "@ai-workbench/ui/themes.css";
 @import "@ai-workbench/ui/controls.css";
 
 /*
@@ -7,6 +8,37 @@
  * that opens in place into its card; free it is a circle whose card opens
  * beside it. Flat rings carry state; nothing pulses at rest.
  */
+/*
+ * The island's own palette. It floats over other programs, so every theme
+ * gives it a dark body of its own (tokens.css, themes.css); here the tokens
+ * the unit is drawn with are pointed at that palette. Set on the root, after
+ * the themes, so values made from these follow too.
+ */
+:root {
+  --text-primary: var(--island-text);
+  --text-secondary: var(--island-text-secondary);
+  --text-muted: var(--island-text-muted);
+  --text-inverted: var(--island-on-accent);
+  --surface-hover: var(--island-hover);
+  --surface-active: var(--island-active);
+  --surface-selected: var(--island-active);
+  --surface-raised: var(--island-surface);
+  --surface-overlay: var(--island-surface-strong);
+  --border-subtle: var(--island-line);
+  --border-strong: var(--island-line-strong);
+  --border-focus: var(--island-accent);
+  --accent: var(--island-accent);
+  --accent-quiet: color-mix(in srgb, var(--island-accent) 16%, transparent);
+  --accent-contrast: var(--island-on-accent);
+  --accent-text: var(--island-accent);
+  --running: var(--island-running);
+  --live: var(--island-running);
+  --warning: var(--island-warning);
+  --success: var(--island-success);
+  --danger: var(--island-danger);
+  color-scheme: dark;
+}
+
 *,
 *::before,
 *::after {
@@ -107,7 +139,7 @@ button {
   flex: none;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-active);
   font-weight: 600;
   color: var(--text-secondary);
@@ -120,10 +152,7 @@ button {
 }
 
 .isl__app {
-  display: inline-flex;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--text-primary);
+  display: block;
 }
 
 .isl__el {
@@ -143,7 +172,7 @@ button {
   background: var(--surface-active);
   border: 1px solid var(--border-subtle);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   padding: 0 5px;
   line-height: 1.5;
   white-space: nowrap;
@@ -158,9 +187,9 @@ button {
   height: 42px;
   padding: 0;
   border-radius: 50%;
-  background: rgba(28, 30, 35, 0.94);
+  background: var(--island-surface);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: 0 3px 8px var(--island-shade), inset 0 1px 0 var(--island-highlight);
   cursor: pointer;
   transition:
     border-color var(--duration-normal) var(--easing-standard),
@@ -187,8 +216,8 @@ button {
   justify-content: center;
   width: 240px;
   height: 52px;
-  border: 1.5px dashed rgba(140, 157, 255, 0.55);
-  border-radius: 26px;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: calc(26px * var(--radius-scale));
   animation: isl-ghost-in 260ms cubic-bezier(0.3, 1.2, 0.45, 1);
 }
 
@@ -232,7 +261,7 @@ button {
 @keyframes isl-blob-in {
   from {
     transform: scale(0.55);
-    border-radius: 19px;
+    border-radius: var(--radius-2xl);
     filter: blur(3px);
   }
   55% {
@@ -247,22 +276,22 @@ button {
   width: 100%;
   height: 100%;
   border-radius: 50%;
-  background: #101114;
+  background: var(--island-solid);
 }
 
 .isl[data-face="working"] .isl__circle {
-  border-color: rgba(91, 200, 167, 0.6);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(91, 200, 167, 0.13);
+  border-color: color-mix(in srgb, var(--running) 60%, transparent);
+  box-shadow: 0 3px 8px var(--island-shade), 0 0 0 3px color-mix(in srgb, var(--running) 13%, transparent);
 }
 
 .isl[data-face="approval"] .isl__circle {
-  border-color: rgba(229, 182, 92, 0.7);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(229, 182, 92, 0.15);
+  border-color: color-mix(in srgb, var(--warning) 70%, transparent);
+  box-shadow: 0 3px 8px var(--island-shade), 0 0 0 3px color-mix(in srgb, var(--warning) 15%, transparent);
 }
 
 .isl[data-face="question"] .isl__circle {
-  border-color: rgba(140, 157, 255, 0.7);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(140, 157, 255, 0.15);
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow: 0 3px 8px var(--island-shade), 0 0 0 3px color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .isl[data-face="idle"] .isl__circle .isl__mark,
@@ -282,7 +311,7 @@ button {
   justify-content: center;
   border-radius: var(--radius-pill);
   background: var(--warning);
-  color: #221a08;
+  color: var(--island-on-warning);
   font-size: 9px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -290,7 +319,7 @@ button {
 
 .isl[data-face="question"] .isl__badge {
   background: var(--accent);
-  color: var(--text-inverted);
+  color: var(--island-on-accent);
 }
 
 /* The card beside the circle springs out of it and fades back. */
@@ -319,16 +348,16 @@ button {
 .isl__side > .isl__attn {
   width: 300px;
   padding: 12px 14px;
-  border-radius: 12px;
-  background: rgba(28, 30, 35, 0.96);
+  border-radius: calc(12px * var(--radius-scale));
+  background: var(--island-surface-strong);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: 0 3px 8px var(--island-shade), inset 0 1px 0 var(--island-highlight);
 }
 
 .isl__side > .isl__attn {
   width: 320px;
   padding: 14px 16px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  box-shadow: inset 0 1px 0 var(--island-highlight);
 }
 
 .isl__card--wide {
@@ -348,7 +377,7 @@ button {
   text-align: left;
   background: none;
   border: none;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   cursor: pointer;
 }
 
@@ -373,10 +402,10 @@ button {
   min-width: 46px;
   max-width: 272px;
   padding: 0 14px;
-  border-radius: 19px;
-  background: rgba(10, 11, 13, 0.96);
+  border-radius: var(--radius-2xl);
+  background: var(--island-body);
   border: 1px solid var(--border-subtle);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  box-shadow: 0 3px 8px var(--island-shade), inset 0 1px 0 var(--island-highlight);
   cursor: pointer;
   transition:
     border-color var(--duration-normal) var(--easing-standard),
@@ -439,47 +468,47 @@ button {
   min-height: 96px;
   padding: 12px 0;
   gap: 7px;
-  border-radius: 22px;
+  border-radius: calc(22px * var(--radius-scale));
 }
 
 .isl[data-face="approval"] .isl__pill {
-  border-color: rgba(229, 182, 92, 0.7);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 9px rgba(229, 182, 92, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  border-color: color-mix(in srgb, var(--warning) 70%, transparent);
+  box-shadow: 0 3px 8px var(--island-shade), 0 0 9px color-mix(in srgb, var(--warning) 28%, transparent),
+    inset 0 1px 0 var(--island-highlight);
 }
 
 .isl[data-face="question"] .isl__pill {
-  border-color: rgba(140, 157, 255, 0.65);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 9px rgba(140, 157, 255, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  box-shadow: 0 3px 8px var(--island-shade), 0 0 9px color-mix(in srgb, var(--accent) 30%, transparent),
+    inset 0 1px 0 var(--island-highlight);
 }
 
 /* Something finished: a green edge that breathes once when it arrives and
    then stays lit until it is dealt with. Quiet, but unmistakable. */
 .isl[data-face="done"] .isl__circle {
-  border-color: rgba(126, 226, 168, 0.6);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 12px rgba(126, 226, 168, 0.35);
+  border-color: color-mix(in srgb, var(--success) 60%, transparent);
+  box-shadow: 0 3px 8px var(--island-shade), 0 0 12px color-mix(in srgb, var(--success) 35%, transparent);
 }
 
 .isl[data-face="done"] .isl__pill {
-  border-color: rgba(126, 226, 168, 0.65);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 14px rgba(126, 226, 168, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  border-color: color-mix(in srgb, var(--success) 65%, transparent);
+  box-shadow: 0 3px 8px var(--island-shade), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
+    inset 0 1px 0 var(--island-highlight);
   animation: isl-done-glow 1.6s var(--easing-standard) 1;
 }
 
 @keyframes isl-done-glow {
   0% {
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 0 rgba(126, 226, 168, 0),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    box-shadow: 0 3px 8px var(--island-shade), 0 0 0 color-mix(in srgb, var(--success) 0%, transparent),
+      inset 0 1px 0 var(--island-highlight);
   }
   35% {
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 26px rgba(126, 226, 168, 0.75),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    box-shadow: 0 3px 8px var(--island-shade), 0 0 26px color-mix(in srgb, var(--success) 75%, transparent),
+      inset 0 1px 0 var(--island-highlight);
   }
   100% {
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5), 0 0 14px rgba(126, 226, 168, 0.32),
-      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    box-shadow: 0 3px 8px var(--island-shade), 0 0 14px color-mix(in srgb, var(--success) 32%, transparent),
+      inset 0 1px 0 var(--island-highlight);
   }
 }
 
@@ -535,7 +564,7 @@ button {
   justify-content: center;
   border-radius: var(--radius-pill);
   background: var(--warning);
-  color: #221a08;
+  color: var(--island-on-warning);
   font-size: 10px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -543,7 +572,7 @@ button {
 
 .isl[data-face="question"] .isl__count {
   background: var(--accent);
-  color: var(--text-inverted);
+  color: var(--island-on-accent);
 }
 
 /* The docked pill opened in place: same unit, grown into its card. */
@@ -554,10 +583,10 @@ button {
   /* No scrollbar-width here: in Chromium it would switch off the shared
      pill scrollbar from controls.css and bring back the platform's arrows. */
   padding: 12px 14px;
-  border-radius: 18px;
-  background: rgba(10, 11, 13, 0.96);
+  border-radius: calc(18px * var(--radius-scale));
+  background: var(--island-body);
   border: 1px solid var(--border-subtle);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 var(--island-highlight);
   --pw: 240px;
   --ph: 38px;
   --isl-open: 440ms cubic-bezier(0.32, 1.18, 0.42, 1) both;
@@ -767,7 +796,7 @@ button {
   font-weight: 700;
   letter-spacing: 0.08em;
   color: var(--running);
-  border: 1px solid rgba(91, 200, 167, 0.35);
+  border: 1px solid color-mix(in srgb, var(--running) 35%, transparent);
   border-radius: var(--radius-pill);
   padding: 1px 8px;
 }
@@ -819,7 +848,7 @@ button {
   gap: 8px;
   padding: 7px 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   cursor: text;
   transition: border-color var(--duration-fast) var(--easing-standard);
 }
@@ -1037,9 +1066,9 @@ button {
   font-family: var(--font-mono);
   font-size: 10.5px;
   line-height: 1.65;
-  background: #0d0e11;
+  background: var(--island-sunken);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: calc(8px * var(--radius-scale));
   overflow: hidden;
   -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
   mask-image: linear-gradient(180deg, #000 70%, transparent 98%);
@@ -1079,7 +1108,7 @@ button {
   padding: 5px 12px;
   font-size: 11.5px;
   font-weight: 500;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border-subtle);
   background: var(--surface-raised);
   color: var(--text-secondary);
@@ -1099,12 +1128,12 @@ button {
 .isl__btn--amber {
   background: var(--warning);
   border-color: transparent;
-  color: #221a08;
+  color: var(--island-on-warning);
   font-weight: 600;
 }
 
 .isl__btn--amber:hover {
-  color: #221a08;
+  color: var(--island-on-warning);
   border-color: transparent;
   filter: brightness(1.07);
 }
@@ -1139,7 +1168,7 @@ button {
   padding: 8px 11px;
   text-align: left;
   border: 1px solid var(--border-subtle);
-  border-radius: 9px;
+  border-radius: var(--radius-card);
   background: var(--surface-raised);
   cursor: pointer;
   transition:

@@ -3,7 +3,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import type { IDisposable, Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { describeError, invoke } from "../lib/client.js";
-import { createTerminal, disposeTerminal, liveWriter, tailForReplay } from "../lib/xterm.js";
+import { createTerminal, disposeTerminal, followTheme, liveWriter, tailForReplay } from "../lib/xterm.js";
 
 interface TerminalViewProps {
   readonly sessionId: string;
@@ -130,6 +130,7 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
 
     const observer = new ResizeObserver(() => requestAnimationFrame(resize));
     observer.observe(container);
+    const unfollow = followTheme(terminal, resize);
 
     const resync = (): void => {
       if (document.hidden) {
@@ -154,6 +155,7 @@ export function TerminalView({ sessionId, onError }: TerminalViewProps): JSX.Ele
     return () => {
       disposed = true;
       observer.disconnect();
+      unfollow();
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("focus", onFocus);
       detach?.();

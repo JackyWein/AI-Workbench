@@ -1679,6 +1679,124 @@ export async function runStartupCheck(
   });
 
   // The remaining checks expect the session's chat again.
+  // Every theme is chosen the way a person does it, from the picker in
+  // Settings, and must then repaint the whole window readably, with its own
+  // typeface actually loaded from the app (fonts ship inside it; the page's
+  // policy allows nothing from outside).
+  await check(
+    "every theme can be picked in Settings and repaints the window readably",
+    `(async () => {
+       await ${waitFor("document.querySelector('.sidebar__foot')")};
+       [...document.querySelectorAll('.sidebar__foot .row')]
+         .find(node => node.textContent?.includes('Settings'))?.click();
+       await ${waitFor("document.querySelector('.theme-picker__trigger')")};
+       const rgba = (value) => {
+         const [r = 0, g = 0, b = 0, a = 1] = (value.match(/[\\d.]+/g) ?? []).map(Number);
+         return [r, g, b, value.startsWith('rgba') ? a : 1];
+       };
+       const over = (top, bottom) => top.map((c, i) => i < 3 ? c * top[3] + bottom[i] * (1 - top[3]) : 1);
+       const lum = ([r, g, b]) => [r, g, b]
+         .map(c => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; })
+         .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+       const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+       const pick = async (index) => {
+         document.querySelector('.theme-picker__trigger').click();
+         await new Promise(resolve => setTimeout(resolve, 150));
+         const option = document.querySelectorAll('.theme-picker__option')[index];
+         const name = option?.querySelector('.theme-picker__option-name')?.textContent ?? '';
+         option?.click();
+         await new Promise(resolve => setTimeout(resolve, 400));
+         return name;
+       };
+       document.querySelector('.theme-picker__trigger').click();
+       await new Promise(resolve => setTimeout(resolve, 150));
+       const count = document.querySelectorAll('.theme-picker__option').length;
+       document.querySelector('.theme-picker__trigger').click();
+       const problems = [];
+       const themes = [];
+       for (let index = 0; index < count; index += 1) {
+         const name = await pick(index);
+         const theme = document.documentElement.dataset.theme;
+         themes.push(theme);
+         const page = rgba(getComputedStyle(document.querySelector('.app')).backgroundColor);
+         const text = over(rgba(getComputedStyle(document.querySelector('.view__title')).color), page);
+         const sidebar = over(rgba(getComputedStyle(document.querySelector('.sidebar')).backgroundColor), page);
+         const sideText = over(rgba(getComputedStyle(document.querySelector('.sidebar__title')).color), sidebar);
+         if (contrast(text, page) < 7) problems.push(name + ': title contrast ' + contrast(text, page).toFixed(2));
+         if (contrast(sideText, sidebar) < 7) problems.push(name + ': sidebar contrast ' + contrast(sideText, sidebar).toFixed(2));
+         const display = getComputedStyle(document.querySelector('.view__title')).fontFamily
+           .split(',')[0].trim().replace(/^["']|["']$/g, '');
+         const ours = [...document.fonts].some(face => face.family.replace(/^["']|["']$/g, '') === display);
+         if (ours) {
+           await document.fonts.load('20px "' + display + '"');
+           const loaded = [...document.fonts].some(face =>
+             face.family.replace(/^["']|["']$/g, '') === display && face.status === 'loaded');
+           if (!loaded) problems.push(name + ': ' + display + ' did not load');
+         }
+         if (!document.querySelector('.theme-picker__trigger')?.textContent?.includes(name)) {
+           problems.push(name + ': the picker does not show it as chosen');
+         }
+       }
+       // Back to the default, so what follows sees the app as it starts.
+       document.querySelector('.theme-picker__trigger').click();
+       await new Promise(resolve => setTimeout(resolve, 150));
+       [...document.querySelectorAll('.theme-picker__option')]
+         .find(node => node.querySelector('.theme-picker__option-name')?.textContent === 'Quiet Dark')?.click();
+       await new Promise(resolve => setTimeout(resolve, 300));
+       const distinct = new Set(themes).size;
+       if (count < 8 || distinct < 7) problems.push('themes: ' + themes.join(','));
+       return problems.length === 0 && document.documentElement.dataset.theme === 'dark'
+         ? true
+         : JSON.stringify(problems);
+     })()`,
+    60_000,
+  );
+
+  await checkMain("the island takes on the theme picked in the main window", async () => {
+    const pickTheme = (name: string): Promise<unknown> =>
+      window.webContents.executeJavaScript(
+        `(async () => {
+           document.querySelector('.theme-picker__trigger')?.click();
+           await new Promise(resolve => setTimeout(resolve, 150));
+           [...document.querySelectorAll('.theme-picker__option')]
+             .find(node => node.querySelector('.theme-picker__option-name')?.textContent === ${JSON.stringify(name)})
+             ?.click();
+           await new Promise(resolve => setTimeout(resolve, 300));
+           return document.documentElement.dataset.theme;
+         })()`,
+      );
+    const islandTheme = async (expected: string): Promise<boolean> => {
+      const deadline = Date.now() + 4000;
+      while (Date.now() < deadline) {
+        if ((await islandJs("document.documentElement.dataset.theme")) === expected) {
+          return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return false;
+    };
+    await pickTheme("Atelier");
+    const followed = await islandTheme("atelier");
+    // Its body stays dark in a light theme: the text is light.
+    const readable = await islandJs(
+      `(() => {
+         const [r, g, b] = (getComputedStyle(document.body).color.match(/\\d+/g) ?? []).map(Number);
+         return 0.299 * (r ?? 0) + 0.587 * (g ?? 0) + 0.114 * (b ?? 0) > 150;
+       })()`,
+    );
+    await pickTheme("Quiet Dark");
+    const back = await islandTheme("dark");
+    return followed && readable === true && back;
+  });
+
+  await check(
+    "the app's own mark is its logo",
+    `(() => {
+       const mark = document.querySelector('.sidebar__head svg.app-logo');
+       return Boolean(mark) && mark.querySelectorAll('.app-logo__bar').length === 3;
+     })()`,
+  );
+
   await check(
     "returns to the session after the settings screens",
     `(async () => {

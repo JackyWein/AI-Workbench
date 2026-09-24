@@ -16,17 +16,18 @@ export const layout = {
   composerMaxHeight: 220,
 } as const;
 
-export type ThemePreference = "system" | "dark" | "light";
-
-/** Resolves the theme preference against the OS setting. */
-export function resolveTheme(
-  preference: ThemePreference,
+/**
+ * Resolves a theme preference to the theme to draw: "system" follows the OS
+ * between the house theme's dark and light modes, anything else is itself.
+ */
+export function resolveTheme<T extends string>(
+  preference: T | "system",
   prefersDark: boolean,
-): "dark" | "light" {
+): Exclude<T, "system"> | "dark" | "light" {
   if (preference === "system") {
     return prefersDark ? "dark" : "light";
   }
-  return preference;
+  return preference as Exclude<T, "system">;
 }
 
 export { LOGOS, type LogoDefinition } from "./logos.js";

@@ -30,15 +30,6 @@
   }
 }
 
-:root {
-  --scrollbar-thumb: rgba(255, 255, 255, 0.16);
-  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.28);
-}
-
-:root[data-theme="light"] {
-  --scrollbar-thumb: rgba(17, 19, 26, 0.2);
-  --scrollbar-thumb-hover: rgba(17, 19, 26, 0.34);
-}
 
 ::-webkit-scrollbar {
   width: 11px;
@@ -98,7 +89,7 @@ input[type="radio"] {
   display: inline-grid;
   place-content: center;
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-raised);
   cursor: pointer;
   transition:
@@ -112,7 +103,7 @@ input[type="radio"] {
 
 input[type="checkbox"]:hover:not(:disabled),
 input[type="radio"]:hover:not(:disabled) {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
 }
 
 input[type="checkbox"]::before {
@@ -121,7 +112,7 @@ input[type="checkbox"]::before {
   height: 9px;
   transform: scale(0);
   transition: transform var(--duration-fast) var(--easing-standard);
-  background-color: var(--text-inverted);
+  background-color: var(--accent-contrast);
   /* A drawn tick, so it matches the control at any size. */
   clip-path: polygon(14% 47%, 0 61%, 39% 100%, 100% 22%, 85% 9%, 37% 70%);
 }
@@ -133,13 +124,13 @@ input[type="radio"]::before {
   border-radius: var(--radius-pill);
   transform: scale(0);
   transition: transform var(--duration-fast) var(--easing-standard);
-  background-color: var(--text-inverted);
+  background-color: var(--accent-contrast);
 }
 
 input[type="checkbox"]:checked,
 input[type="radio"]:checked {
   background: var(--accent);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
 }
 
 input[type="checkbox"]:checked::before,
@@ -287,13 +278,6 @@ select {
     background-color var(--duration-fast) var(--easing-standard);
 }
 
-:root {
-  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23a3a7b0' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-}
-
-:root[data-theme="light"] {
-  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%234b505a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
-}
 
 .select:hover:not(:disabled),
 select:hover:not(:disabled) {
@@ -337,7 +321,7 @@ select option {
 
 .primary-button {
   padding: 6px var(--space-5);
-  color: var(--text-inverted);
+  color: var(--accent-contrast);
   background: var(--accent);
   border: 1px solid transparent;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
@@ -407,7 +391,7 @@ select option {
   color: var(--text-secondary);
   background: transparent;
   border: none;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
   white-space: nowrap;
   transition:
@@ -425,4 +409,90 @@ select option {
   color: var(--text-primary);
   background: var(--surface-raised);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.16);
+}
+
+/* ------------------------------------------------------------- app mark -- */
+
+/*
+ * The app's own mark (AppLogo): its icon's tile and three bars, in the logo
+ * colours of the theme in force.
+ */
+.app-logo {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.app-logo__tile {
+  fill: var(--logo-tile);
+  stroke: var(--logo-edge);
+}
+
+.app-logo__bar {
+  fill: var(--logo-bar);
+}
+
+.app-logo__bar--dim {
+  fill: var(--logo-bar-dim);
+}
+
+/*
+ * On the start screen the bars write themselves in, one after another, and
+ * then keep breathing while the app gets ready.
+ */
+.app-logo[data-animated] .app-logo__tile {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: app-logo-tile 420ms var(--easing-standard) both;
+}
+
+.app-logo[data-animated] .app-logo__bar {
+  transform-box: fill-box;
+  transform-origin: left center;
+  animation:
+    app-logo-draw 460ms var(--easing-standard) both,
+    app-logo-think 1600ms ease-in-out infinite;
+}
+
+.app-logo[data-animated] [data-bar="1"] {
+  animation-delay: 180ms, 1100ms;
+}
+
+.app-logo[data-animated] [data-bar="2"] {
+  animation-delay: 300ms, 1260ms;
+}
+
+.app-logo[data-animated] [data-bar="3"] {
+  animation-delay: 420ms, 1420ms;
+}
+
+@keyframes app-logo-tile {
+  from {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+}
+
+@keyframes app-logo-draw {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+  }
+}
+
+@keyframes app-logo-think {
+  0%,
+  100% {
+    transform: scaleX(1);
+  }
+  50% {
+    transform: scaleX(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-logo[data-animated] .app-logo__tile,
+  .app-logo[data-animated] .app-logo__bar {
+    animation: none;
+  }
 }

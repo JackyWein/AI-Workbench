@@ -9,6 +9,7 @@ const alias = {
   // The css subpath must be matched before the package root alias.
   "@ai-workbench/ui/controls.css": resolve(root, "packages/ui/src/controls.css"),
   "@ai-workbench/ui/tokens.css": resolve(root, "packages/ui/src/tokens.css"),
+  "@ai-workbench/ui/themes.css": resolve(root, "packages/ui/src/themes.css"),
   "@ai-workbench/shared": resolve(root, "packages/shared/src/index.ts"),
   "@ai-workbench/core": resolve(root, "packages/core/src/index.ts"),
   "@ai-workbench/database": resolve(root, "packages/database/src/index.ts"),

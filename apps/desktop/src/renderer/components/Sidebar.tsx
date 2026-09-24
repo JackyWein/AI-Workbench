@@ -15,6 +15,7 @@ import {
 import type { Session, Workspace } from "@ai-workbench/shared";
 import { meterTone, tightestLimit, usageProviders, useNow } from "../lib/usage.js";
 import { useWorkbench, type MainView } from "../store/workbench.js";
+import { AppLogo } from "./AppLogo.js";
 import { Popover } from "./Popover.js";
 
 interface SidebarProps {
@@ -105,9 +106,7 @@ export function Sidebar({
   return (
     <nav className="sidebar" aria-label="Workspaces and sessions">
       <div className="sidebar__head">
-        <span className="sidebar__appmark" aria-hidden="true">
-          W
-        </span>
+        <AppLogo className="sidebar__appmark" size={22} />
         <span className="sidebar__title">AI Workbench</span>
         {appVersion ? <span className="sidebar__version">{appVersion}</span> : null}
         <button

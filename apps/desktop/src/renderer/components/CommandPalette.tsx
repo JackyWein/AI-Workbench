@@ -10,6 +10,7 @@ import {
   Terminal,
 } from "lucide-react";
 import type { IslandWidgetId, ModelInfo, ProviderSummary } from "@ai-workbench/shared";
+import { THEMES } from "../lib/themes.js";
 import { useWorkbench } from "../store/workbench.js";
 
 const ISLAND_WIDGET_LABELS: Record<IslandWidgetId, string> = {
@@ -157,17 +158,15 @@ export function CommandPalette(): JSX.Element | null {
           void store.getState().refreshUsage();
         },
       },
-      {
-        id: "theme.toggle",
-        label: `Switch theme to ${settings.theme === "dark" ? "light" : "dark"}`,
+      // Every theme is one command away: "theme" lists them all.
+      ...THEMES.filter((theme) => theme.id !== settings.theme).map((theme) => ({
+        id: `theme.${theme.id}`,
+        label: `Theme: ${theme.name}`,
         group: "Appearance",
         run: () => {
-          const state = store.getState();
-          void state.updateSettings({
-            theme: state.settings.theme === "dark" ? "light" : "dark",
-          });
+          void store.getState().updateSettings({ theme: theme.id });
         },
-      },
+      })),
     ];
 
     // Reasoning effort lives here now that the header is crumbs + pills: only

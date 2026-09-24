@@ -6,6 +6,7 @@ import {
   type IslandTarget,
   type IslandWidgetId,
   type TerminalAttentionResponse,
+  type Theme,
 } from "@ai-workbench/shared";
 import { COMPLETED_WORK_WINDOW_MS, type IslandSources } from "@ai-workbench/status";
 import type { AppServices } from "./services.js";
@@ -129,6 +130,11 @@ export class IslandController {
     });
   }
 
+  /** Repaints the island in the theme the app was just set to. */
+  setTheme(theme: Theme): void {
+    this.#window.setTheme(theme);
+  }
+
   get state(): IslandState {
     return this.#services.attention.state;
   }
@@ -172,6 +178,7 @@ export class IslandController {
     this.#timer.unref?.();
 
     const settings = await this.#services.settings.get();
+    this.#window.setTheme(settings.theme);
     // The window always learns the preferences, so showing it later works
     // even when it did not start visible with the app.
     this.#window.configure(settings.statusIsland);
