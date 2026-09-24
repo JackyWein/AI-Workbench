@@ -18,7 +18,7 @@ import type { CliParseState } from "@ai-workbench/provider-cli";
  */
 
 /** Tool output kept per call: enough to read, not enough to flood the chat. */
-export const TOOL_OUTPUT_LIMIT = 4000;
+const TOOL_OUTPUT_LIMIT = 4000;
 const SUMMARY_LIMIT = 200;
 
 const threadStartedSchema = z.object({ thread_id: z.string().min(1) });
@@ -119,7 +119,7 @@ export function parseCodexLine(line: string, state: CliParseState): ProviderEven
 }
 
 /** Sorts a Codex error message into the normalized kinds (spec §13). */
-export function classifyCodexError(message: string): ProviderErrorKind {
+function classifyCodexError(message: string): ProviderErrorKind {
   if (/usage limit|rate limit|too many requests|\b429\b|quota/i.test(message)) {
     return "rateLimit";
   }

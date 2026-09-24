@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Database } from "@ai-workbench/database";
 import {
   mcpServers,
@@ -400,19 +400,6 @@ export class McpService {
     return config ? this.#manager.connect(config) : null;
   }
 
-  /** Retries a known server with backoff. Failures are recorded, never thrown. */
-  async reconnect(id: string): Promise<McpServerStatus | null> {
-    const config = await this.get(id);
-    return config ? this.#manager.reconnect(id) : null;
-  }
-
-  /** Probes a connected server and records its latency. Never throws. */
-  async health(
-    id: string,
-  ): Promise<{ ok: true; latencyMs: number } | { ok: false; error: string }> {
-    return this.#manager.health(id);
-  }
-
   async disconnect(id: string): Promise<boolean> {
     return this.#manager.disconnect(id);
   }
@@ -459,16 +446,6 @@ export class McpService {
       });
   }
 
-  async clearSessionAccess(sessionId: string, serverId: string): Promise<void> {
-    await this.#db
-      .delete(sessionMcpServers)
-      .where(
-        and(
-          eq(sessionMcpServers.sessionId, sessionId),
-          eq(sessionMcpServers.serverId, serverId),
-        ),
-      );
-  }
 }
 
 function oauthTarget(config: McpServerConfig): McpOAuthTarget {

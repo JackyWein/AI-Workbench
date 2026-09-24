@@ -68,7 +68,7 @@ export function windowLabel(minutes: number | null | undefined, slot: "primary" 
 }
 
 /** A reset time as the note shows it, e.g. "Sep 24, 7:42 PM", in local time. */
-export function formatResetTime(date: Date): string {
+function formatResetTime(date: Date): string {
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",

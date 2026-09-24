@@ -22,7 +22,7 @@ const reasoningEffortOptionSchema = z
   })
   .passthrough();
 
-export const appServerModelSchema = z
+const appServerModelSchema = z
   .object({
     id: z.string().min(1),
     /** The slug `-m` takes. Equal to `id` in every release seen so far. */
@@ -46,7 +46,7 @@ const modelListPageSchema = z.object({
   nextCursor: z.string().nullish(),
 });
 
-export const accountResponseSchema = z.object({
+const accountResponseSchema = z.object({
   account: z
     .object({
       type: z.string(),
@@ -67,7 +67,7 @@ const rateLimitWindowSchema = z.object({
 });
 export type RateLimitWindow = z.infer<typeof rateLimitWindowSchema>;
 
-export const rateLimitSnapshotSchema = z
+const rateLimitSnapshotSchema = z
   .object({
     limitId: z.string().nullish(),
     limitName: z.string().nullish(),
@@ -79,7 +79,7 @@ export const rateLimitSnapshotSchema = z
   .passthrough();
 export type RateLimitSnapshot = z.infer<typeof rateLimitSnapshotSchema>;
 
-export const rateLimitsResponseSchema = z
+const rateLimitsResponseSchema = z
   .object({
     /** Null means the backend did not say; never inferred from percentages. */
     ordinaryUsageAllowed: z.boolean().nullish(),

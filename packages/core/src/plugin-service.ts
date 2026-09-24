@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import type { Database } from "@ai-workbench/database";
 import {
@@ -125,29 +125,6 @@ export class PluginService {
         target: [sessionPlugins.sessionId, sessionPlugins.pluginId],
         set: { enabled: input.enabled },
       });
-  }
-
-  async clearAssignment(
-    scope: "workspace" | "session",
-    scopeId: string,
-    pluginId: string,
-  ): Promise<void> {
-    if (scope === "workspace") {
-      await this.#db
-        .delete(workspacePlugins)
-        .where(
-          and(
-            eq(workspacePlugins.workspaceId, scopeId),
-            eq(workspacePlugins.pluginId, pluginId),
-          ),
-        );
-      return;
-    }
-    await this.#db
-      .delete(sessionPlugins)
-      .where(
-        and(eq(sessionPlugins.sessionId, scopeId), eq(sessionPlugins.pluginId, pluginId)),
-      );
   }
 
   /** Connects an account once, for every plugin of that account type. */

@@ -18,9 +18,6 @@ import type {
   UpdateState,
   McpServerConfig,
   McpServerStatus,
-  PluginAccount,
-  PluginManifest,
-  PluginScopes,
   ProviderSummary,
   SaveProviderConfigInput,
   Session,
@@ -73,7 +70,7 @@ export type MainView =
   | "settings";
 export type WorkspaceTab = "terminal" | "files" | "changes";
 /** The clean conversation, or the workspace's agents in their own terminals. */
-export type WorkspaceMode = "chat" | "terminals";
+type WorkspaceMode = "chat" | "terminals";
 
 const UI_STORAGE_KEY = "ai-workbench.ui";
 
@@ -124,9 +121,6 @@ interface WorkbenchState {
   skills: SkillManifest[];
   /** Which skills are switched on, per scope, for the current selection. */
   skillScopes: SkillScopes;
-  plugins: PluginManifest[];
-  pluginScopes: PluginScopes;
-  pluginAccounts: PluginAccount[];
   mcpServers: McpServerConfig[];
   /** The machines a workspace can live on (spec §25). */
   connections: SshConnection[];
@@ -274,19 +268,6 @@ interface WorkbenchState {
     enabled: boolean,
   ): Promise<void>;
 
-  refreshPlugins(): Promise<void>;
-  setPluginEnabled(
-    pluginId: string,
-    scope: "global" | "session",
-    enabled: boolean,
-  ): Promise<void>;
-  connectAccount(input: {
-    accountType: string;
-    label: string;
-    secret: string;
-  }): Promise<void>;
-  disconnectAccount(id: string): Promise<void>;
-
   setIslandPreferences(patch: Partial<IslandPreferences>): Promise<void>;
   cycleIslandWidget(direction: 1 | -1): Promise<void>;
   /** Keeps one widget on the island; null returns to automatic (spec §100). */
@@ -413,9 +394,6 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
   skills: [],
   skillScopes: {},
-  plugins: [],
-  pluginScopes: {},
-  pluginAccounts: [],
   mcpServers: [],
   connections: [],
   connectionTests: {},
@@ -1073,55 +1051,6 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         ...(scopeId ? { scopeId } : {}),
       });
       set({ skillScopes: await invoke("skill.assignments", scopeIdsOf(get())) });
-    } catch (error) {
-      set({ error: describeError(error) });
-    }
-  },
-
-  async refreshPlugins() {
-    try {
-      const [plugins, pluginScopes, pluginAccounts] = await Promise.all([
-        invoke("plugin.list", undefined),
-        invoke("plugin.assignments", scopeIdsOf(get())),
-        invoke("plugin.accounts", undefined),
-      ]);
-      set({ plugins, pluginScopes, pluginAccounts });
-    } catch (error) {
-      set({ error: describeError(error) });
-    }
-  },
-
-  async setPluginEnabled(pluginId, scope, enabled) {
-    const sessionId = get().activeSessionId;
-    if (scope === "session" && !sessionId) {
-      return;
-    }
-    try {
-      await invoke("plugin.assign", {
-        pluginId,
-        scope,
-        enabled,
-        ...(scope === "session" && sessionId ? { scopeId: sessionId } : {}),
-      });
-      set({ pluginScopes: await invoke("plugin.assignments", scopeIdsOf(get())) });
-    } catch (error) {
-      set({ error: describeError(error) });
-    }
-  },
-
-  async connectAccount(input) {
-    try {
-      await invoke("plugin.connectAccount", input);
-      set({ pluginAccounts: await invoke("plugin.accounts", undefined) });
-    } catch (error) {
-      set({ error: describeError(error) });
-    }
-  },
-
-  async disconnectAccount(id) {
-    try {
-      await invoke("plugin.disconnectAccount", { id });
-      set({ pluginAccounts: await invoke("plugin.accounts", undefined) });
     } catch (error) {
       set({ error: describeError(error) });
     }

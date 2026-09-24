@@ -7,7 +7,7 @@ import {
   write as writeFd,
 } from "node:fs";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import ssh2 from "ssh2";
 
 const { Server, utils } = ssh2;
@@ -368,4 +368,3 @@ export function isInside(root: string, candidate: string): boolean {
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
 }
 
-export { sep as pathSeparator };

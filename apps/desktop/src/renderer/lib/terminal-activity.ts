@@ -9,7 +9,7 @@
 export const ACTIVITY_BUCKET_MS = 2000;
 export const ACTIVITY_BUCKETS = 30;
 /** Upper bound of tracked terminals; the map must not grow without end. */
-export const MAX_TRACKED_TERMINALS = 500;
+const MAX_TRACKED_TERMINALS = 500;
 
 type Listener = () => void;
 

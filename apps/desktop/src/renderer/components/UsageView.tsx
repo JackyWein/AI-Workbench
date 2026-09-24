@@ -204,7 +204,7 @@ function UsageCard({
 }
 
 /** One quota: how much is used, and when it starts over. */
-export function Quota({ limit, now }: { readonly limit: UsageLimit; readonly now: number }): JSX.Element {
+function Quota({ limit, now }: { readonly limit: UsageLimit; readonly now: number }): JSX.Element {
   const percent = usedPercent(limit) ?? 0;
   const reset = hasReset(limit, now);
   const tone = reset ? "stale" : meterTone(percent);

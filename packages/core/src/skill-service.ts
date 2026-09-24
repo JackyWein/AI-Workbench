@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { Database } from "@ai-workbench/database";
 import {
   sessionSkills,
@@ -14,7 +14,6 @@ import type {
   SkillAssignmentInput,
   SkillManifest,
   SkillManifestInput,
-  SkillScope,
 } from "@ai-workbench/shared";
 
 export interface SkillServiceOptions {
@@ -29,23 +28,11 @@ export interface SkillServiceOptions {
  */
 export class SkillService {
   readonly #db: Database;
-  readonly #logger: Logger;
   readonly #manager: SkillManager;
 
   constructor(options: SkillServiceOptions) {
     this.#db = options.db;
-    this.#logger = options.logger.child("SKILL");
     this.#manager = new SkillManager({ logger: options.logger });
-  }
-
-  /** Replaces the in-memory set with what an importer produced. */
-  async importAll(inputs: readonly SkillManifestInput[]): Promise<SkillManifest[]> {
-    const saved: SkillManifest[] = [];
-    for (const input of inputs) {
-      saved.push(await this.save(input));
-    }
-    this.#logger.info("Skills imported", { count: saved.length });
-    return saved;
   }
 
   /** Loads every stored skill into memory. Called once at startup. */
@@ -59,10 +46,6 @@ export class SkillService {
 
   list(): SkillManifest[] {
     return this.#manager.list();
-  }
-
-  get(id: string): SkillManifest | undefined {
-    return this.#manager.get(id);
   }
 
   async save(input: SkillManifestInput): Promise<SkillManifest> {
@@ -140,30 +123,6 @@ export class SkillService {
         target: [sessionSkills.sessionId, sessionSkills.skillId],
         set: { enabled: input.enabled },
       });
-  }
-
-  /** Removes an explicit decision, letting the wider scope decide again. */
-  async clearAssignment(
-    scope: Exclude<SkillScope, "global">,
-    scopeId: string,
-    skillId: string,
-  ): Promise<void> {
-    if (scope === "workspace") {
-      await this.#db
-        .delete(workspaceSkills)
-        .where(
-          and(
-            eq(workspaceSkills.workspaceId, scopeId),
-            eq(workspaceSkills.skillId, skillId),
-          ),
-        );
-      return;
-    }
-    await this.#db
-      .delete(sessionSkills)
-      .where(
-        and(eq(sessionSkills.sessionId, scopeId), eq(sessionSkills.skillId, skillId)),
-      );
   }
 
   /** The skills that apply to a session, narrowest scope winning. */

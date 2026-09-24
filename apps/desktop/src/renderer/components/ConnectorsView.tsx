@@ -144,7 +144,7 @@ export function ConnectorsView(): JSX.Element {
 }
 
 /** A service's logo on a quiet tile, or its initial when there is none. */
-export function ConnectorLogo({
+function ConnectorLogo({
   icon,
   name,
   size = 36,

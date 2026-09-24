@@ -27,7 +27,7 @@ export function toModelInfos(models: readonly AppServerModel[]): ModelInfo[] | n
   return result.length > 0 ? result : null;
 }
 
-export function toModelInfo(model: AppServerModel): ModelInfo {
+function toModelInfo(model: AppServerModel): ModelInfo {
   const id = nonEmpty(model.model) ?? model.id;
   const efforts = unique(
     (model.supportedReasoningEfforts ?? []).map((option) => option.reasoningEffort),

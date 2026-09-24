@@ -544,7 +544,7 @@ function ChangeSignIn({
  * Picks a folder on a machine, one directory at a time. A remote machine has
  * no folder dialog to borrow, so this is the browser for it.
  */
-export function RemoteDirectoryPicker({
+function RemoteDirectoryPicker({
   connectionId,
   onPick,
 }: {

@@ -80,10 +80,6 @@ export class TeamOrchestrator {
     return (Number.isFinite(seconds) && seconds > 0 ? seconds : 600) * 1000;
   }
 
-  get busy(): boolean {
-    return this.#running !== null;
-  }
-
   /** Runs until the goal is finished, nothing is left, or a limit is hit. */
   async run(): Promise<TeamRun> {
     if (this.#running) {

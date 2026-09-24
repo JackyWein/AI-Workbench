@@ -13,7 +13,6 @@
     "@ai-workbench/provider-cli": "workspace:*",
     "@ai-workbench/shared": "workspace:*",
     "@ai-workbench/transport-cli": "workspace:*",
-    "smol-toml": "^1.4.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {

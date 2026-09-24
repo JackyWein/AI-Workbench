@@ -263,10 +263,6 @@ export class ProviderManager {
     return this.registry.get(providerId);
   }
 
-  isInitialized(providerId: string): boolean {
-    return this.#initialized.has(providerId);
-  }
-
   async describeAll(): Promise<ProviderSummary[]> {
     const summaries = await this.registry.describeAll();
     return summaries.map((summary) => ({

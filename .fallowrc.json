@@ -1,0 +1,12 @@
+{
+  "$schema": "https://docs.fallow.tools/schema.json",
+  "entry": ["**/__tests__/fixtures/*.mjs"],
+  "ignoreDependencies": [
+    "electron-updater",
+    "@libsql/darwin-arm64",
+    "@libsql/darwin-x64",
+    "@libsql/linux-x64-gnu",
+    "@libsql/linux-x64-musl",
+    "@libsql/win32-x64-msvc"
+  ]
+}

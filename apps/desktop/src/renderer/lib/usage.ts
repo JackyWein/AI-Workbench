@@ -3,7 +3,6 @@ import type {
   AggregatedUsage,
   ProviderSummary,
   ProviderUsageSnapshot,
-  TerminalMetrics,
   UsageLimit,
 } from "@ai-workbench/shared";
 import { compactNumber, formatUsd } from "./format.js";
@@ -30,11 +29,6 @@ export function usedPercent(limit: UsageLimit): number | null {
  */
 export function hasReset(limit: UsageLimit, now: number): boolean {
   return limit.resetsAt !== undefined && limit.resetsAt.getTime() <= now;
-}
-
-/** A limit people read as a quota: a percentage of something. */
-export function isQuota(limit: UsageLimit): boolean {
-  return usedPercent(limit) !== null;
 }
 
 /** The amount a consumption figure reads as, e.g. "41.2m tokens" or "$9.02". */
@@ -193,20 +187,6 @@ export function usageProviders(
       provider.installation.state === "installed" &&
       provider.capabilities.supported.includes("usage") &&
       (developerMode || provider.metadata.transportTypes.some((type) => type !== "in-process")),
-  );
-}
-
-/** Total tokens of a terminal's session: everything the tool counted. */
-export function totalTokens(metrics: TerminalMetrics): number | null {
-  const tokens = metrics.tokens;
-  if (!tokens) {
-    return null;
-  }
-  return (
-    tokens.input +
-    tokens.output +
-    (tokens.cacheRead ?? 0) +
-    (tokens.cacheWrite ?? 0)
   );
 }
 

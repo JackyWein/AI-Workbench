@@ -220,7 +220,7 @@ interface SessionStats {
 }
 
 /** Sums what the tool reported for each answer of the session. */
-export function sessionStats(messages: readonly ChatMessage[]): SessionStats {
+function sessionStats(messages: readonly ChatMessage[]): SessionStats {
   let turns = 0;
   let durationMs = 0;
   let input = 0;

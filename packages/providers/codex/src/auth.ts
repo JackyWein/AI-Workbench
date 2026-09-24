@@ -1,7 +1,7 @@
 import type { AuthStatus } from "@ai-workbench/shared";
 import type { AccountResponse } from "./app-server.js";
 
-export const CODEX_LOGIN_HINT = "Run `codex login` once in a terminal.";
+const CODEX_LOGIN_HINT = "Run `codex login` once in a terminal.";
 
 /**
  * Maps `account/read` onto a sign-in state (spec §14).
@@ -44,24 +44,6 @@ export function toAuthStatus(response: AccountResponse): AuthStatus {
       // not something we can say.
       return { state: "authenticated", method: "cli" };
   }
-}
-
-/**
- * Reads `codex login status`, the fallback when the app server cannot be
- * asked. Its output was checked for both states with the real tool: it prints
- * "Logged in using ChatGPT" (or "... an API key ...") and "Not logged in".
- */
-export function parseLoginStatus(output: string): AuthStatus | null {
-  if (/\bnot logged in\b/i.test(output)) {
-    return { state: "authenticationRequired", method: "cli", detail: CODEX_LOGIN_HINT };
-  }
-  if (/logged in using an api key/i.test(output)) {
-    return { state: "authenticated", method: "cli", accountLabel: "API key" };
-  }
-  if (/logged in using/i.test(output)) {
-    return { state: "authenticated", method: "cli" };
-  }
-  return null;
 }
 
 /** Plan names the way people say them: "plus" -> "Plus", "edu_plus" -> "Edu Plus". */
