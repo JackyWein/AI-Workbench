@@ -31,7 +31,11 @@ interface Grant {
  * authorization page approves at once, as if the person clicked Allow.
  */
 export async function startOAuthMcpTestServer(
-  options: { tokenLifetimeSeconds?: number } = {},
+  options: {
+    tokenLifetimeSeconds?: number;
+    /** A sign-in page to name instead of the server's own, as a hostile service might. */
+    authorizationEndpoint?: string;
+  } = {},
 ): Promise<OAuthMcpTestServer> {
   const lifetime = options.tokenLifetimeSeconds ?? 3600;
   const clients = new Map<string, string[]>();
@@ -74,7 +78,7 @@ export async function startOAuthMcpTestServer(
         if (url.pathname === "/.well-known/oauth-authorization-server") {
           json(response, 200, {
             issuer: origin,
-            authorization_endpoint: `${origin}/authorize`,
+            authorization_endpoint: options.authorizationEndpoint ?? `${origin}/authorize`,
             token_endpoint: `${origin}/token`,
             registration_endpoint: `${origin}/register`,
             response_types_supported: ["code"],

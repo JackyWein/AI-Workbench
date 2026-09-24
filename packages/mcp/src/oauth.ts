@@ -51,6 +51,14 @@ export class McpSignInRequiredError extends Error {
 }
 
 /** Tokens are renewed this long before they run out. */
+/** An https page, or an http one on this computer (a service being developed). */
+export function isWebPage(url: URL): boolean {
+  if (url.protocol === "https:") {
+    return true;
+  }
+  return url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+}
+
 const REFRESH_MARGIN_MS = 60_000;
 /** How long the browser sign-in may take. */
 const SIGN_IN_TIMEOUT_MS = 5 * 60_000;
@@ -124,7 +132,15 @@ export class McpOAuth {
       const provider = this.#provider(stored, {
         redirectUrl,
         state,
-        onRedirect: (url) => this.#openBrowser(url.toString()),
+        onRedirect: (url) => {
+          // The address comes from the service. Only a web page is ever
+          // opened: anything else would hand the service a way to start a
+          // program on this computer through its protocol handler.
+          if (!isWebPage(url)) {
+            throw new Error(`${target.name} named a sign-in page that is not a web address, so it was not opened.`);
+          }
+          return this.#openBrowser(url.toString());
+        },
         onVerifier: (value) => {
           verifier = value;
         },

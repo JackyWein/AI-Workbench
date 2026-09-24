@@ -47,7 +47,9 @@ async function bootstrap(): Promise<void> {
     isDevelopment,
     // The check has no person at a browser: its sign-in pages approve at
     // once, so it opens them itself and follows the redirect back.
-    openExternal: startupCheckOnly ? (url) => approveSignInPage(url) : (url) => shell.openExternal(url),
+    openExternal: startupCheckOnly
+      ? (url) => approveSignInPage(url)
+      : (url) => (/^https?:\/\//i.test(url) ? shell.openExternal(url) : undefined),
     // Electron's own networking, so connectors go through the system proxy
     // and certificate store like the rest of the app.
     fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),

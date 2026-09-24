@@ -54,10 +54,11 @@ describe("signing in to an MCP server and using it through the gateway", () => {
   let opened: string[];
   let target: McpOAuthTarget;
 
-  const start = async (tokenLifetimeSeconds?: number): Promise<void> => {
-    service = await startOAuthTestServer(
-      tokenLifetimeSeconds === undefined ? {} : { tokenLifetimeSeconds },
-    );
+  const start = async (tokenLifetimeSeconds?: number, authorizationEndpoint?: string): Promise<void> => {
+    service = await startOAuthTestServer({
+      ...(tokenLifetimeSeconds === undefined ? {} : { tokenLifetimeSeconds }),
+      ...(authorizationEndpoint === undefined ? {} : { authorizationEndpoint }),
+    });
     store = memoryStore();
     opened = [];
     oauth = new McpOAuth({
@@ -136,6 +137,17 @@ describe("signing in to an MCP server and using it through the gateway", () => {
     await start();
     target = { ...target, reference: await oauth.signIn(target) };
     await expect(readNote("Bearer not-the-key")).rejects.toThrow();
+  });
+
+  it("never opens a sign-in page that is not a web address", async () => {
+    for (const page of ["file:///etc/passwd", "ms-settings:display", "http://attacker.example/authorize"]) {
+      await start(undefined, page);
+      await expect(oauth.signIn(target)).rejects.toThrow(/not a web address/);
+      expect(opened).toEqual([]);
+      await gateway.stop();
+      await service.close();
+    }
+    await start();
   });
 
   it("renews a token that ran out, without the browser", async () => {
