@@ -154,7 +154,11 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
    first; its first run found a macOS-only SSH path bug, since fixed.
    A release can be started without pushing a tag: Actions → Release →
    Run workflow tags the built commit with the application version, and
-   running it again for the same version replaces that release's files.
+   running it again for the same version replaces that release's files;
+   run from a newer commit, it deletes the earlier release and its tag and
+   publishes the version again from the commit it built (how 0.0.6 was
+   replaced). This session's git proxy refuses tag pushes, so a tag is only
+   ever moved this way.
    Release file names carry no space: GitHub stores "AI Workbench-x" as
    "AI.Workbench-x" while latest*.yml names "AI-Workbench-x", so the
    updater of 0.0.4's first upload found nothing to download.

@@ -136,19 +136,28 @@ jobs:
           } | sed 's/^          //' > release-body.md
           cat release-body.md
 
-      # Releasing a version again replaces its files instead of leaving a
-      # second, differently named set next to them.
+      # Releasing a version again replaces it instead of leaving a second,
+      # differently named set of files next to the first. Built from the
+      # same commit, only the files are replaced. Built from a newer one, the
+      # earlier release and its tag go, so the release, its files, its notes
+      # and its tag all name the commit that was built.
       - name: Clear an earlier upload of this version
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.package.outputs.version }}
         run: |
           if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' |
-              while IFS= read -r asset; do
-                echo "removing $asset"
-                gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes
-              done
+            tagged=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha 2>/dev/null || true)
+            if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+              echo "$TAG was built from $tagged; replacing it with $GITHUB_SHA"
+              gh release delete "$TAG" -R "$GITHUB_REPOSITORY" --cleanup-tag --yes
+            else
+              gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' |
+                while IFS= read -r asset; do
+                  echo "removing $asset"
+                  gh release delete-asset "$TAG" "$asset" -R "$GITHUB_REPOSITORY" --yes
+                done
+            fi
           fi
 
       - uses: softprops/action-gh-release@v2
