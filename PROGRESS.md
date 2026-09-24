@@ -25,7 +25,7 @@ Weighted contribution = weight x completion.
 
 **G7 — UX, security, reliability and performance.** As of 2026-09-24
 (release 0.0.6) `bun run verify` passes end to end: lockfile, lint,
-typecheck, 694 tests, the build and both startup phases
+typecheck, 874 tests, the build and both startup phases
 (198 checks, none failing). What remains in G6 is the tray,
 multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
 real providers collaborating. Antigravity (`agy`) could not be installed or
@@ -34,7 +34,7 @@ or 0.0.6 work below: it deepens criteria already ticked or is a judgement
 (G7 "dark mode polished", "visual hierarchy follows Quiet UI principles")
 that stays the person's.
 
-### Every theme light and dark (2026-09-24, after 0.0.6)
+### Every theme light and dark (2026-09-24, in the re-published 0.0.6)
 
 Verified here by tests and the startup check: each of the six themes has a
 light and a dark mode; the contrast test measures all twelve from the

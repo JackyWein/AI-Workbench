@@ -10,12 +10,15 @@ branch `design/approved-rollout` is merged into it and can be deleted.
 
 ## Where things stand (2026-09-24, release 0.0.6)
 
-`bun run verify` passes end to end: lockfile, lint, typecheck, 694
+`bun run verify` passes end to end: lockfile, lint, typecheck, 874
 tests (20 real-tool tests skipped without their tools), the build and both
 startup phases (198 checks, none failing).
 
-Since 0.0.6 (not released yet): **every theme has a light and a dark
-mode.** The setting is split into `theme` (Quiet, Atelier, Mission
+0.0.6 was first published from `0420668` with one mode per theme and
+replaced the same day, at the person's request, by a build of this state
+(same version, same tag moved; an install of the first build is not
+offered the second). In it **every theme has a light and a dark mode.**
+The setting is split into `theme` (Quiet, Atelier, Mission
 Control, Playground, Aurora, Swiss) and `mode` (system, light, dark);
 0.0.6's single choice is read through `upgradeStoredSettings`, so nobody's
 look changes on update. Settings has a Mode control under the theme picker,
@@ -28,7 +31,7 @@ with a palette per mode and a style per theme (`STATUS_ISLAND.md` → Theme);
 light islands are new, so how they sit on a real light desktop is worth a
 look on the person's machine.
 
-What changed in 0.0.6 over 0.0.5, each verified by tests and the startup check:
+Also in 0.0.6 over 0.0.5, each verified by tests and the startup check:
 
 - **Themes.** A picker under Settings (Quiet in dark, light and system;
   Atelier, Mission Control, Playground, Aurora, Swiss in one mode each),
