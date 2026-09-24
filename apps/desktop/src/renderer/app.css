@@ -890,6 +890,144 @@ span.pill {
   overflow-wrap: anywhere;
 }
 
+/* An answer's Markdown: a document, set the way the rest of the app is. */
+.message__body.md {
+  white-space: normal;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7em;
+}
+
+.md__p {
+  margin: 0;
+}
+
+.md__heading {
+  margin: 0.4em 0 -0.2em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: var(--line-tight);
+  color: var(--text-primary);
+}
+
+.md__heading[data-level="1"] {
+  font-size: 1.3em;
+}
+
+.md__heading[data-level="2"] {
+  font-size: 1.15em;
+}
+
+.md__heading[data-level="3"],
+.md__heading[data-level="4"] {
+  font-size: 1em;
+}
+
+.md__list {
+  margin: 0;
+  padding-left: 1.5em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+ul.md__list {
+  list-style: disc;
+}
+
+ol.md__list {
+  list-style: decimal;
+}
+
+.md__list .md__list {
+  margin-top: 0.25em;
+}
+
+ul.md__list .md__list {
+  list-style: circle;
+}
+
+.md__list li::marker {
+  color: var(--text-muted);
+}
+
+.md__list li[data-task] {
+  list-style: none;
+  margin-left: -1.3em;
+}
+
+.md__list li[data-task] input {
+  margin: 0 0.5em 0 0;
+  vertical-align: -0.1em;
+  pointer-events: none;
+}
+
+.md__quote {
+  margin: 0;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 2px solid var(--border-strong);
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.md__rule {
+  width: 100%;
+  margin: 0.3em 0;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.md__code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--surface-active);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+.md__link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-quiet);
+}
+
+.md__link:hover {
+  border-bottom-color: var(--accent);
+}
+
+.md strong {
+  font-weight: 600;
+}
+
+.md__table {
+  overflow-x: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.md__table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93em;
+}
+
+.md__table th,
+.md__table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.md__table th {
+  border-top: none;
+  background: var(--surface-raised);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
 /* The user turn is a cut-corner bubble; the assistant turn reads as a
    document rather than a bubble (spec §79). */
 .message[data-role="user"] .message__body {

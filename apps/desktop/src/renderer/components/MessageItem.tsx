@@ -1,7 +1,8 @@
-import { type JSX, useState } from "react";
+import { type JSX, useMemo, useState } from "react";
 import { Check, ChevronRight, Copy, FileText, Image, RotateCcw, Square } from "lucide-react";
 import type { ChatMessage, ProviderSummary, ToolCallRecord } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { parseMarkdown, type Block, type Inline } from "../lib/markdown.js";
 
 interface MessageItemProps {
   readonly message: ChatMessage;
@@ -130,51 +131,153 @@ export function MessageBody({
   readonly content: string;
   readonly role: ChatMessage["role"];
 }): JSX.Element {
-  const parts = splitFences(content);
+  // What the person typed is shown as typed; answers are Markdown.
+  if (role === "user") {
+    return (
+      <div className="message__body">
+        <span className="bubble">{content}</span>
+      </div>
+    );
+  }
+  return <AnswerBody content={content} />;
+}
+
+function AnswerBody({ content }: { readonly content: string }): JSX.Element {
+  const blocks = useMemo(() => parseMarkdown(content), [content]);
   return (
-    <div className="message__body">
-      {parts.map((part, index) =>
-        part.kind === "code" ? (
-          <CodeBlock key={index} lang={part.lang} code={part.code} />
-        ) : role === "user" ? (
-          <span key={index} className="bubble">
-            {part.text}
-          </span>
-        ) : (
-          <span key={index}>{part.text}</span>
-        ),
-      )}
+    <div className="message__body md">
+      <Blocks blocks={blocks} />
     </div>
   );
 }
 
-type FencePart =
-  | { readonly kind: "text"; readonly text: string }
-  | { readonly kind: "code"; readonly lang: string; readonly code: string };
+function Blocks({ blocks }: { readonly blocks: readonly Block[] }): JSX.Element {
+  return (
+    <>
+      {blocks.map((block, index) => (
+        <BlockView key={index} block={block} />
+      ))}
+    </>
+  );
+}
 
-function splitFences(content: string): FencePart[] {
-  const parts: FencePart[] = [];
-  const pattern = /```(\w*)\n([\s\S]*?)(?:```|$)/g;
-  let last = 0;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(content)) !== null) {
-    if (match.index > last) {
-      parts.push({ kind: "text", text: content.slice(last, match.index) });
+function BlockView({ block }: { readonly block: Block }): JSX.Element {
+  switch (block.type) {
+    case "paragraph":
+      return (
+        <p className="md__p">
+          <Inlines nodes={block.content} />
+        </p>
+      );
+    case "heading":
+      return (
+        <p className="md__heading" data-level={Math.min(block.level, 4)} role="heading" aria-level={block.level}>
+          <Inlines nodes={block.content} />
+        </p>
+      );
+    case "list": {
+      const items = block.items.map((item, index) => (
+        <li key={index} data-task={item.checked === null ? undefined : item.checked}>
+          {item.checked === null ? null : (
+            <input type="checkbox" checked={item.checked} readOnly tabIndex={-1} aria-hidden="true" />
+          )}
+          <Inlines nodes={item.content} />
+          {item.children.length > 0 ? <Blocks blocks={item.children} /> : null}
+        </li>
+      ));
+      return block.ordered ? (
+        <ol className="md__list" start={block.start}>
+          {items}
+        </ol>
+      ) : (
+        <ul className="md__list">{items}</ul>
+      );
     }
-    parts.push({
-      kind: "code",
-      lang: match[1] ?? "",
-      code: (match[2] ?? "").replace(/\n$/, ""),
-    });
-    last = match.index + match[0].length;
+    case "quote":
+      return (
+        <blockquote className="md__quote">
+          <Blocks blocks={block.blocks} />
+        </blockquote>
+      );
+    case "rule":
+      return <hr className="md__rule" />;
+    case "table":
+      return (
+        <div className="md__table">
+          <table>
+            <thead>
+              <tr>
+                {block.header.map((cell, index) => (
+                  <th key={index} style={{ textAlign: block.align[index] ?? undefined }}>
+                    <Inlines nodes={cell} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, index) => (
+                    <td key={index} style={{ textAlign: block.align[index] ?? undefined }}>
+                      <Inlines nodes={cell} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    case "code":
+      return <CodeBlock lang={block.lang} code={block.code} />;
   }
-  if (last < content.length) {
-    parts.push({ kind: "text", text: content.slice(last) });
-  }
-  if (parts.length === 0) {
-    parts.push({ kind: "text", text: content });
-  }
-  return parts;
+}
+
+function Inlines({ nodes }: { readonly nodes: readonly Inline[] }): JSX.Element {
+  return (
+    <>
+      {nodes.map((node, index) => {
+        switch (node.type) {
+          case "text":
+            return <span key={index}>{node.text}</span>;
+          case "break":
+            return <br key={index} />;
+          case "code":
+            return (
+              <code key={index} className="md__code">
+                {node.text}
+              </code>
+            );
+          case "strong":
+            return (
+              <strong key={index}>
+                <Inlines nodes={node.children} />
+              </strong>
+            );
+          case "em":
+            return (
+              <em key={index}>
+                <Inlines nodes={node.children} />
+              </em>
+            );
+          case "del":
+            return (
+              <del key={index}>
+                <Inlines nodes={node.children} />
+              </del>
+            );
+          case "link":
+            // Opens in the browser: the window hands http(s) links to it and
+            // refuses everything else.
+            return (
+              <a key={index} className="md__link" href={node.href} target="_blank" rel="noreferrer" title={node.href}>
+                <Inlines nodes={node.children} />
+              </a>
+            );
+        }
+      })}
+    </>
+  );
 }
 
 function CodeBlock({ lang, code }: { readonly lang: string; readonly code: string }): JSX.Element {
