@@ -152,8 +152,6 @@ xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/electron --no-sandbox a
   remove `node_modules` and install again.
 - **Electron downloads its binary on first start** if it is missing; run
   `node node_modules/electron/install.js` to fetch it ahead of time.
-- The app shows the Electron version (e.g. 44.4.3) as its own version when it
-  is started from `out/` rather than packaged.
 - `opencode was not found` is logged every few minutes when OpenCode is not
   installed: the usage reader asks a tool that is not there. Noise, not a
   failure.

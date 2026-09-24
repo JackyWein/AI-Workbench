@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +11,26 @@ import { approveSignInPage, runStartupCheck } from "./startup-check.js";
 import { resolveIslandFile } from "./status-island.js";
 import { hideToTray } from "./tray.js";
 import { createMainWindow, resolveRendererFile } from "./window.js";
+
+/**
+ * The application's own version. Packaged, Electron reads it from the app's
+ * package.json; started from out/ during development it reports its own
+ * version instead (44.x), which Settings, the sidebar and the update check
+ * then took for the application's.
+ */
+function appVersion(): string {
+  if (app.isPackaged) {
+    return app.getVersion();
+  }
+  try {
+    const manifest = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf8")) as {
+      version?: unknown;
+    };
+    return typeof manifest.version === "string" ? manifest.version : app.getVersion();
+  } catch {
+    return app.getVersion();
+  }
+}
 
 const isDevelopment = !app.isPackaged;
 
@@ -61,7 +82,7 @@ async function bootstrap(): Promise<void> {
   initUpdater({
     logger: services.logger.child("UPDATER"),
     publish: (event) => services?.events.publish(event),
-    currentVersion: app.getVersion(),
+    currentVersion: appVersion(),
   });
 
   const preloadFile = join(__dirname, "../preload/index.js");
@@ -88,7 +109,7 @@ async function bootstrap(): Promise<void> {
 
   registerIpcHandlers({
     services,
-    appVersion: app.getVersion(),
+    appVersion: appVersion(),
     userDataPath,
     island,
   });
