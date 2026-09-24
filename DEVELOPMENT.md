@@ -29,12 +29,16 @@ run `bun install` again.
 | `bun run lint` | ESLint across the workspace |
 | `bun run test` | Vitest unit and integration tests |
 | `bun run verify:app` | Starts the built app headlessly and checks it really works |
+| `bun run verify:memory` | Exercises the bundled Markdown memory MCP server through Electron Node mode |
 | `bun run verify:lockfile` | Fails if the lockfile and any `package.json` disagree |
-| `bun run verify` | lockfile + lint + typecheck + test + build + verify:app |
+| `bun run verify` | lockfile + lint + typecheck + test + build + verify:memory + verify:app |
 | `bun run db:generate` | Regenerates SQL migrations from the Drizzle schema |
 
 Run `bun run verify` before considering a change finished. `PROGRESS.md` may only
 be updated from criteria that this command actually proves.
+
+The shared Obsidian vault setup and tool boundaries are in
+`docs/shared-memory.md`.
 
 ## What `verify:app` does
 

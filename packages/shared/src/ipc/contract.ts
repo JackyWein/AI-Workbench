@@ -95,6 +95,16 @@ export const ipcContract = {
       username: z.string(),
     }),
   },
+  "window.getState": {
+    input: z.void(),
+    output: z.object({ maximized: z.boolean(), fullscreen: z.boolean() }),
+  },
+  "window.minimize": { input: z.void(), output: z.void() },
+  "window.toggleMaximize": {
+    input: z.void(),
+    output: z.object({ maximized: z.boolean(), fullscreen: z.boolean() }),
+  },
+  "window.close": { input: z.void(), output: z.void() },
 
   "workspace.list": { input: z.void(), output: z.array(workspaceSchema) },
   "workspace.create": {
@@ -452,6 +462,29 @@ export const ipcContract = {
 
   "mcp.list": { input: z.void(), output: z.array(mcpServerConfigSchema) },
   "mcp.save": { input: mcpServerSaveInputSchema, output: mcpServerConfigSchema },
+  /** Selects a local Markdown vault; its path is chosen in the main process. */
+    "mcp.chooseMemoryVault": { input: z.void(), output: mcpServerConfigSchema.nullable() },
+    "memory.inspect": {
+      input: z.void(),
+      output: z.object({
+        vault: z.object({
+          path: z.string(),
+          totalBytes: z.number().nonnegative(),
+          noteBytes: z.number().nonnegative(),
+          otherBytes: z.number().nonnegative(),
+          noteCount: z.number().int().nonnegative(),
+          otherCount: z.number().int().nonnegative(),
+          truncated: z.boolean(),
+          graphTruncated: z.boolean(),
+          nodes: z.array(z.object({ path: z.string(), title: z.string(), bytes: z.number().nonnegative() })),
+          edges: z.array(z.object({ from: z.string(), to: z.string() })),
+        }),
+        antigravity: z.object({
+          state: z.enum(["configured", "unavailable", "conflict", "not-configured", "error"]),
+          detail: z.string(),
+        }),
+      }).nullable(),
+    },
   /** Signs in to a server in the browser; the tokens stay in the main process. */
   "mcp.signIn": {
     input: z.object({

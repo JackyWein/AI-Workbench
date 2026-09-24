@@ -97,6 +97,12 @@ The island never fabricates progress. Team progress is derived from the task
 graph; a solo session shows a semantic state such as Planning or Implementing,
 not a percentage. Usage that is unknown is shown as unavailable.
 
+The provider usage widget keeps every percentage window reported by a tool.
+The docked sheet and the free bubble card render the same rows: provider name,
+then its 5-hour, weekly or other reported windows stacked vertically with
+their own bars. A missing window is not inferred from another one. The free
+card scrolls when many windows would exceed its maximum height.
+
 ## Window behaviour
 
 Its own `BrowserWindow` (`StatusIslandWindow`): frameless and compact

@@ -364,6 +364,11 @@ button {
   width: 340px;
 }
 
+.isl__card--usage {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
 .isl__card--list {
   padding: 4px 6px;
 }
@@ -970,6 +975,16 @@ button {
 .isl__urow {
   padding: 7px 0;
   border-top: 1px solid var(--border-subtle);
+}
+
+.isl__ulimit {
+  margin: 5px 0 0 22px;
+}
+
+.isl__ulimit-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .isl__uline {

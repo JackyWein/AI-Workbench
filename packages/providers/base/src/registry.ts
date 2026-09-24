@@ -3,6 +3,8 @@ import type { AIProviderAdapter } from "./adapter.js";
 
 export interface ProviderRegistryOptions {
   readonly logger: Logger;
+  /** Bounds UI descriptions when an installed CLI hangs during a probe. */
+  readonly probeTimeoutMs?: number;
 }
 
 /**
@@ -16,9 +18,11 @@ export interface ProviderRegistryOptions {
 export class ProviderRegistry {
   readonly #adapters = new Map<string, AIProviderAdapter>();
   readonly #logger: Logger;
+  readonly #probeTimeoutMs: number;
 
   constructor(options: ProviderRegistryOptions) {
     this.#logger = options.logger;
+    this.#probeTimeoutMs = options.probeTimeoutMs ?? 12_000;
   }
 
   register(adapter: AIProviderAdapter): void {
@@ -137,8 +141,14 @@ export class ProviderRegistry {
     operation: string,
     run: () => Promise<T>,
   ): Promise<T | null> {
+    let timer: NodeJS.Timeout | undefined;
     try {
-      return await run();
+      return await Promise.race([
+        run(),
+        new Promise<T>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("Provider probe timed out")), this.#probeTimeoutMs);
+        }),
+      ]);
     } catch (error) {
       this.#logger.warn("Provider call failed", {
         providerId: adapter.metadata.id,
@@ -146,6 +156,8 @@ export class ProviderRegistry {
         error: error instanceof Error ? error.message : String(error),
       });
       return null;
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 }

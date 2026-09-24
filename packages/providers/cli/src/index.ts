@@ -7,4 +7,5 @@ export * from "./follow.js";
 export * from "./hooks.js";
 export * from "./usage.js";
 export * from "./factory.js";
+export * from "./antigravity-memory.js";
 export * from "./skills.js";

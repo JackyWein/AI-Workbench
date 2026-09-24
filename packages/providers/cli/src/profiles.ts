@@ -162,7 +162,7 @@ export const antigravityProfile: CliProviderProfileInput = {
   website: "https://antigravity.google",
   command: "agy",
   icon: "antigravity",
-  knownLocations: ["%LOCALAPPDATA%/agy/bin"],
+  knownLocations: ["%LOCALAPPDATA%/agy/bin/agy.exe"],
   versionArgs: ["--version"],
   auth: {
     method: "cli",

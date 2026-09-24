@@ -18,7 +18,9 @@ export function createMainWindow(options: CreateMainWindowOptions): BrowserWindo
     show: false,
     autoHideMenuBar: true,
     backgroundColor: "#0e0f11",
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
+    // The renderer draws themed controls; Electron still supplies native
+    // resizing, focus, snap and taskbar behaviour to the frameless window.
+    frame: false,
     ...(options.iconFile ? { icon: options.iconFile } : {}),
     webPreferences: {
       preload: options.preloadFile,

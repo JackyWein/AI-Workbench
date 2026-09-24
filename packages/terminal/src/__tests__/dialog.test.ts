@@ -29,7 +29,8 @@ draw(true);
 process.stdin.on("data", (key) => {
   if (key === "\\r") {
     process.stdout.write("chose " + (selected + 1) + "\\r\\n");
-    setTimeout(() => process.exit(0), 50);
+    // Stay alive until TerminalManager closes the pty. Exiting just before
+    // close() races node-pty's Windows process-list cleanup.
     return;
   }
   if (!moves) return;

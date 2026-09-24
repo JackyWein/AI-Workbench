@@ -72,10 +72,13 @@ export default defineConfig({
       // every build-time package are bundled into the output.
       externalizeDeps: true,
       rollupOptions: {
-        input: resolve(__dirname, "src/main/index.ts"),
+        input: {
+          index: resolve(__dirname, "src/main/index.ts"),
+          "memory-server": resolve(__dirname, "src/main/memory-server.ts"),
+        },
         // CommonJS keeps main and preload on the same module system and lets
         // the main process use __dirname to locate its bundled siblings.
-        output: { format: "cjs", entryFileNames: "index.js" },
+        output: { format: "cjs", entryFileNames: "[name].js" },
       },
     },
   },

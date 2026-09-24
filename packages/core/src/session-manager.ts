@@ -177,6 +177,12 @@ export class SessionManager {
     // Changing provider invalidates the provider-native session id.
     const providerChanged =
       input.providerId !== undefined && input.providerId !== existing.providerId;
+    const modelChanged = input.modelId !== undefined && input.modelId !== existing.modelId;
+    // Effort belongs to a model. Carrying it to another one can silently
+    // request an unsupported or more costly mode, including over direct IPC.
+    const settings = input.settings ?? (providerChanged || modelChanged
+      ? Object.fromEntries(Object.entries(existing.settings).filter(([key]) => key !== "reasoningEffort"))
+      : existing.settings);
 
     const updated: Session = {
       ...existing,
@@ -188,7 +194,7 @@ export class SessionManager {
       ...(input.enabledMcpServers === undefined
         ? {}
         : { enabledMcpServers: input.enabledMcpServers }),
-      ...(input.settings === undefined ? {} : { settings: input.settings }),
+      settings,
       ...(input.uiState === undefined ? {} : { uiState: input.uiState }),
       workingDirectory,
       providerSessionId: providerChanged ? null : existing.providerSessionId,

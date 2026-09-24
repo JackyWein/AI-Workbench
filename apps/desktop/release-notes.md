@@ -1,5 +1,13 @@
 AI Workbench 0.0.7
 
+Reasoning, shared memory and usage follow-up
+- Pick the reasoning effort beneath the selected model in the chat picker. The list follows the levels that model or tool reports; Max and Ultra ask for confirmation and have different motion. The command palette uses the same choices.
+- Connect a local Obsidian Markdown vault under Connectors → Discover. Agents with tool access can search short excerpts, read a selected note and add a new note to the same vault.
+- The island shows every reported usage window, including 5-hour and weekly limits when available, one below another for each provider. This applies to the docked sheet and the free bubble card.
+- Windows terminal shutdown no longer falls back to killing a process by a stale ConPTY process ID.
+
+The shared vault works with Markdown files; Obsidian does not need to be running. A provider that cannot use MCP or tool calls cannot use the memory tools. The app does not invent a missing usage window.
+
 Questions from terminals reach the island — every tool
 - The island now reads a tool's dialog from its terminal screen, the way you do: the question, what it is about (the command it wants to run) and the tool's own options. That works for every tool, also one without hooks (Antigravity) and on machines where a tool's hooks do not run.
 - Pick an option on the island and it is chosen with the tool's own keys: the arrows move its marker to your choice, and Enter is pressed only once the screen shows that option marked. If the dialog changed in the meantime, nothing is pressed.

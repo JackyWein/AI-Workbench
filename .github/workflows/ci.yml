@@ -42,6 +42,9 @@ jobs:
       - name: Build
         run: bun run build
 
+      - name: Verify bundled memory server
+        run: bun run verify:memory
+
       # Starts the built application headlessly and asserts that it really
       # comes up and that a conversation survives a restart.
       - name: Verify application startup
@@ -91,3 +94,10 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         working-directory: apps/desktop
         run: bun run package:dir
+
+      - name: Verify bundled memory server
+        run: bun run verify:memory
+
+      - name: Verify packaged memory server
+        if: runner.os == 'Windows'
+        run: bun run verify:memory:package

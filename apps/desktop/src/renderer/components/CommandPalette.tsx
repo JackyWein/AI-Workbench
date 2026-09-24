@@ -12,6 +12,7 @@ import {
 import type { IslandWidgetId, ModelInfo, ProviderSummary } from "@ai-workbench/shared";
 import { MODES, THEMES } from "../lib/themes.js";
 import { useWorkbench } from "../store/workbench.js";
+import { effortLabel, reasoningEffortsFor } from "../lib/reasoning-effort.js";
 
 const ISLAND_WIDGET_LABELS: Record<IslandWidgetId, string> = {
   needsAttention: "Needs attention",
@@ -146,6 +147,12 @@ export function CommandPalette(): JSX.Element | null {
         run: () => store.getState().setView("usage"),
       },
       {
+        id: "view.obsidian",
+        label: "Open Obsidian memory",
+        group: "Go to",
+        run: () => store.getState().setView("obsidian"),
+      },
+      {
         id: "view.settings",
         label: "Open settings",
         group: "Go to",
@@ -178,30 +185,30 @@ export function CommandPalette(): JSX.Element | null {
       })),
     ];
 
-    // Reasoning effort lives here now that the header is crumbs + pills: only
-    // the active tool's own options appear, and Default clears back to none.
+    // The picker and palette use the same per-model effort list and warning.
     if (activeSessionId) {
       const activeSession = sessions.find((entry) => entry.id === activeSessionId);
       const activeProvider = providers.find(
         (entry) => entry.metadata.id === activeSession?.providerId,
       );
-      for (const option of activeProvider?.metadata.effortOptions ?? []) {
+      const choices = reasoningEffortsFor(activeProvider, activeSession?.modelId);
+      for (const option of choices) {
         list.push({
           id: `effort.${option}`,
-          label: `Reasoning effort: ${option}`,
+          label: `Reasoning effort: ${effortLabel(option)}`,
           group: "Session",
           run: () => {
-            void store.getState().setSessionRuntime({ reasoningEffort: option });
+            store.getState().requestSessionEffort(option);
           },
         });
       }
-      if ((activeProvider?.metadata.effortOptions ?? []).length > 0) {
+      if (choices.length > 0) {
         list.push({
           id: "effort.default",
           label: "Reasoning effort: default",
           group: "Session",
           run: () => {
-            void store.getState().setSessionRuntime({ reasoningEffort: null });
+            store.getState().requestSessionEffort(null);
           },
         });
       }

@@ -8,6 +8,7 @@ import {
   Settings,
   Boxes,
   BookOpen,
+  Network,
   Folder,
   Trash2,
   Users,
@@ -316,6 +317,15 @@ export function Sidebar({
           {mcpServers.length > 0 ? (
             <span className="row__count">{mcpServers.length}</span>
           ) : null}
+        </button>
+        <button
+          type="button"
+          className="row"
+          aria-current={view === "obsidian"}
+          onClick={() => setView("obsidian")}
+        >
+          <Network size={14} strokeWidth={1.75} aria-hidden="true" />
+          <span className="row__text">Obsidian</span>
         </button>
         <button
           type="button"

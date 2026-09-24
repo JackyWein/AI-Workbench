@@ -16,9 +16,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "bun run --filter \"@ai-workbench/database\" generate",
-    "verify": "bun run verify:lockfile && bun run lint && bun run typecheck && bun run test && bun run build && bun run verify:app",
+    "verify": "bun run verify:lockfile && bun run lint && bun run typecheck && bun run test && bun run build && bun run verify:memory && bun run verify:app",
     "lint": "eslint .",
     "verify:app": "bash scripts/verify-app.sh",
+    "verify:memory": "node scripts/check-memory-server.mjs",
+    "verify:antigravity-memory": "bun scripts/check-antigravity-memory.ts",
+    "verify:memory:package": "node scripts/check-memory-server.mjs --packaged",
     "check:providers": "bun scripts/check-providers.ts",
     "package": "bun run --filter \"@ai-workbench/desktop\" package",
     "verify:lockfile": "bun install --frozen-lockfile"

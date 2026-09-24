@@ -175,8 +175,11 @@ describe("provider failure isolation", () => {
     const first = await sessions.sendMessage(sessionId, "hello");
     await waitForMessage(events, first.messageId);
 
+    await sessions.update({ id: sessionId, settings: { reasoningEffort: "max", custom: "kept" } });
+
     const updated = await sessions.update({ id: sessionId, modelId: "mock-fast" });
     expect(updated.modelId).toBe("mock-fast");
+    expect(updated.settings).toEqual({ custom: "kept" });
 
     const second = await sessions.sendMessage(sessionId, "again");
     const answer = await waitForMessage(events, second.messageId);
@@ -184,8 +187,10 @@ describe("provider failure isolation", () => {
     expect(answer.content).toContain("mock-fast");
 
     // Switching provider drops the stale provider-native session id.
+    await sessions.update({ id: sessionId, settings: { reasoningEffort: "high", custom: "kept" } });
     const switched = await sessions.update({ id: sessionId, providerId: "garbage" });
     expect(switched.providerSessionId).toBeNull();
+    expect(switched.settings).toEqual({ custom: "kept" });
   });
 });
 

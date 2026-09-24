@@ -122,6 +122,7 @@ jobs:
               ;;
           esac
           bun run build
+          bun run verify:memory
           cd apps/desktop
           bunx electron-builder --publish never "${extra[@]}"
 

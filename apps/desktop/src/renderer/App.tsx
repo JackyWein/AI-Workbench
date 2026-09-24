@@ -10,12 +10,14 @@ import { AgentsView } from "./components/AgentsView.js";
 import { ChatView } from "./components/ChatView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
 import { UpdatePrompt } from "./components/UpdatePrompt.js";
+import { EffortPrompt } from "./components/EffortPrompt.js";
 import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
 import { AppLogo } from "./components/AppLogo.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { RendererErrorBoundary } from "./components/ErrorBoundary.js";
 import { ConnectorsView } from "./components/ConnectorsView.js";
+import { ObsidianView } from "./components/ObsidianView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
@@ -23,6 +25,7 @@ import { TeamSessionView } from "./components/TeamSessionView.js";
 import { TeamPanel } from "./components/TeamPanel.js";
 import { UsageView } from "./components/UsageView.js";
 import { Sidebar } from "./components/Sidebar.js";
+import { Titlebar } from "./components/Titlebar.js";
 import { SkillsView } from "./components/SkillsView.js";
 import { TeamsView } from "./components/TeamsView.js";
 import { WorkspacePanel } from "./components/WorkspacePanel.js";
@@ -168,8 +171,14 @@ export function App(): JSX.Element {
     );
   }
 
+  const title = state.view === "chat" ? (session?.name ?? workspace?.name ?? "Workspace")
+    : state.view === "obsidian" ? "Obsidian memory"
+    : state.view.charAt(0).toUpperCase() + state.view.slice(1);
+
   return (
-    <div className="app">
+    <div className="shell">
+      <Titlebar label={title} />
+      <div className="app">
       <Sidebar
         workspaces={state.workspaces}
         sessions={state.sessions}
@@ -289,6 +298,11 @@ export function App(): JSX.Element {
             <ConnectorsView />
           </RendererErrorBoundary>
         ) : null}
+        {state.view === "obsidian" ? (
+          <RendererErrorBoundary fallbackTitle="Obsidian memory">
+            <ObsidianView />
+          </RendererErrorBoundary>
+        ) : null}
         {state.view === "teams" ? (
           <RendererErrorBoundary fallbackTitle="Teams">
             <TeamsView />
@@ -337,6 +351,7 @@ export function App(): JSX.Element {
       )}
 
       <CommandPalette />
+      <EffortPrompt />
       <UpdatePrompt />
 
       {state.error ? (
@@ -351,6 +366,7 @@ export function App(): JSX.Element {
           </button>
         </div>
       ) : null}
+      </div>
     </div>
   );
 }

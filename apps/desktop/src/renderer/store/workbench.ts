@@ -39,6 +39,7 @@ import type {
 } from "@ai-workbench/shared";
 import { defaultAppSettings, providerSummarySchema } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
+import { needsEffortConfirmation, reasoningEffortsFor } from "../lib/reasoning-effort.js";
 
 /**
  * Drops malformed provider summaries at the IPC boundary so one bad entry
@@ -65,6 +66,7 @@ export type MainView =
   | "providers"
   | "skills"
   | "connectors"
+  | "obsidian"
   | "teams"
   | "usage"
   | "settings";
@@ -150,6 +152,7 @@ interface WorkbenchState {
   view: MainView;
   paletteOpen: boolean;
   paletteQuery: string;
+  pendingEffort: { sessionId: string; providerId: string; modelId: string | null; value: string } | null;
   workspacePanelOpen: boolean;
   workspaceTab: WorkspaceTab;
   workspaceMode: WorkspaceMode;
@@ -166,6 +169,9 @@ interface WorkbenchState {
   setError(error: string | null): void;
   setView(view: MainView): void;
   setPaletteOpen(open: boolean, initialQuery?: string): void;
+  requestSessionEffort(value: string | null): void;
+  confirmSessionEffort(): Promise<void>;
+  cancelSessionEffort(): void;
   setWorkspacePanelOpen(open: boolean): void;
   toggleWorkspacePanel(tab?: WorkspaceTab): void;
   setWorkspaceTab(tab: WorkspaceTab): void;
@@ -206,6 +212,7 @@ interface WorkbenchState {
     providerId?: string;
     /** Null clears it: the tool then runs its own default model. */
     modelId?: string | null;
+    settings?: Record<string, unknown>;
     /** Replaces the whole record; the caller merges what it wants to keep. */
     uiState?: Record<string, unknown>;
   }): Promise<void>;
@@ -304,6 +311,7 @@ interface WorkbenchState {
   cancelTeamRun(runId: string): Promise<void>;
 
   refreshMcp(): Promise<void>;
+  chooseMemoryVault(): Promise<McpServerConfig | null>;
   /** Saves a connector; the reason comes back when it is refused. */
   saveMcpServer(config: McpServerSaveInput): Promise<string | null>;
   /** Signs in to a connector in the browser; the reason when it fails. */
@@ -409,6 +417,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   activeSessionId: null,
   view: "chat",
   paletteOpen: false,
+  pendingEffort: null,
   focusTileId: null,
   clearFocusTile() {
     set({ focusTileId: null });
@@ -468,6 +477,46 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       paletteOpen,
       paletteQuery: paletteOpen ? (initialQuery ?? state.paletteQuery) : state.paletteQuery,
     })),
+  requestSessionEffort(value) {
+    const state = get();
+    const session = state.sessions.find((entry) => entry.id === state.activeSessionId);
+    const provider = state.providers.find((entry) => entry.metadata.id === session?.providerId);
+    if (!session || !provider) return;
+    const options = reasoningEffortsFor(provider, session.modelId);
+    if (value !== null && !options.includes(value)) {
+      set({ error: "That effort is not offered for this model." });
+      return;
+    }
+    if (value && needsEffortConfirmation(value) && session.settings["reasoningEffort"] !== value) {
+      set({
+        pendingEffort: {
+          sessionId: session.id,
+          providerId: provider.metadata.id,
+          modelId: session.modelId,
+          value,
+        },
+        paletteOpen: false,
+      });
+      return;
+    }
+    void get().setSessionRuntime({ reasoningEffort: value });
+  },
+  async confirmSessionEffort() {
+    const pending = get().pendingEffort;
+    set({ pendingEffort: null });
+    if (!pending) return;
+    const state = get();
+    const session = state.sessions.find((entry) => entry.id === pending.sessionId);
+    const provider = state.providers.find((entry) => entry.metadata.id === pending.providerId);
+    if (!session || !provider || session.id !== state.activeSessionId ||
+      session.providerId !== pending.providerId || session.modelId !== pending.modelId ||
+      !reasoningEffortsFor(provider, session.modelId).includes(pending.value)) {
+      set({ error: "The model changed before effort was confirmed." });
+      return;
+    }
+    await get().setSessionRuntime({ reasoningEffort: pending.value });
+  },
+  cancelSessionEffort: () => set({ pendingEffort: null }),
   setWorkspacePanelOpen: (workspacePanelOpen) => set({ workspacePanelOpen }),
   setWorkspaceTab: (workspaceTab) => set({ workspaceTab, workspacePanelOpen: true }),
   setWorkspaceMode: (workspaceMode) => {
@@ -594,7 +643,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
 
   async selectWorkspace(id) {
     const token = ++workspaceRequest;
-    set({ activeWorkspaceId: id, activeSessionId: null, sessions: [] });
+    // A run opened from another workspace must not stay open here: its
+    // tasks, messages and folder belong to that workspace.
+    set({ activeWorkspaceId: id, activeSessionId: null, sessions: [], openRunId: null });
     if (!id) {
       return;
     }
@@ -730,9 +781,14 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
         runId = started.id;
       } else {
         const runs = await invoke("team.listRuns", { teamId });
+        // A team picked in a session must never inherit a run from another
+        // workspace: its tasks, messages and folder belong to that run's
+        // workspace. Only a run from this session's workspace is shown;
+        // otherwise the session starts fresh and the next goal starts here.
+        const own = runs.filter((run) => run.workspaceId === session.workspaceId);
         runId =
-          runs.find((run) => run.status === "running" || run.status === "paused")?.id ??
-          runs[0]?.id ??
+          own.find((run) => run.status === "running" || run.status === "paused")?.id ??
+          own[0]?.id ??
           null;
       }
       const updated = await invoke("session.update", {
@@ -904,7 +960,10 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       }
     }
     try {
-      await invoke("session.update", { id: session.id, settings });
+      const updated = await invoke("session.update", { id: session.id, settings });
+      set((state) => ({
+        sessions: state.sessions.map((entry) => entry.id === updated.id ? updated : entry),
+      }));
     } catch (error) {
       set({ error: describeError(error) });
     }
@@ -1298,6 +1357,17 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       set({ mcpServers, mcpStatuses, sessionMcpServerIds: access.serverIds });
     } catch (error) {
       set({ error: describeError(error) });
+    }
+  },
+
+  async chooseMemoryVault() {
+    try {
+      const saved = await invoke("mcp.chooseMemoryVault", undefined);
+      if (saved) await get().refreshMcp();
+      return saved;
+    } catch (error) {
+      set({ error: describeError(error) });
+      return null;
     }
   },
 

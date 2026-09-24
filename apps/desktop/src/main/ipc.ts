@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, ipcMain } from "electron";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
+import { inspectMemoryVault, openMemoryVault } from "@ai-workbench/mcp";
 import {
   APP_EVENT_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
@@ -163,6 +164,19 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       userDataPath: options.userDataPath,
       username: localUsername(),
     }),
+    "window.getState": () => {
+      const window = findMainWindow();
+      return { maximized: window?.isMaximized() ?? false, fullscreen: window?.isFullScreen() ?? false };
+    },
+    "window.minimize": () => { findMainWindow()?.minimize(); },
+    "window.toggleMaximize": () => {
+      const window = findMainWindow();
+      if (window?.isFullScreen()) window.setFullScreen(false);
+      else if (window?.isMaximized()) window.unmaximize();
+      else window?.maximize();
+      return { maximized: window?.isMaximized() ?? false, fullscreen: window?.isFullScreen() ?? false };
+    },
+    "window.close": () => { findMainWindow()?.close(); },
 
     "workspace.list": () => services.workspaces.list(),
     "workspace.create": (input) => services.workspaces.create(input),
@@ -515,12 +529,56 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     }),
 
     "mcp.list": () => services.mcp.list(),
-    "mcp.save": (input) => services.mcp.saveFromWindow(input),
+      "mcp.save": async (input) => {
+        if (input.id === "obsidian-memory") {
+          throw new Error("Change the shared vault from the Obsidian page.");
+        }
+        const saved = await services.mcp.saveFromWindow(input);
+        return saved;
+      },
+    "mcp.chooseMemoryVault": async () => {
+      const window = findMainWindow();
+      const result = await (window
+        ? dialog.showOpenDialog(window, { title: "Choose an Obsidian Markdown vault", properties: ["openDirectory"] })
+        : dialog.showOpenDialog({ title: "Choose an Obsidian Markdown vault", properties: ["openDirectory"] }));
+      const chosen = result.canceled ? null : result.filePaths[0];
+      if (!chosen) return null;
+      const root = await openMemoryVault(chosen);
+      // Electron runs this bundled MCP server in Node mode. Every provider
+      // reaches the same folder through the existing connector bridge.
+        const saved = await services.mcp.saveFromWindow({
+        id: "obsidian-memory",
+        name: "Obsidian memory",
+        transport: "stdio",
+        command: process.execPath,
+        args: [join(__dirname, "memory-server.js"), root],
+        env: { ELECTRON_RUN_AS_NODE: "1" },
+        cwd: root,
+        enabled: true,
+        availability: "everywhere",
+        workspaceIds: [],
+        });
+        await services.antigravityMemory.reconcile(saved);
+        return saved;
+      },
+      "memory.inspect": async () => {
+        const server = await services.mcp.get("obsidian-memory");
+        if (!server?.enabled || !server.cwd) return null;
+        const [vault, antigravity] = await Promise.all([
+          inspectMemoryVault(server.cwd),
+          services.antigravityMemory.status(server),
+        ]);
+        return { vault, antigravity };
+      },
     "mcp.signIn": (input) => services.mcp.signIn(input.id, input.clientSecret),
     "mcp.signOut": (input) => services.mcp.signOut(input.id),
-    "mcp.delete": async (input) => ({
-      deleted: await services.mcp.delete(input.id),
-    }),
+      "mcp.delete": async (input) => {
+        const deleted = await services.mcp.delete(input.id);
+        if (deleted && input.id === "obsidian-memory") {
+          await services.antigravityMemory.reconcile(null);
+        }
+        return { deleted };
+      },
     "mcp.statuses": () => services.mcp.statuses(),
     "mcp.connect": (input) => services.mcp.connect(input.id),
     "mcp.disconnect": async (input) => ({

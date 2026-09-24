@@ -15,7 +15,10 @@ Defined in `package.json` `scripts`:
 4. `test` — `vitest run`, ~210 unit/integration tests (2 quota-spending tests
    skipped by default, see below).
 5. `build` — electron-vite production build to `apps/desktop/out/`.
-6. `verify:app` — `bash scripts/verify-app.sh`: starts the BUILT app
+6. `verify:memory` — starts the built Markdown memory MCP server through the
+   Electron binary in Node mode and exercises search, read and add in a
+   temporary vault. It sends no provider request.
+7. `verify:app` — `bash scripts/verify-app.sh`: starts the BUILT app
    (`apps/desktop/out/main/index.js`) headlessly TWICE against one throwaway
    user-data dir and drives the real renderer:
    - **phase `create`**: window opens, React shell mounts, preload bridge
@@ -36,7 +39,8 @@ Defined in `package.json` `scripts`:
   expected green. Chromium runs with `--no-sandbox` in the check only.
 - **Windows:** `bun run verify:app` needs bash + Xvfb + Electron display and
   FAILS on a plain Windows box (`REGDB_E_CLASSNOTREG`). Expected on Windows:
-  `typecheck + lint + test + build` green; `verify:app` explicitly NOT proven.
+  `typecheck + lint + test + build + verify:memory` green; `verify:app`
+  explicitly NOT proven.
   Run `bun run verify` (incl. `verify:app`) on Linux/macOS before ticking E2E
   criteria. Prereq if Electron was installed with a restrictive policy:
   `node node_modules/electron/install.js`.

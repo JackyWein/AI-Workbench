@@ -2,6 +2,7 @@ import { type JSX, useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import type { ModelInfo } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { effortLabel, reasoningEffortsFor } from "../lib/reasoning-effort.js";
 import { isPickableProvider } from "../lib/provider-label.js";
 import { usePanelFit } from "../lib/panel-fit.js";
 
@@ -40,6 +41,7 @@ export function ModelPicker(): JSX.Element {
   const clearSessionTeam = useWorkbench((state) => state.clearSessionTeam);
   const setView = useWorkbench((state) => state.setView);
   const refreshTeams = useWorkbench((state) => state.refreshTeams);
+  const requestSessionEffort = useWorkbench((state) => state.requestSessionEffort);
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -55,12 +57,37 @@ export function ModelPicker(): JSX.Element {
   const session = sessions.find((entry) => entry.id === activeSessionId);
   const provider = providers.find((entry) => entry.metadata.id === session?.providerId);
   const model = provider?.models.find((entry) => entry.id === session?.modelId);
+  const activeEffort = typeof session?.settings["reasoningEffort"] === "string"
+    ? session.settings["reasoningEffort"] : null;
+  const effortOptions = reasoningEffortsFor(provider, session?.modelId);
+  const effortControls = effortOptions.length > 0 ? (
+    <div className="picker__effort" aria-label="Reasoning effort">
+      <span className="picker__effort-title">Reasoning effort</span>
+      <div className="picker__effort-options">
+        {[null, ...effortOptions].map((option) => (
+          <button
+            key={option ?? "default"}
+            type="button"
+            className="picker__effort-option"
+            data-level={option ?? "default"}
+            aria-pressed={activeEffort === option}
+            aria-label={`Reasoning effort ${option ? effortLabel(option) : "Default"}`}
+            title={option ? `Use ${option} for this model` : "Use the tool's default effort"}
+            onClick={() => requestSessionEffort(option)}
+          >
+            {option ? effortLabel(option) : "Default"}
+          </button>
+        ))}
+      </div>
+    </div>
+  ) : null;
   // A session bound to a team shows the team, not one of its models.
   const teamId = typeof session?.uiState["teamId"] === "string" ? session.uiState["teamId"] : null;
   const sessionTeam = teamId ? teams.find((entry) => entry.id === teamId) : undefined;
   const label = sessionTeam
     ? `${sessionTeam.name} · Team`
-    : (model?.displayName ?? session?.modelId ?? provider?.metadata.displayName ?? "No model");
+    : (model?.displayName ?? session?.modelId ?? provider?.metadata.displayName ?? "No model")
+      + (activeEffort ? ` · ${effortLabel(activeEffort)}` : "");
 
   useEffect(() => {
     if (open) {
@@ -132,8 +159,8 @@ export function ModelPicker(): JSX.Element {
     if (!session) {
       return;
     }
-    setOpen(false);
     void updateSession({ id: session.id, providerId, modelId });
+    setExpanded((previous) => new Set([...previous, providerId]));
   };
 
   const openTeam = (teamId: string): void => {
@@ -153,6 +180,7 @@ export function ModelPicker(): JSX.Element {
         ref={triggerRef}
         type="button"
         className="pill pill--acc"
+        data-effort={activeEffort === "max" || activeEffort === "ultra" ? activeEffort : undefined}
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -283,22 +311,25 @@ export function ModelPicker(): JSX.Element {
                           <span className="picker__name">Tool's default</span>
                           {current && !session.modelId ? <Check size={13} aria-hidden="true" /> : null}
                         </button>
+                        {current && !session.modelId ? effortControls : null}
                         {filteredModels.map((candidate) => {
                           const origin = modelOrigin(candidate);
                           const selected = current && session.modelId === candidate.id;
                           return (
-                            <button
-                              key={candidate.id}
-                              type="button"
-                              className="picker__row"
-                              role="option"
-                              aria-selected={selected}
-                              onClick={() => pickModel(id, candidate.id)}
-                              title={origin ? `${candidate.id} — ${origin}` : candidate.id}
-                            >
-                              <span className="picker__name">{candidate.displayName}</span>
-                              {selected ? <Check size={13} aria-hidden="true" /> : null}
-                            </button>
+                            <div key={candidate.id}>
+                              <button
+                                type="button"
+                                className="picker__row"
+                                role="option"
+                                aria-selected={selected}
+                                onClick={() => pickModel(id, candidate.id)}
+                                title={origin ? `${candidate.id} — ${origin}` : candidate.id}
+                              >
+                                <span className="picker__name">{candidate.displayName}</span>
+                                {selected ? <Check size={13} aria-hidden="true" /> : null}
+                              </button>
+                              {selected ? effortControls : null}
+                            </div>
                           );
                         })}
                         {entry.models.length === 0 ? (

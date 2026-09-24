@@ -8,6 +8,37 @@ you. The long day-by-day history that used to live here is in git
 Everything is on `claude/repo-setup-instructions-8tgcbw`. The design rollout
 branch `design/approved-rollout` is merged into it and can be deleted.
 
+## Where things stand (2026-09-24, after 0.0.7 + uncommitted follow-up)
+
+Uncommitted on top of `2011f5e Release 0.0.7`: custom Titlebar
+(`Titlebar.tsx`, `window.*` IPC), Obsidian shared-memory vault
+(`ObsidianView`, `memory-server`, `mcp.chooseMemoryVault`/`memory.inspect`,
+`AntigravityMemoryBridge`), reasoning effort picker (`EffortPrompt`,
+`reasoning-effort.ts`, effort reset in `SessionManager`), island usage
+stacking, probe timeout in the provider registry. Checked 2026-09-24 on
+Windows: `typecheck` OK, `lint` OK (0 errors, 3 console warnings in
+scripts), targeted tests OK (`team-flow` 12, `resilience` 7,
+`antigravity-memory` 2, `obsidian-memory` 4 — 25 passed), `build` OK.
+Full `bun run test` and both `verify:app` phases still need a Linux/macOS
+run before anything is ticked in `PROGRESS.md`; on Windows `verify:app`
+fails for platform reasons by design.
+
+Team workspace/context fix (renderer only, no migration, provider-neutral):
+`setSessionTeam` without a goal now only re-attaches runs from the same
+`session.workspaceId` (`store/workbench.ts`), otherwise the session binds
+the team with `teamRunId: null` and the next goal starts a fresh run in
+the session's workspace via `team.startRun({ workspaceId })`. `selectWorkspace`
+also clears `openRunId` so a run from another workspace no longer stays
+open after switching. Backend already starts every run in the given
+workspace (`team-manager.ts startRun/#runFolder/#drive`) and stores
+`run.workspaceId`; the leak was the picker path (`ModelPicker openTeam`
+→ `setSessionTeam` without goal → newest global run) plus the sticky
+`openRunId`. Note: a team-level `settings.workingDirectory` still
+overrides the workspace on purpose (`#runFolder`); clear it in the team
+editor if a team should follow each workspace. Repro: run in WS-A →
+new session (same or other workspace) → pick team → before fix the old
+goal/tasks/folder appeared, after fix the session is fresh.
+
 ## Where things stand (2026-09-24, release 0.0.7)
 
 `bun run verify` passes end to end: lockfile, lint, typecheck, 942

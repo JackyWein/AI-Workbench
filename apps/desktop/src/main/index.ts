@@ -64,10 +64,6 @@ async function bootstrap(): Promise<void> {
       process.env["AI_WORKBENCH_CHECK_DATA_DIR"] ??
         (await mkdtemp(join(tmpdir(), "ai-workbench-check-"))),
     );
-  } else if (isDevelopment && process.env["AI_WORKBENCH_DATA_DIR"]) {
-    // Development only: a separate profile, so trying something out never
-    // touches the data of the copy someone actually uses.
-    app.setPath("userData", process.env["AI_WORKBENCH_DATA_DIR"]);
   }
 
   const userDataPath = app.getPath("userData");
@@ -83,6 +79,20 @@ async function bootstrap(): Promise<void> {
     // and certificate store like the rest of the app.
     fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
   });
+
+  // Antigravity reads MCP servers from its own global configuration. Keep the
+  // Workbench-owned memory entry in step after app updates change its path.
+  // Headless verification never changes the host's agent configuration.
+  if (!startupCheckOnly) {
+    void services.mcp.get("obsidian-memory")
+      .then((server) => services?.antigravityMemory.reconcile(server) ?? null)
+      .then((status) => {
+        if (status && status.state === "error") {
+          services?.logger.warn("Antigravity memory registration failed");
+        }
+      })
+      .catch(() => services?.logger.warn("Antigravity memory registration failed"));
+  }
 
   // Update checks run against GitHub Releases in packaged builds only. A
   // release counts as new by its version or, for the same version, by the
@@ -272,6 +282,12 @@ app.on("second-instance", () => {
 // The startup check runs headlessly against its own user-data directory, so it
 // takes no lock: contending for one would make it quit silently — and exit 0 —
 // while another instance happens to be running, which reads as a pass.
+// Development previews choose their own profile before acquiring the lock.
+// Otherwise a running installed copy makes the preview quit before bootstrap
+// reaches its profile override.
+if (!startupCheckOnly && isDevelopment && process.env["AI_WORKBENCH_DATA_DIR"]) {
+  app.setPath("userData", process.env["AI_WORKBENCH_DATA_DIR"]);
+}
 if (!startupCheckOnly && !app.requestSingleInstanceLock()) {
   app.quit();
 } else {

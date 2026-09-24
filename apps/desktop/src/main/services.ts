@@ -24,6 +24,7 @@ import { McpGateway, McpManager, McpOAuth } from "@ai-workbench/mcp";
 import { ClaudeSkillImporter, MarkdownSkillImporter } from "@ai-workbench/skills";
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import {
+  AntigravityMemoryBridge,
   antigravityProfile,
   cliProviderFactory,
   parseProfile,
@@ -68,6 +69,7 @@ export interface AppServices {
   readonly skills: SkillService;
   readonly plugins: PluginService;
   readonly mcp: McpService;
+  readonly antigravityMemory: AntigravityMemoryBridge;
   readonly teams: TeamManager;
   readonly attention: StatusAttentionService;
   readonly credentials: CredentialManager;
@@ -349,6 +351,11 @@ async function createServicesInner(
     },
   });
   mcpRef = mcp;
+  const antigravityMemory = new AntigravityMemoryBridge({
+    executablePath: storedConfigs.get("antigravity")?.executablePath,
+    expectedCommand: process.execPath,
+    expectedScript: join(__dirname, "memory-server.js"),
+  });
   // Servers the user enabled come up with the application; one that refuses to
   // start is reported, never thrown (spec §60).
   const connected = await mcp.connectEnabled();
@@ -454,6 +461,7 @@ async function createServicesInner(
     skills,
     plugins,
     mcp,
+    antigravityMemory,
     teams,
     attention,
     credentials,

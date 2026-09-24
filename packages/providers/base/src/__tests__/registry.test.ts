@@ -90,6 +90,17 @@ describe("ProviderRegistry", () => {
     const healthy = summaries.find((entry) => entry.metadata.id === "healthy");
     expect(healthy?.installation.state).toBe("installed");
   });
+
+  it("returns the rest of the provider list when one probe never answers", async () => {
+    const registry = new ProviderRegistry({ logger: nullLogger, probeTimeoutMs: 20 });
+    registry.register(stubAdapter("healthy"));
+    registry.register(stubAdapter("hung", {
+      getAuthenticationStatus: () => new Promise(() => undefined),
+    }));
+    const summaries = await registry.describeAll();
+    expect(summaries.find((entry) => entry.metadata.id === "healthy")?.auth.state).toBe("notApplicable");
+    expect(summaries.find((entry) => entry.metadata.id === "hung")?.auth.state).toBe("unknown");
+  });
 });
 
 describe("error normalization", () => {

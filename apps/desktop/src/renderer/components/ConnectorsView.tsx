@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type JSX } from "react";
-import { Check, ChevronRight, ExternalLink, Plus, Search, X } from "lucide-react";
+import { BookOpen, Check, ChevronRight, ExternalLink, Plus, Search, X } from "lucide-react";
 import {
   CONNECTOR_CATALOG,
   catalogEntry,
@@ -24,6 +24,7 @@ export function ConnectorsView(): JSX.Element {
   const servers = useWorkbench((state) => state.mcpServers);
   const statuses = useWorkbench((state) => state.mcpStatuses);
   const refreshMcp = useWorkbench((state) => state.refreshMcp);
+  const chooseMemoryVault = useWorkbench((state) => state.chooseMemoryVault);
   const [tab, setTab] = useState<Tab>(servers.length > 0 ? "yours" : "discover");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<{ kind: "server"; id: string } | { kind: "catalog"; id: string } | { kind: "custom" } | null>(null);
@@ -85,6 +86,22 @@ export function ConnectorsView(): JSX.Element {
           </div>
 
           {tab === "discover" ? (
+            <>
+            <div className="connectors__memory">
+              <BookOpen size={18} strokeWidth={1.6} aria-hidden="true" />
+              <div>
+                <strong>Shared Obsidian memory</strong>
+                <p>Choose a Markdown vault for connected agents to search, read and add notes. Antigravity also receives it in its global MCP configuration.</p>
+              </div>
+              <button type="button" className="ghost-button" onClick={() => void chooseMemoryVault().then((saved) => {
+                if (saved) {
+                  setTab("yours");
+                  setOpen({ kind: "server", id: saved.id });
+                }
+              })}>
+                {servers.some((server) => server.id === "obsidian-memory") ? "Change vault" : "Choose vault"}
+              </button>
+            </div>
             <div className="connector-grid">
               {discover.map((entry) => (
                 <CatalogCard
@@ -99,6 +116,7 @@ export function ConnectorsView(): JSX.Element {
               ))}
               {discover.length === 0 ? <p className="field__description">Nothing matches “{query}”.</p> : null}
             </div>
+            </>
           ) : (
             <div className="connector-grid">
               {yours.map((server) => (
@@ -521,6 +539,7 @@ function ServerDetail({
   const remove = useWorkbench((state) => state.deleteMcpServer);
   const reconnect = useWorkbench((state) => state.connectMcpServer);
   const workspaces = useWorkbench((state) => state.workspaces);
+  const setView = useWorkbench((state) => state.setView);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState("");
@@ -552,6 +571,21 @@ function ServerDetail({
   const signsIn = Boolean(server.oauth);
   const signedIn = Boolean(server.oauth?.reference) && status?.state !== "signInRequired";
   const usesKey = !server.oauth && server.transport !== "stdio" && (entry?.signIn === "api-key" || Boolean(server.credentialReference));
+
+  if (server.id === "obsidian-memory") {
+    return <>
+      <PanelHeader icon={undefined} name={server.name} description="Local Markdown vault shared with agents" />
+      <div className="connector-panel__status" data-tone={state.tone}>
+        <span className="status-dot" data-state={state.dot} aria-hidden="true" />
+        <span>{state.text}</span>
+      </div>
+      <p className="setting__description">The Obsidian page shows vault size and note links. Change the vault there. Antigravity uses this memory from its global MCP configuration, including outside AI Workbench.</p>
+      <div className="connector-panel__actions">
+        <button type="button" className="primary-button" onClick={() => { setView("obsidian"); onRemoved(); }}>Open Obsidian</button>
+        <button type="button" className="ghost-button" data-tone="danger" onClick={() => { void remove(server.id).then(onRemoved); }}>Remove</button>
+      </div>
+    </>;
+  }
 
   return (
     <>

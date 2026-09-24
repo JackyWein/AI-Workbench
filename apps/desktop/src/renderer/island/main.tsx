@@ -25,6 +25,7 @@ import {
 } from "@ai-workbench/shared";
 import { LOGOS, resolveTheme } from "@ai-workbench/ui";
 import { AppLogo } from "../components/AppLogo.js";
+import { usageByProvider } from "./usage.js";
 import "./island.css";
 
 type HoverMode = "agents" | "usage";
@@ -1196,59 +1197,38 @@ function AskBox({
   );
 }
 
-/**
- * One row per tool: its tightest window, the one that runs out first. The
- * other windows stay in the Usage view; the island shows what matters now.
- */
-function tightestPerProvider(rows: readonly IslandUsageRow[]): IslandUsageRow[] {
-  const byProvider = new Map<string, IslandUsageRow>();
-  for (const row of rows) {
-    const known = byProvider.get(row.providerId);
-    if (
-      !known ||
-      (row.percentLeft !== null &&
-        (known.percentLeft === null || row.percentLeft < known.percentLeft))
-    ) {
-      byProvider.set(row.providerId, row);
-    }
-  }
-  return [...byProvider.values()];
-}
-
 /** "5-hour window" reads "5-hour" in the island's short rows. */
 function shortWindow(label: string): string {
   return label.replace(/\s+window$/i, "");
 }
 
 function UsageRows({ rows: all }: { readonly rows: readonly IslandUsageRow[] }): JSX.Element {
-  const rows = tightestPerProvider(all);
-  if (rows.length === 0) {
+  const providers = usageByProvider(all);
+  if (providers.length === 0) {
     return <p className="isl__na isl__urow">Usage unavailable</p>;
   }
   return (
     <>
-      {rows.map((row, index) => (
-        <div className="isl__urow" key={`${row.providerId}-${row.window}-${index}`}>
+      {providers.map((provider) => (
+        <div className="isl__urow" key={provider.providerId}>
           <div className="isl__uline">
-            <Mark icon={row.icon ?? logoKeyFor(row.providerId)} label={row.name} size={14} />
-            <span className="isl__uname">{row.name}</span>
-            {row.percentLeft === null ? (
-              <span className="isl__na">{row.note || "Usage unavailable"}</span>
-            ) : (
-              <>
-                {row.window ? <span className="isl__uwindow">{shortWindow(row.window)}</span> : null}
-                <span className="isl__upct">{Math.round(row.percentLeft)}% left</span>
-              </>
-            )}
+            <Mark icon={provider.icon ?? logoKeyFor(provider.providerId)} label={provider.name} size={14} />
+            <span className="isl__uname">{provider.name}</span>
+            {provider.limits.length === 1 && provider.limits[0]?.percentLeft === null ? (
+              <span className="isl__na">{provider.limits[0].note || "Usage unavailable"}</span>
+            ) : null}
           </div>
-          {row.percentLeft === null ? null : (
-            <div className="isl__ubar">
-              <i
-                data-low={row.percentLeft < 20}
-                style={{ width: `${Math.round(row.percentLeft)}%` }}
-              />
+          {provider.limits.filter((row) => row.percentLeft !== null).map((row, index) => (
+            <div className="isl__ulimit" key={`${row.window}-${index}`}>
+              <div className="isl__ulimit-line">
+                <span className="isl__uwindow">{row.window ? shortWindow(row.window) : "Limit"}</span>
+                <span className="isl__upct">{Math.round(row.percentLeft ?? 0)}% left</span>
+              </div>
+              <div className="isl__ubar">
+                <i data-low={(row.percentLeft ?? 0) < 20} style={{ width: `${Math.round(row.percentLeft ?? 0)}%` }} />
+              </div>
             </div>
-          )}
+          ))}
         </div>
       ))}
     </>
@@ -1287,7 +1267,7 @@ function UsageCard({
   readonly now: number;
 }): JSX.Element {
   return (
-    <div className="isl__card">
+    <div className="isl__card isl__card--usage">
       <UpdateStrip entry={derived.update} bridge={bridge} />
       <div className="isl__uh">
         <span className="isl__uhtitle">Usage</span>
