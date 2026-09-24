@@ -538,6 +538,21 @@ export class TeamManager {
     return stopped;
   }
 
+  /** Stops every run working in a workspace, before the workspace goes. */
+  async cancelRunsIn(workspaceId: string): Promise<void> {
+    const runs = [...this.#active]
+      .filter(([, active]) => active.service.run.workspaceId === workspaceId)
+      .map(([runId]) => runId);
+    for (const runId of runs) {
+      await this.cancelRun(runId).catch((error: unknown) => {
+        this.#logger.warn("Team run did not stop with its workspace", {
+          runId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+  }
+
   isRunning(runId: string): boolean {
     return this.#active.has(runId);
   }

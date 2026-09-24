@@ -300,6 +300,17 @@ describe("team runs in the application", () => {
     expect(app.teams.isRunning(run.id)).toBe(false);
   });
 
+  it("stops the runs working in a workspace, and only those, when it goes", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Something long" });
+    await app.teams.cancelRunsIn("some-other-workspace");
+    expect(app.teams.isRunning(run.id)).toBe(true);
+
+    await app.teams.cancelRunsIn(run.workspaceId);
+    expect(app.teams.isRunning(run.id)).toBe(false);
+    expect((await app.teams.getSnapshot(run.id)).run.status).toBe("cancelled");
+  });
+
   it("refuses to run a team with no agents", async () => {
     const workspace = await app.workspaces.create({ name: "Empty", path: directory });
     const team = await app.teams.create({

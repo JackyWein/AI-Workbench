@@ -14,6 +14,7 @@ import { SessionManager } from "../session-manager.js";
 import { SettingsService } from "../settings-service.js";
 import { UsageService } from "../usage-service.js";
 import { WorkspaceManager } from "../workspace-manager.js";
+import { removeWorkspace } from "../workspace-removal.js";
 
 interface TestApp {
   readonly events: EventBus;
@@ -454,6 +455,32 @@ describe("files sent with a message", () => {
 
     await app.sessions.delete(session.id);
     expect(existsSync(join(kept, session.id))).toBe(false);
+  });
+
+  it("stops a turn in flight and removes its files when the workspace goes", async () => {
+    await app.dispose();
+    app = await bootApp(directory, { chunkDelayMs: 8, startupDelayMs: 8 }, kept);
+    const workspace = await app.workspaces.create({ name: "Demo", path: directory });
+    const session = await app.sessions.create({ workspaceId: workspace.id, name: "Chat", type: "solo" });
+    const note = join(directory, "note.txt");
+    await writeFile(note, "a note");
+    const deleted: string[] = [];
+    app.events.subscribe((event: AppEvent) => {
+      if (event.type === "session.deleted") {
+        deleted.push(event.sessionId);
+      }
+    });
+
+    await app.sessions.sendMessage(session.id, "long answer", [{ path: note }]);
+    expect(app.sessions.isBusy(session.id)).toBe(true);
+    expect(existsSync(join(kept, session.id))).toBe(true);
+
+    expect(await removeWorkspace(app, workspace.id)).toBe(true);
+    expect(app.sessions.isBusy(session.id)).toBe(false);
+    expect(deleted).toEqual([session.id]);
+    expect(existsSync(join(kept, session.id))).toBe(false);
+    expect(await app.workspaces.get(workspace.id)).toBeNull();
+    expect(await removeWorkspace(app, workspace.id)).toBe(false);
   });
 
   it("refuses a file that is gone and leaves the session free", async () => {

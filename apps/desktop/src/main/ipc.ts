@@ -10,7 +10,7 @@ import {
   type DiscoveredSkill,
   type IpcOutput,
 } from "@ai-workbench/shared";
-import { draftSkill, inspectAttachments } from "@ai-workbench/core";
+import { draftSkill, inspectAttachments, removeWorkspace } from "@ai-workbench/core";
 import { importSkillFile, importSkillFolder } from "@ai-workbench/skills";
 import { remoteRoot } from "@ai-workbench/workspace-ssh";
 import type { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
@@ -166,7 +166,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "workspace.create": (input) => services.workspaces.create(input),
     "workspace.update": (input) => services.workspaces.update(input),
     "workspace.delete": async (input) => ({
-      deleted: await services.workspaces.delete(input.id),
+      deleted: await removeWorkspace(services, input.id),
     }),
     "workspace.chooseDirectory": async () => {
       // Dialogs belong to the main window: the focused window may be the
