@@ -1746,7 +1746,7 @@ export async function runStartupCheck(
       await capture(
         "team-session-member",
         `${teamSession}
-         [...document.querySelectorAll('.team-tabs [role="tab"]')]
+         [...document.querySelectorAll('.team-members [role="tab"]')]
            .find(node => node.textContent?.includes('Builder'))?.click();
          await new Promise(resolve => setTimeout(resolve, 300));`,
       );
