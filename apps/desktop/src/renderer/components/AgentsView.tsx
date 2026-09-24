@@ -125,6 +125,18 @@ function launchableProviders(providers: readonly ProviderSummary[]): ProviderSum
 }
 
 /**
+ * " (not detected: A, B)" from the registry entries — display names only,
+ * deduplicated so two accounts of the same tool name it once.
+ */
+function missingNames(missing: readonly ProviderSummary[]): string {
+  if (missing.length === 0) {
+    return "";
+  }
+  const names = [...new Set(missing.map((provider) => providerLabel(provider)))];
+  return ` (not detected: ${names.join(", ")})`;
+}
+
+/**
  * One chip per tool that can run here: a click starts it with its default
  * model, the chevron picks another first. Nothing is launched unseen.
  */
@@ -136,7 +148,27 @@ function LaunchBar({
   readonly live: number;
 }): JSX.Element {
   const launchAgentTerminal = useWorkbench((state) => state.launchAgentTerminal);
+  const setView = useWorkbench((state) => state.setView);
   const candidates = useMemo(() => launchableProviders(providers), [providers]);
+  // Why nothing can launch: names come from the registry, never hard-coded.
+  const missing = useMemo(
+    () =>
+      providers.filter(
+        (provider) =>
+          provider.installation.state === "notInstalled" ||
+          provider.installation.state === "unsupported",
+      ),
+    [providers],
+  );
+  const installedWithoutTerminal = useMemo(
+    () =>
+      providers.filter(
+        (provider) =>
+          isPickableProvider(provider) &&
+          !provider.capabilities.supported.includes("interactiveTerminal"),
+      ),
+    [providers],
+  );
   const [launching, setLaunching] = useState<string | null>(null);
 
   const launch = async (providerId: string | null, modelId?: string): Promise<void> => {
@@ -172,7 +204,23 @@ function LaunchBar({
           ))}
         </div>
       ) : (
-        <span className="agents-bar__hint">No installed tool offers a terminal interface.</span>
+        <span className="agents-bar__hint">
+          {providers.length === 0
+            ? "No providers configured yet."
+            : missing.length === providers.length
+              ? `None of the configured tools is detected on this machine${missingNames(missing)}.`
+              : installedWithoutTerminal.length > 0
+                ? `Installed tools here offer no terminal interface${missingNames(missing)}.`
+                : `No installed tool offers a terminal interface${missingNames(missing)}.`}{" "}
+          <button
+            type="button"
+            className="quiet-button"
+            onClick={() => setView("providers")}
+            title="Open the Providers screen to install or configure a tool"
+          >
+            Open Providers
+          </button>
+        </span>
       )}
       <span className="agents-bar__spacer" />
       {live > 0 ? (

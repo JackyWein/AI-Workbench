@@ -67,6 +67,26 @@ graph and stops for a reason it can name. It decides nothing about the work
 itself: what the tasks are, who should do them and whether the goal is reached
 belong to the agents.
 
+## Parallelism: together, not one after another
+
+Independent tasks run **concurrently as one batch**, up to the run's
+`maxConcurrentAgents` (default 3, max 16). The loop takes every runnable task
+that fits the remaining capacity (`runnable.slice(0, min(capacity,
+remainingCalls))`) and waits for the batch with `#waitForBatch`, which tracks
+each member turn in a set and races them — one slow member never serialises the
+others. A batch never spends more agent calls than the run has left. Only tasks
+with unmet `dependsOn`/blocked dependencies wait; everything else runs at the
+same time.
+
+A user's note to the lead never waits behind a batch and never kills it: the
+wait checks every 250 ms (`notifyLeadMessage` / unread user mail) and runs the
+lead priority turn **alongside** the members still in flight, guarded so only
+one lead turn runs at a time and skipped while the lead itself is working. The
+UI shows this: the run header carries an "N parallel" pill while two or more
+tasks run, the member strip reads "N of M at work", each running turn keeps its
+own "Working" tag with live steps, and the timeline keeps every member's live
+progress row visible at once.
+
 ## Autonomy limits
 
 Every run is bounded by configured limits: agent calls, tasks, task depth,

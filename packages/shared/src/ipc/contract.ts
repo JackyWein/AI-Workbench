@@ -95,6 +95,41 @@ export const ipcContract = {
       username: z.string(),
     }),
   },
+  /**
+   * What startup found from the previous run: whether it ended without
+   * shutting down, and what it left half-done that was settled — answers cut
+   * off mid-stream, team runs paused as interrupted.
+   */
+  "app.getRecovery": {
+    input: z.void(),
+    output: z.object({
+      uncleanExit: z.boolean(),
+      previousStartedAt: z.date().nullable(),
+      reportPath: z.string().nullable(),
+      recoveredTurns: z.number().int().nonnegative(),
+      recoveredTeamRuns: z.number().int().nonnegative(),
+      recoveredTeamTurns: z.number().int().nonnegative(),
+    }),
+  },
+  /**
+   * An error the interface caught — a view that failed to render, an error
+   * nobody handled — kept in the log and a crash report. Bounded, so a
+   * failing view cannot flood the main process.
+   */
+  "app.reportError": {
+    input: z.object({
+      source: z.string().min(1).max(120),
+      message: z.string().max(4000),
+      stack: z.string().max(20_000).optional(),
+      componentStack: z.string().max(20_000).optional(),
+    }),
+    output: z.object({ recorded: z.boolean() }),
+  },
+  /** Opens the folder with the crash reports in the system's file manager. */
+  "app.openCrashReports": {
+    input: z.void(),
+    output: z.object({ opened: z.boolean() }),
+  },
   "window.getState": {
     input: z.void(),
     output: z.object({ maximized: z.boolean(), fullscreen: z.boolean() }),
@@ -146,6 +181,21 @@ export const ipcContract = {
   "session.chooseAttachments": {
     input: z.void(),
     output: z.array(messageAttachmentSchema),
+  },
+  /**
+   * A picture pasted from the clipboard (screenshot, copied image) has no
+   * file path, so the renderer sends its bytes and the main process stages
+   * them into a real file that is described from the disk like any other
+   * attachment. Only the picture formats the tools read are accepted.
+   */
+  "session.savePastedImage": {
+    input: z.object({
+      fileName: z.string().min(1).max(260).optional(),
+      mimeType: z.enum(["image/png", "image/jpeg", "image/gif", "image/webp"]),
+      /** Base64 of at most MAX_ATTACHMENT_BYTES of image bytes. */
+      dataBase64: z.string().min(1).max(70_000_000),
+    }),
+    output: messageAttachmentSchema,
   },
   "session.cancel": {
     input: z.object({ sessionId: z.string().min(1) }),
@@ -547,7 +597,11 @@ export const ipcContract = {
    */
   /** A note from the person to a running team's lead, read on its next turn. */
   "team.sendMessage": {
-    input: z.object({ runId: z.string().min(1), content: z.string().min(1).max(20_000) }),
+    input: z.object({
+      runId: z.string().min(1),
+      content: z.string().min(1).max(20_000),
+      attachments: z.array(messageAttachmentSchema).max(20).optional(),
+    }),
     output: teamMessageSchema,
   },
   /** Name, members, lead and instructions; refused while a run is going. */
@@ -580,11 +634,26 @@ export const ipcContract = {
       teamId: z.string().min(1),
       goal: z.string().min(1).max(20_000),
       workspaceId: z.string().min(1).optional(),
+      attachments: z.array(messageAttachmentSchema).max(20).optional(),
     }),
     output: teamRunSchema,
   },
   "team.resumeRun": {
     input: z.object({ runId: z.string().min(1) }),
+    output: teamRunSchema,
+  },
+  /**
+   * Gives a finished run its next goal in the same timeline: the previous
+   * outcome is kept as a decision and the goal arrives as the next request,
+   * so neither the chat nor the agents lose the context. Refused while the
+   * run is still going or paused.
+   */
+  "team.continueRun": {
+    input: z.object({
+      runId: z.string().min(1),
+      goal: z.string().min(1).max(20_000),
+      attachments: z.array(messageAttachmentSchema).max(20).optional(),
+    }),
     output: teamRunSchema,
   },
   "team.pauseRun": {

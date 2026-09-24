@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
 import { createServices, type AppServices } from "./services.js";
+import { CrashGuard } from "./crash-guard.js";
 import { BUILD_COMMIT, SIGNED_MAC } from "./build-info.js";
 import {
   checkForUpdates,
@@ -48,6 +49,13 @@ const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 /** Set by `bun run verify:app`, which starts the app headlessly and exits. */
 const startupCheckOnly = process.env["AI_WORKBENCH_STARTUP_CHECK"] === "1";
 
+/**
+ * Installed before anything else runs, so a failure during startup already
+ * leaves a trace instead of a process that silently disappears.
+ */
+const crashGuard = new CrashGuard();
+crashGuard.installProcessHandlers();
+
 let services: AppServices | null = null;
 let island: IslandController | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -67,6 +75,13 @@ async function bootstrap(): Promise<void> {
   }
 
   const userDataPath = app.getPath("userData");
+  // Reads whether the last run ended cleanly before this one marks itself as
+  // running; what it left half-done is settled while the services start.
+  await crashGuard.begin({
+    userDataPath,
+    version: appVersion(),
+    interactive: !startupCheckOnly,
+  });
   services = await createServices({
     userDataPath,
     isDevelopment,
@@ -79,6 +94,8 @@ async function bootstrap(): Promise<void> {
     // and certificate store like the rest of the app.
     fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
   });
+
+  crashGuard.attachLogger(services.logger);
 
   // Antigravity reads MCP servers from its own global configuration. Keep the
   // Workbench-owned memory entry in step after app updates change its path.
@@ -142,6 +159,7 @@ async function bootstrap(): Promise<void> {
     appVersion: appVersion(),
     userDataPath,
     island,
+    crashGuard,
   });
 
   // The island starts in check mode too: `verify:app` proves the companion
@@ -202,6 +220,8 @@ async function shutdown(): Promise<void> {
       await services?.dispose();
     } finally {
       services = null;
+      // Only a shutdown that got this far counts as clean for the next start.
+      await crashGuard.markCleanExit();
     }
   }
 }
@@ -214,6 +234,7 @@ function openAppWindow(): BrowserWindow {
     preloadFile: join(__dirname, "../preload/index.js"),
   });
   mainWindow = window;
+  crashGuard.watchWindow(window);
   // Closing the main window may leave the runtime going (spec §104).
   attachMainWindowCloseBehavior(window);
   attachMainWindowFocusTracking(window);

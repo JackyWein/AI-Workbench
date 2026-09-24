@@ -14,7 +14,20 @@ import {
   Users,
 } from "lucide-react";
 import type { Session, Workspace } from "@ai-workbench/shared";
-import { meterTone, tightestLimit, usageProviders, useNow } from "../lib/usage.js";
+import { compactNumber } from "../lib/format.js";
+import {
+  formatSpan,
+  meterTone,
+  tightestLimit,
+  usageProviders,
+  useNow,
+} from "../lib/usage.js";
+import {
+  remainingShort,
+  remainingStatus,
+  soloSessionStats,
+  teamRunStats,
+} from "../lib/task-stats.js";
 import { useWorkbench, type MainView } from "../store/workbench.js";
 import { AppLogo } from "./AppLogo.js";
 import { ModeToggle } from "./ModeToggle.js";
@@ -228,6 +241,7 @@ export function Sidebar({
                       }
                     >
                       <p className="popover__detail">{session.workingDirectory}</p>
+                      <SessionStatsLine session={session} />
                     </Popover>
                     <button
                       type="button"
@@ -380,8 +394,89 @@ export function Sidebar({
   );
 }
 
-function dotState(status: string | undefined): string {
-  if (status === undefined || status === "idle") {
+/**
+ * One muted stats line per session in the sidebar popover: how long it took,
+ * what its turns reported, and what quota is left. Solo sessions sum their
+ * messages' reported usage; team sessions read their run's tasks, turns and
+ * member providers. Anything a tool did not report reads unknown/unverified —
+ * never a zero or a guess — and providers are only ever told apart by their
+ * own usage capability.
+ */
+function SessionStatsLine({ session }: { readonly session: Session }): JSX.Element {
+  const messages = useWorkbench((state) => state.messages[session.id] ?? []);
+  const runSnapshots = useWorkbench((state) => state.runSnapshots);
+  const teams = useWorkbench((state) => state.teams);
+  const usage = useWorkbench((state) => state.usage);
+  const providers = useWorkbench((state) => state.providers);
+  const now = useNow(30_000);
+
+  const teamId =
+    typeof session.uiState["teamId"] === "string" ? session.uiState["teamId"] : null;
+  const teamRunId =
+    typeof session.uiState["teamRunId"] === "string" ? session.uiState["teamRunId"] : null;
+  const team = teamId ? teams.find((entry) => entry.id === teamId) : undefined;
+  const snapshot = teamRunId ? runSnapshots[teamRunId] : undefined;
+
+  if (team && snapshot) {
+    const stats = teamRunStats(snapshot, now);
+    const remaining = remainingStatus({
+      usage,
+      providers,
+      providerIds: [...new Set(team.agents.map((agent) => agent.providerId))],
+      now,
+    });
+    const duration =
+      stats.runDurationMs !== null ? formatSpan(stats.runDurationMs) : "unknown";
+    const tokens = stats.tokens !== null ? `${compactNumber(stats.tokens)} tokens` : "tokens unknown";
+    const line = `${stats.tasksDone}/${stats.tasksTotal} tasks · ${duration} · ${tokens} · ${remainingShort(remaining)} remaining`;
+    const detail =
+      remaining.kind === "ready"
+        ? remaining.detail
+        : remaining.kind === "unverified"
+          ? remaining.reason
+          : "No member's tool reported usage yet";
+    return (
+      <p className="popover__detail popover__detail--stats" title={detail}>
+        {line}
+      </p>
+    );
+  }
+
+  if (team) {
+    return (
+      <p className="popover__detail popover__detail--stats">Team · no run yet</p>
+    );
+  }
+
+  const stats = soloSessionStats(messages);
+  const remaining = remainingStatus({
+    usage,
+    providers,
+    providerIds: session.providerId ? [session.providerId] : [],
+    now,
+  });
+  const duration = stats.durationMs > 0 ? formatSpan(stats.durationMs) : null;
+  const tokens = stats.tokens > 0 ? `${compactNumber(stats.tokens)} tokens` : null;
+  const parts = [
+    stats.turns === 0 ? "No turns yet" : `${stats.turns} turn${stats.turns === 1 ? "" : "s"}`,
+    duration,
+    tokens ?? (stats.turns === 0 ? null : "tokens unknown"),
+    `${remainingShort(remaining)} remaining`,
+  ].filter((part): part is string => part !== null);
+  const detail =
+    remaining.kind === "ready"
+      ? remaining.detail
+      : remaining.kind === "unverified"
+        ? remaining.reason
+        : "The tool has not reported usage yet";
+  return (
+    <p className="popover__detail popover__detail--stats" title={detail}>
+      {parts.join(" · ")}
+    </p>
+  );
+}
+
+function dotState(status: string | undefined): string {  if (status === undefined || status === "idle") {
     return "idle";
   }
   if (status === "error") {

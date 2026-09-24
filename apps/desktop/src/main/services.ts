@@ -71,6 +71,12 @@ export interface AppServices {
   readonly mcp: McpService;
   readonly antigravityMemory: AntigravityMemoryBridge;
   readonly teams: TeamManager;
+  /** What startup found half-done from the previous run and settled. */
+  readonly recovered: {
+    readonly turns: number;
+    readonly teamRuns: number;
+    readonly teamTurns: number;
+  };
   readonly attention: StatusAttentionService;
   readonly credentials: CredentialManager;
   /** Importers offered when the user adds skills from a folder (spec §31). */
@@ -366,7 +372,14 @@ async function createServicesInner(
     });
   }
 
-  const teams = new TeamManager({ db: database.db, events, logger, providers, mcp });
+  const teams = new TeamManager({
+    db: database.db,
+    events,
+    logger,
+    providers,
+    mcp,
+    attachmentsDirectory: join(options.userDataPath, "attachments"),
+  });
 
   const settings = new SettingsService({ db: database.db, logger });
   const storedSettings = await settings.get();
@@ -385,7 +398,15 @@ async function createServicesInner(
     mcp,
     attachmentsDirectory: join(options.userDataPath, "attachments"),
   });
-  await sessions.recoverInterrupted();
+  // What a crash or a kill left half-done is settled before anything runs:
+  // answers cut off mid-stream fail visibly, team runs pause as interrupted.
+  const recovered = {
+    turns: await sessions.recoverInterrupted(),
+    ...(await teams.recoverInterruptedRuns().then(
+      (result) => ({ teamRuns: result.runs, teamTurns: result.turns }),
+      () => ({ teamRuns: 0, teamTurns: 0 }),
+    )),
+  };
   const usage = new UsageService({ providers, events, logger });
   usageRef = usage;
 
@@ -463,6 +484,7 @@ async function createServicesInner(
     mcp,
     antigravityMemory,
     teams,
+    recovered,
     attention,
     credentials,
     skillImporters: [new ClaudeSkillImporter(), new MarkdownSkillImporter()],

@@ -3,7 +3,6 @@ import { ChevronRight } from "lucide-react";
 import type {
   ChatMessage,
   EffectiveSkill,
-  MessageUsage,
   ProviderSummary,
   Session,
   SessionStatus,
@@ -11,7 +10,8 @@ import type {
 } from "@ai-workbench/shared";
 import { compactNumber, formatPath, formatUsd } from "../lib/format.js";
 import { describeError, invoke } from "../lib/client.js";
-import { formatSpan, meterTone } from "../lib/usage.js";
+import { formatSpan, meterTone, snapshotOf, useNow } from "../lib/usage.js";
+import { remainingStatus, soloSessionStats } from "../lib/task-stats.js";
 import { useWorkbench } from "../store/workbench.js";
 import { Logo } from "./Logo.js";
 import { Popover } from "./Popover.js";
@@ -41,9 +41,29 @@ export function ContextPanel({
 }: ContextPanelProps): JSX.Element {
   const cancel = useWorkbench((state) => state.cancel);
   const busy = useWorkbench((state) => state.busy[session.id] ?? false);
+  const usage = useWorkbench((state) => state.usage);
+  const providers = useWorkbench((state) => state.providers);
   const model = provider?.models.find((entry) => entry.id === session.modelId);
-  const stats = useMemo(() => sessionStats(messages), [messages]);
+  const stats = useMemo(() => soloSessionStats(messages), [messages]);
   const context = stats.context;
+  const now = useNow(30_000);
+  // Remaining quota for this session's own tool, read from what the tool
+  // reported — never guessed. A tool without the usage capability, or one
+  // that reported nothing, reads unknown/unverified instead of a number.
+  const remaining = useMemo(
+    () =>
+      remainingStatus({
+        usage,
+        providers,
+        providerIds: session.providerId ? [session.providerId] : [],
+        now,
+      }),
+    [usage, providers, session.providerId, now],
+  );
+  const remainingSnapshot =
+    session.providerId && provider?.capabilities.supported.includes("usage")
+      ? snapshotOf(usage, session.providerId)
+      : null;
   const contextPercent =
     context && context.window ? Math.min(100, Math.round((context.used / context.window) * 100)) : null;
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -108,6 +128,23 @@ export function ContextPanel({
               stats.costUsd !== null
                 ? "Computed by the tool at list prices; your bill may differ"
                 : "Not reported"
+            }
+          />
+          <Stat
+            label="Remaining"
+            value={
+              remaining.kind === "ready"
+                ? `${remaining.percentUsed}% used`
+                : remaining.kind === "unknown"
+                  ? "unknown"
+                  : "unverified"
+            }
+            title={
+              remaining.kind === "ready"
+                ? remaining.detail
+                : remaining.kind === "unverified"
+                  ? (remainingSnapshot?.note ?? remaining.reason)
+                  : "The tool has not reported usage yet"
             }
           />
         </dl>
@@ -206,60 +243,6 @@ function Stat({
       <dd>{value}</dd>
     </div>
   );
-}
-
-interface SessionStats {
-  readonly turns: number;
-  readonly durationMs: number;
-  readonly input: number;
-  readonly output: number;
-  readonly cached: number;
-  readonly tokens: number;
-  readonly costUsd: number | null;
-  readonly context: { used: number; window: number | undefined } | null;
-}
-
-/** Sums what the tool reported for each answer of the session. */
-function sessionStats(messages: readonly ChatMessage[]): SessionStats {
-  let turns = 0;
-  let durationMs = 0;
-  let input = 0;
-  let output = 0;
-  let cached = 0;
-  let costUsd: number | null = null;
-  let latest: MessageUsage | null = null;
-  for (const message of messages) {
-    if (message.role !== "assistant") {
-      continue;
-    }
-    turns += 1;
-    const usage = message.usage;
-    if (!usage) {
-      continue;
-    }
-    latest = usage;
-    durationMs += usage.durationMs ?? 0;
-    input += (usage.inputTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
-    cached += usage.cacheReadTokens ?? 0;
-    output += usage.outputTokens ?? 0;
-    if (usage.costUsd !== undefined) {
-      costUsd = (costUsd ?? 0) + usage.costUsd;
-    }
-  }
-  const context =
-    latest?.contextTokens !== undefined
-      ? { used: latest.contextTokens, window: latest.contextWindow }
-      : null;
-  return {
-    turns,
-    durationMs,
-    input,
-    output,
-    cached,
-    tokens: input + output + cached,
-    costUsd,
-    context,
-  };
 }
 
 /** What this session actually composes into its instructions (spec §30). */

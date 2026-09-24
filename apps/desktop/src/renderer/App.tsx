@@ -16,6 +16,7 @@ import { ContextPanel } from "./components/ContextPanel.js";
 import { AppLogo } from "./components/AppLogo.js";
 import { EmptyState } from "./components/EmptyState.js";
 import { RendererErrorBoundary } from "./components/ErrorBoundary.js";
+import { RecoveryNotice } from "./components/RecoveryNotice.js";
 import { ConnectorsView } from "./components/ConnectorsView.js";
 import { ObsidianView } from "./components/ObsidianView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
@@ -179,19 +180,23 @@ export function App(): JSX.Element {
     <div className="shell">
       <Titlebar label={title} />
       <div className="app">
-      <Sidebar
-        workspaces={state.workspaces}
-        sessions={state.sessions}
-        activeWorkspaceId={state.activeWorkspaceId}
-        activeSessionId={state.activeSessionId}
-        view={state.view}
-        appVersion={appInfo?.version ?? null}
-        username={appInfo?.username ?? null}
-      />
+      <RendererErrorBoundary fallbackTitle="Sidebar" compact>
+        <Sidebar
+          workspaces={state.workspaces}
+          sessions={state.sessions}
+          activeWorkspaceId={state.activeWorkspaceId}
+          activeSessionId={state.activeSessionId}
+          view={state.view}
+          appVersion={appInfo?.version ?? null}
+          username={appInfo?.username ?? null}
+        />
+      </RendererErrorBoundary>
 
       <main className="main">
         {state.view === "chat" && state.workspaceMode === "terminals" && workspace ? (
-          <AgentsView workspaceId={workspace.id} workspaceName={workspace.name} />
+          <RendererErrorBoundary key={`agents:${workspace.id}`} fallbackTitle="Agents">
+            <AgentsView workspaceId={workspace.id} workspaceName={workspace.name} />
+          </RendererErrorBoundary>
         ) : null}
 
         {state.view === "chat" &&
@@ -208,7 +213,7 @@ export function App(): JSX.Element {
 
         {state.view === "chat" && state.workspaceMode === "chat" && session ? (
           sessionTeam ? (
-            <RendererErrorBoundary fallbackTitle="Team session">
+            <RendererErrorBoundary key={`team:${session.id}`} fallbackTitle="Team session">
               <TeamSessionView
                 session={session}
                 team={sessionTeam}
@@ -216,7 +221,7 @@ export function App(): JSX.Element {
               />
             </RendererErrorBoundary>
           ) : (
-          <>
+          <RendererErrorBoundary key={`chat:${session.id}`} fallbackTitle="Session">
             <SessionHeader
               session={session}
               workspace={workspace}
@@ -238,6 +243,8 @@ export function App(): JSX.Element {
                 />
               )}
               <Composer
+                key={session.id}
+                draftKey={session.id}
                 busy={busy}
                 disabled={false}
                 onSend={(text, attachments) => void state.sendMessage(text, attachments)}
@@ -246,7 +253,7 @@ export function App(): JSX.Element {
               />
               {state.workspacePanelOpen ? <WorkspacePanel sessionId={session.id} /> : null}
             </div>
-          </>
+          </RendererErrorBoundary>
           )
         ) : null}
 
@@ -323,8 +330,11 @@ export function App(): JSX.Element {
 
       {state.view === "chat" && state.workspaceMode === "chat" && session ? (
         sessionTeam ? (
-          <TeamPanel team={sessionTeam} snapshot={teamSnapshot ?? null} />
+          <RendererErrorBoundary key={`team-panel:${session.id}`} fallbackTitle="Team panel" compact>
+            <TeamPanel team={sessionTeam} snapshot={teamSnapshot ?? null} />
+          </RendererErrorBoundary>
         ) : (
+        <RendererErrorBoundary key={`context:${session.id}`} fallbackTitle="Session details" compact>
         <ContextPanel
           session={session}
           workspace={workspace}
@@ -345,14 +355,22 @@ export function App(): JSX.Element {
               }
             : null}
         />
+        </RendererErrorBoundary>
         )
       ) : (
         <div />
       )}
 
-      <CommandPalette />
-      <EffortPrompt />
-      <UpdatePrompt />
+      <RendererErrorBoundary fallbackTitle="Command palette" compact>
+        <CommandPalette />
+      </RendererErrorBoundary>
+      <RendererErrorBoundary fallbackTitle="Effort prompt" compact>
+        <EffortPrompt />
+      </RendererErrorBoundary>
+      <RendererErrorBoundary fallbackTitle="Update prompt" compact>
+        <UpdatePrompt />
+      </RendererErrorBoundary>
+      <RecoveryNotice />
 
       {state.error ? (
         <div className="toast" role="status">

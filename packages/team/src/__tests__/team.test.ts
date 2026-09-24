@@ -353,8 +353,10 @@ describe("autonomous collaboration", () => {
   it("runs independent tasks together, up to the run's limit", async () => {
     const { service } = boot([agent("lead", "Lead"), agent("w1", "W1"), agent("w2", "W2")]);
     await service.start();
-    for (const title of ["One", "Two", "Three"]) {
-      await service.createTask({ title, createdBy: "lead", assignedTo: "w1" });
+    // Independent tasks of different members; one member's own tasks never
+    // share its provider conversation (see turn-exclusivity.test.ts).
+    for (const [title, assignee] of [["One", "w1"], ["Two", "w2"], ["Three", "lead"]] as const) {
+      await service.createTask({ title, createdBy: "lead", assignedTo: assignee });
     }
 
     // A provider that holds each turn open long enough to observe the overlap.
@@ -427,6 +429,37 @@ describe("autonomous collaboration", () => {
     const failed = service.listTasks({ status: "failed" });
     expect(failed.length).toBeGreaterThan(0);
     expect(failed[0]?.error).toContain("not available");
+  });
+
+  it("hands each member's effort to its provider session", async () => {
+    const lead = { ...agent("lead", "Lead"), settings: { reasoningEffort: "high" } };
+    const worker = { ...agent("worker-1", "W1"), settings: { reasoningEffort: "low" } };
+    const { service } = boot([lead, worker], "Build a small feature");
+    // A task waiting for the worker guarantees both members take a turn.
+    await service.start();
+    await service.createTask({ title: "Do the work", createdBy: "lead", assignedTo: "worker-1" });
+    const seen = new Map<string, string | undefined>();
+    const recording: AIProviderAdapter = {
+      ...adapter,
+      createSession: async (config) => {
+        seen.set(config.sessionId, config.reasoningEffort);
+        return adapter.createSession(config);
+      },
+    } as AIProviderAdapter;
+    const orchestrator = new TeamOrchestrator({
+      service,
+      runtime: { adapterFor: () => recording },
+      logger: nullLogger,
+      turnTimeoutMs: 15_000,
+    });
+    await orchestrator.run();
+    await orchestrator.dispose();
+
+    // Every member's session carried the effort from its definition — the
+    // default (unset) travels as nothing, never as an invented value.
+    const runId = service.snapshot().run.id;
+    expect(seen.get(`${runId}:lead`)).toBe("high");
+    expect(seen.get(`${runId}:worker-1`)).toBe("low");
   });
 
   it("keeps a slow turn alive while the provider keeps working", async () => {

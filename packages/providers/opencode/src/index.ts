@@ -6,6 +6,7 @@ import {
   findSkills,
   numberField,
   opencodeProfile,
+  parseOpencodeStatsUsage,
   parseProfile,
   poll,
   stringField,
@@ -24,7 +25,7 @@ import type {
 } from "@ai-workbench/shared";
 import { parseOpencodeLine } from "./events.js";
 import { opencodeMcpLaunch } from "./mcp.js";
-import { mergeOpencodeModels, parseOpencodeModels } from "./models.js";
+import { mergeOpencodeModels, parseOpencodeApiModels, parseOpencodeModels } from "./models.js";
 import { opencodeServerTelemetry, sessionMetrics } from "./server.js";
 import { adaptOpencodeArgs, opencodeMajor } from "./version.js";
 
@@ -294,36 +295,95 @@ export function parseStatsTable(stdout: string): unknown {
 
 /**
  * `--days 0` counts since local midnight and `--days 7` the last seven days,
- * as OpenCode's own stats code defines them.
+ * as OpenCode's own stats code defines them. Older releases take neither
+ * `--json` nor `--days`, so each spelling is tried in turn: the day-split
+ * JSON first, then the day-split table, then the same without `--days`.
  */
 async function readStats(context: CliExtensionContext, days: number): Promise<unknown> {
-  const json = await exec(context, ["stats", "--json", "--days", String(days)], {
-    timeoutMs: 30_000,
-  });
-  if (json.exit.code === 0) {
-    try {
-      return JSON.parse(json.stdout) as unknown;
-    } catch {
-      // Not JSON after all; the table below says the same.
+  const dated: readonly (readonly string[])[] = [
+    ["stats", "--json", "--days", String(days)],
+    ["stats", "--days", String(days)],
+  ];
+  for (const args of dated) {
+    const run = await exec(context, [...args], { timeoutMs: 30_000 });
+    if (run.exit.code !== 0) {
+      continue;
+    }
+    const parsed = tryJson(run.stdout) ?? parseStatsTable(run.stdout);
+    if (parsed !== null) {
+      return parsed;
     }
   }
-  const table = await exec(context, ["stats", "--days", String(days)], { timeoutMs: 30_000 });
+  return null;
+}
+
+/**
+ * A stats answer without `--days`, for releases whose stats command takes
+ * none: `stats --json` first, then the plain table both releases print.
+ */
+async function readStatsUndated(context: CliExtensionContext): Promise<unknown> {
+  const json = await exec(context, ["stats", "--json"], { timeoutMs: 30_000 });
+  if (json.exit.code === 0) {
+    const parsed = tryJson(json.stdout);
+    if (parsed !== null) {
+      return parsed;
+    }
+  }
+  const table = await exec(context, ["stats"], { timeoutMs: 30_000 });
   return table.exit.code === 0 ? parseStatsTable(table.stdout) : null;
 }
 
-async function readUsage(context: CliExtensionContext): Promise<ProviderUsageSnapshot | null> {
-  const [today, week] = await Promise.all([readStats(context, 0), readStats(context, 7)]);
-  const limits = statsLimits(today, week);
-  if (limits.length === 0) {
+function tryJson(stdout: string): unknown | null {
+  try {
+    return JSON.parse(stdout) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+/** Exported for tests: account usage through the stats command. */
+export async function readUsage(
+  context: CliExtensionContext,
+): Promise<ProviderUsageSnapshot | null> {  const [today, week] = await Promise.all([readStats(context, 0), readStats(context, 7)]);
+  const dated = statsLimits(today, week);
+  if (dated.length > 0) {
+    return {
+      providerId: context.providerId,
+      state: "available",
+      limits: dated,
+      updatedAt: new Date(),
+      source: "cli",
+      note: "OpenCode has no quota; these are the amounts used.",
+    };
+  }
+  // Releases without `--days` answer once for everything they know; that one
+  // answer is shown without a period rather than counted twice (spec §56).
+  const single = await readStatsUndated(context);
+  const flat = single === null ? null : parseOpencodeStatsUsage(JSON.stringify(single));
+  const tableLimits =
+    flat ?? (single !== null ? statsLimits(null, single).map(stripPeriod) : []);
+  if (tableLimits.length === 0) {
     return null;
   }
   return {
     providerId: context.providerId,
     state: "available",
-    limits,
+    limits: tableLimits,
     updatedAt: new Date(),
     source: "cli",
     note: "OpenCode has no quota; these are the amounts used.",
+  };
+}
+
+/**
+ * A week-labelled limit read without a `--days` split, relabelled to say what
+ * it is: the tool's total, not seven days in particular.
+ */
+function stripPeriod(limit: UsageLimit): UsageLimit {
+  return {
+    ...limit,
+    id: limit.id.replace(/^week\./, "total."),
+    label: limit.label.replace(/· 7 days/, "total"),
   };
 }
 
@@ -334,16 +394,23 @@ async function discoverModels(context: CliExtensionContext): Promise<ModelInfo[]
     // Once more, in case another OpenCode process was setting up its data.
     plain = await exec(context, ["models"], { timeoutMs: 60_000 });
   }
+  // 1.x details; 2.x dropped the flag, so a failure here is routine there.
   const verbose = await exec(context, ["models", "--verbose"], { timeoutMs: 60_000 });
-  const details = verbose.exit.code === 0 ? parseOpencodeModels(verbose.stdout) : [];
+  const verboseDetails = verbose.exit.code === 0 ? parseOpencodeModels(verbose.stdout) : [];
+  // 2.x details; 1.x has no such operation, so a failure here is routine there.
+  const api = await exec(context, ["api", "model.list"], { timeoutMs: 60_000 });
+  const apiDetails = api.exit.code === 0 ? parseOpencodeApiModels(api.stdout) : [];
   if (plain.exit.code !== 0) {
-    if (details.length > 0) {
-      return details;
+    if (apiDetails.length > 0) {
+      return apiDetails;
+    }
+    if (verboseDetails.length > 0) {
+      return verboseDetails;
     }
     const said = (plain.exit.stderr || plain.stdout).trim().split("\n")[0];
     throw new Error(said ? `\`opencode models\` failed: ${said}` : "`opencode models` failed");
   }
-  return mergeOpencodeModels(parseOpencodeModels(plain.stdout), details);
+  return mergeOpencodeModels(parseOpencodeModels(plain.stdout), verboseDetails, apiDetails);
 }
 
 /** What OpenCode needs beyond its profile data. */

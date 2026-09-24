@@ -420,7 +420,7 @@ export async function runStartupCheck(
            .find(node => node.textContent?.includes('Team space'));
          if (!row) return 'no sidebar row for the team workspace';
          row.click();
-         const shown = await ${waitFor("document.querySelector('.team-run__goal, .team-intro')", 4000)};
+         const shown = await ${waitFor("document.querySelector('.team-run, .team-intro')", 4000)};
          [...document.querySelectorAll('.sidebar__scroll .row')]
            .find(node => node.textContent?.includes('Check workspace'))?.click();
          await new Promise(resolve => setTimeout(resolve, 400));
@@ -1209,7 +1209,7 @@ export async function runStartupCheck(
          .find(node => node.textContent?.includes('Check team'));
        if (!option) return 'the picker does not offer the team';
        option.click();
-       if (!(await ${waitFor("document.querySelector('.team-intro, .team-run__goal')", 4000)})) return 'no team view';
+       if (!(await ${waitFor("document.querySelector('.team-intro, .team-run')", 4000)})) return 'no team view';
 
        // A goal from the box starts one run, in this workspace.
        const goal = 'Check the team works in its session ' + Date.now();

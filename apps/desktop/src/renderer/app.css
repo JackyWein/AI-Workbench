@@ -970,6 +970,14 @@ span.pill {
   overflow-wrap: anywhere;
 }
 
+/* The muted stats line under a sidebar session's path. */
+.popover__detail--stats {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* A popover trigger is a plain button; it reads as the text it replaces. */
 .popover > button {
   text-align: left;
@@ -5076,6 +5084,44 @@ button.sidebar__user[aria-current="true"] {
   margin-bottom: 6px;
 }
 
+/* Artifact "why": reason from the agent's metadata, or the linked task. */
+.team-file__reason {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.team-file__task {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.team-file__title {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* Code/diff viewers inside an artifact card. */
+.team-file .diff-preview[data-source="artifact"] {
+  margin: 2px 0 0 22px;
+}
+
+.team-file .codeblock[data-source="artifact"] {
+  margin: 2px 0 0 22px;
+}
+
+.diff-preview__line[data-kind="hunk"] {
+  color: var(--accent-text);
+}
+
 .team-decision {
   display: flex;
   flex-direction: column;
@@ -6640,4 +6686,121 @@ button.sidebar__user[aria-current="true"] {
   .memory-view__notes { border-left: 0; border-top: 1px solid var(--border-subtle); }
   .memory-view__graph { min-height: 280px; }
   .memory-view__list { max-height: 160px; }
+}
+
+/* ------------------------------------------------------------ recovery -- */
+
+/*
+ * After an unexpected stop: one quiet floating note in the corner, not a
+ * modal — the app is usable at once, the note only says what was put right.
+ */
+.recovery-notice {
+  position: fixed;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  z-index: var(--z-overlay);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(380px, calc(100vw - 2 * var(--space-6)));
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--warning);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-popover);
+  animation: popover-in var(--duration-normal) var(--easing-standard);
+}
+
+.recovery-notice__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.recovery-notice__line {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  line-height: var(--line-tight);
+}
+
+.recovery-notice__line + .recovery-notice__line {
+  margin-top: var(--space-2);
+}
+
+.recovery-notice__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* A part of the window that failed to render keeps its place, small. */
+.error-fallback--compact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  min-width: 0;
+}
+
+.error-fallback__title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.error-fallback__detail {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The whole interface failed: the one full-window message, with a way back. */
+.app-crash {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-8);
+  background: var(--surface-base);
+  color: var(--text-primary);
+}
+
+.app-crash__inner {
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.app-crash__title {
+  margin: 0;
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
+.app-crash__lede {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.app-crash__detail {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.app-crash__actions {
+  display: flex;
+  gap: var(--space-3);
 }

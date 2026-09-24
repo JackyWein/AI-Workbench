@@ -10,6 +10,7 @@ import { EventBus } from "../event-bus.js";
 import { createNullLogger } from "../logger.js";
 import { ProviderManager } from "../provider-manager.js";
 import { TeamManager } from "../team-manager.js";
+import { SqlTeamRunStore } from "../team-store.js";
 import { WorkspaceManager } from "../workspace-manager.js";
 
 /** The mock provider, noting the folder every agent session was opened in. */
@@ -193,12 +194,40 @@ describe("team runs in the application", () => {
     expect(after.leadAgentId).toBe(lead!.id);
   });
 
-  it("refuses to change a team while one of its runs is going", async () => {
+  it("lets safe changes through while a run is going, but not removals", async () => {
     const { teamId } = await makeTeam();
+    const before = await app.teams.require(teamId);
     const run = await app.teams.startRun({ teamId, goal: "Ship it" });
     const snapshot = await app.teams.getSnapshot(run.id);
     if (snapshot.run.status === "running") {
-      await expect(app.teams.update({ teamId, name: "Renamed" })).rejects.toThrow(/run going/);
+      // Adding a member and renaming are safe: the live run picks them up.
+      const grown = await app.teams.update({
+        teamId,
+        name: "Renamed",
+        agents: [
+          ...before.agents.map((agent) => ({
+            id: agent.id,
+            displayName: agent.displayName,
+            providerId: agent.providerId,
+            role: agent.role,
+          })),
+          { displayName: "Newcomer", providerId: "mock", role: "helps" },
+        ],
+      });
+      expect(grown.name).toBe("Renamed");
+      expect(grown.agents.map((agent) => agent.displayName)).toContain("Newcomer");
+      // Removing a member mid-run is still refused: the run may wait on it.
+      await expect(
+        app.teams.update({
+          teamId,
+          agents: before.agents.slice(0, 2).map((agent) => ({
+            id: agent.id,
+            displayName: agent.displayName,
+            providerId: agent.providerId,
+            role: agent.role,
+          })),
+        }),
+      ).rejects.toThrow(/run going/);
     }
     await settle(app, run.id);
     await expect(app.teams.update({ teamId, name: "Renamed" })).resolves.toMatchObject({
@@ -262,6 +291,51 @@ describe("team runs in the application", () => {
     expect(types).toContain("TEAM_FINISHED");
   });
 
+  it("keeps the chat when a finished run gets its next goal", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "First goal" });
+    await settle(app, run.id);
+
+    const before = await app.teams.getSnapshot(run.id);
+    expect(before.run.status).toBe("completed");
+    expect(before.run.outcome).toBeTruthy();
+    expect(before.tasks.length).toBeGreaterThan(0);
+    const tasksBefore = before.tasks.length;
+    const messagesBefore = before.messages.length;
+
+    // The next goal continues the same run instead of swapping the chat for
+    // an empty one.
+    const continued = await app.teams.continueRun({ runId: run.id, goal: "Second goal" });
+    expect(continued.id).toBe(run.id);
+    expect(continued.goal).toBe("Second goal");
+    expect(continued.status).toBe("pending");
+    await settle(app, run.id);
+
+    const after = await app.teams.getSnapshot(run.id);
+    // Nothing was cleared: the old work is all still there...
+    expect(after.tasks.length).toBeGreaterThanOrEqual(tasksBefore);
+    expect(after.messages.length).toBeGreaterThanOrEqual(messagesBefore + 1);
+    expect(
+      after.messages.some((message) => message.from === "user" && message.content === "Second goal"),
+    ).toBe(true);
+    // ...the previous outcome stays readable as a decision...
+    expect(after.decisions.some((decision) => decision.decision === before.run.outcome)).toBe(
+      true,
+    );
+    // ...and the new goal finished in the same timeline.
+    expect(after.run.status).toBe("completed");
+    expect(after.run.outcome).toContain("Second goal");
+  });
+
+  it("refuses a new goal while the run is still going", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Ship it" });
+    await expect(app.teams.continueRun({ runId: run.id, goal: "Too soon" })).rejects.toThrow(
+      /still going/,
+    );
+    await settle(app, run.id);
+  });
+
   it("continues a run after a restart of the application", async () => {
     const { teamId } = await makeTeam();
     const team = await app.teams.require(teamId);
@@ -298,6 +372,47 @@ describe("team runs in the application", () => {
     expect(stored.turns.length).toBeGreaterThanOrEqual(stored.tasks.length);
     expect(stored.turns.every((turn) => turn.status !== "running" && turn.output.length > 0)).toBe(true);
     expect(stored.turns.every((turn) => turn.startedAt instanceof Date)).toBe(true);
+  });
+
+  it("settles a run a crash left going, so it can be resumed", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Survive a crash" });
+    await settle(app, run.id);
+
+    // What a killed process leaves behind: the run still marked as going, a
+    // task claimed by a member and that member's turn never closed.
+    const store = new SqlTeamRunStore(app.database.db);
+    const before = await app.teams.getSnapshot(run.id);
+    const task = before.tasks[0];
+    const turn = before.turns[0];
+    expect(task).toBeDefined();
+    expect(turn).toBeDefined();
+    await store.saveRun({ ...before.run, status: "running", stopReason: null, finishedAt: null });
+    await store.saveTask({ ...task!, status: "running", completedAt: null });
+    await store.saveTurn({ ...turn!, status: "running", finishedAt: null, error: null });
+
+    await app.dispose();
+    app = await bootApp(directory);
+
+    // Before recovery the run claims to be going with nothing behind it.
+    expect((await app.teams.getSnapshot(run.id)).run.status).toBe("running");
+    const recovered = await app.teams.recoverInterruptedRuns();
+    expect(recovered).toEqual({ runs: 1, turns: 1 });
+
+    const after = await app.teams.getSnapshot(run.id);
+    expect(after.run.status).toBe("paused");
+    expect(after.run.stopReason).toBe("interrupted");
+    expect(after.tasks.find((entry) => entry.id === task!.id)?.status).toBe("ready");
+    const closed = after.turns.find((entry) => entry.id === turn!.id);
+    expect(closed?.status).toBe("failed");
+    expect(closed?.error).toMatch(/Interrupted/);
+    expect(closed?.finishedAt).toBeInstanceOf(Date);
+
+    // A second start finds nothing more to do, and Resume finishes the work.
+    expect(await app.teams.recoverInterruptedRuns()).toEqual({ runs: 0, turns: 0 });
+    await app.teams.resumeRun(run.id);
+    await settle(app, run.id);
+    expect((await app.teams.getSnapshot(run.id)).run.status).toBe("completed");
   });
 
   it("cancels a run on request and says so", async () => {

@@ -1,5 +1,5 @@
-import { asc, desc, eq } from "drizzle-orm";
-import { relative, resolve, sep } from "node:path";
+import { asc, desc, eq, inArray } from "drizzle-orm";
+import { join, relative, resolve, sep } from "node:path";
 import type { Database } from "@ai-workbench/database";
 import { teamAgents, teamRuns, teams, workspaces, type TeamAgentRow, type TeamRow } from "@ai-workbench/database";
 import type {
@@ -9,11 +9,13 @@ import type {
   InstallationStatus,
   Logger,
   McpServerConfig,
+  MessageAttachment,
   ModelInfo,
   ProviderCapabilities,
   ProviderEvent,
   ProviderMetadata,
   ProviderUsageSnapshot,
+  TeamDecision,
   TeamDefinition,
   TeamEvent,
   TeamMessage,
@@ -35,6 +37,8 @@ import {
   TeamOrchestrator,
   TeamService,
   newAgentId,
+  newDecisionId,
+  newMessageId,
   newRunId,
   newTeamId,
   type AgentRuntime,
@@ -60,6 +64,8 @@ import type { McpService } from "./mcp-service.js";
 import type { ProviderManager } from "./provider-manager.js";
 import { ToolBridge } from "./tool-bridge.js";
 import { SqlTeamRunStore, toRun } from "./team-store.js";
+import { inspectAttachments, keepAttachments } from "./attachments.js";
+import { createId } from "./ids.js";
 
 export class TeamNotFoundError extends Error {
   constructor(id: string) {
@@ -124,6 +130,11 @@ export interface TeamManagerOptions {
   /** Present when team agents may use servers selected for them (spec §38). */
   readonly mcp?: McpService;
   /**
+   * Where each run keeps copies of the files sent in it, mirroring solo
+   * sessions. Without one, files go to the tool from where picked.
+   */
+  readonly attachmentsDirectory?: string;
+  /**
    * How a provider spawns its scoped team MCP server. Without it no team
    * server is handed out: there is no default, because the stdio bridge
    * serving a live run does not exist yet — the scope in the server's
@@ -152,6 +163,7 @@ export class TeamManager {
   readonly #store: SqlTeamRunStore;
   readonly #mcp: McpService | undefined;
   readonly #teamMcp: TeamMcpStdio | undefined;
+  readonly #attachmentsDirectory: string | undefined;
   readonly #toolBridge = new ToolBridge();
   readonly #active = new Map<string, ActiveRun>();
 
@@ -163,6 +175,7 @@ export class TeamManager {
     this.#store = new SqlTeamRunStore(options.db);
     this.#mcp = options.mcp;
     this.#teamMcp = options.teamMcp;
+    this.#attachmentsDirectory = options.attachmentsDirectory;
   }
 
   // --- teams ---------------------------------------------------------------
@@ -302,17 +315,48 @@ export class TeamManager {
   /**
    * Renames the team, changes who is on it and what each member runs on, and
    * picks the lead. A member that keeps its id keeps its place in earlier
-   * runs; one left out leaves the team. Refused while a run is going: the
-   * run would otherwise lose an agent it is waiting on.
+   * runs; one left out leaves the team.
+   *
+   * While a run is going only safe changes are allowed: adding members,
+   * renaming, instructions and lead. Removing a member or moving an existing
+   * one to another provider/model is refused — the run may be waiting on that
+   * agent or already hold its provider session. Additions are pushed into the
+   * live run so the session shows them without a reload.
    */
   async update(raw: UpdateTeamInputData): Promise<TeamDefinition> {
     const input = updateTeamInputSchema.parse(raw);
     const team = await this.require(input.teamId);
-    const busy = [...this.#active.values()].some(
+    const actives = [...this.#active.values()].filter(
       (active) => active.service.run.teamId === team.id && active.service.run.status === "running",
     );
-    if (busy) {
-      throw new TeamBusyError(team.id);
+    if (actives.length > 0 && input.agents) {
+      const inputIds = new Set(
+        input.agents.map((agent) => agent.id).filter((id): id is string => Boolean(id)),
+      );
+      const removed = team.agents.filter((agent) => !inputIds.has(agent.id));
+      if (removed.length > 0) {
+        throw new TeamBusyError(team.id);
+      }
+      const current = new Map(team.agents.map((agent) => [agent.id, agent]));
+      for (const agent of input.agents) {
+        if (!agent.id) {
+          continue;
+        }
+        const existing = current.get(agent.id);
+        if (!existing) {
+          continue;
+        }
+        // The run already holds this agent's provider session; switching its
+        // tool mid-run would strand in-flight work.
+        if (
+          (agent.providerId !== undefined && agent.providerId !== existing.providerId) ||
+          (agent.modelId !== undefined && (agent.modelId ?? undefined) !== (existing.modelId ?? undefined))
+        ) {
+          throw new TeamBusyError(team.id);
+        }
+      }
+    } else if (actives.length > 0 && !input.agents) {
+      // Name/instructions/lead only: safe, falls through.
     }
 
     let agentIds = team.agents.map((agent) => agent.id);
@@ -366,7 +410,21 @@ export class TeamManager {
       })
       .where(eq(teams.id, team.id));
     this.#logger.info("Team updated", { teamId: team.id, agents: agentIds.length });
-    return this.require(team.id);
+    const updated = await this.require(team.id);
+    // A run that is going keeps its tasks and turns but sees the new roster
+    // at once: every member works in the run's own folder, whatever the rows
+    // once said, so the folder override is re-applied here.
+    for (const active of actives) {
+      const folder =
+        active.service.team.agents[0]?.workingDirectory ??
+        updated.agents[0]?.workingDirectory ??
+        "";
+      active.service.setTeam({
+        ...updated,
+        agents: updated.agents.map((agent) => ({ ...agent, workingDirectory: folder })),
+      });
+    }
+    return updated;
   }
 
   async delete(teamId: string): Promise<boolean> {
@@ -406,7 +464,12 @@ export class TeamManager {
   }
 
   /** Creates a run and starts it. The promise resolves when the run ends. */
-  async startRun(input: { teamId: string; goal: string; workspaceId?: string }): Promise<TeamRun> {
+  async startRun(input: {
+    teamId: string;
+    goal: string;
+    workspaceId?: string;
+    attachments?: readonly Pick<MessageAttachment, "path">[];
+  }): Promise<TeamRun> {
     const team = await this.require(input.teamId);
     if (team.agents.length === 0) {
       throw new Error("A team needs at least one agent before it can run");
@@ -438,17 +501,215 @@ export class TeamManager {
       startedAt: null,
       finishedAt: null,
     };
+    // Files starting the run travel as the first mail. It is written before
+    // the run is driven, so the lead's very first turn already reads it —
+    // sent afterwards, the copy of the files raced that turn and lost.
+    const messages: TeamMessage[] = [];
+    const starting = input.attachments ?? [];
+    let kept: MessageAttachment[] = [];
+    if (starting.length > 0) {
+      try {
+        kept = await this.#keepTeamAttachments(run.id, starting);
+      } catch (error) {
+        this.#logger.warn("Run goal files could not be kept", {
+          runId: run.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (kept.length > 0) {
+      run.messageCount = 1;
+    }
     await this.#store.saveRun(run);
+    if (kept.length > 0) {
+      const request: TeamMessage = {
+        id: newMessageId(),
+        runId: run.id,
+        from: "user",
+        to: team.leadAgentId ?? "*",
+        type: "request",
+        content: input.goal,
+        taskId: null,
+        attachments: kept,
+        readAt: null,
+        timestamp: now,
+      };
+      await this.#store.saveMessage(request);
+      messages.push(request);
+    }
 
     this.#drive(team, folder, {
       run,
       tasks: [],
-      messages: [],
+      messages,
       decisions: [],
       artifacts: [],
       turns: [],
     });
     return run;
+  }
+
+  /**
+   * Gives a finished run its next goal without clearing the chat.
+   *
+   * A new goal used to mean a brand-new run, so the session's timeline was
+   * swapped for an empty one: the old tasks, messages and turns vanished from
+   * the view, and the agents lost their context too. Continuing reopens the
+   * same run instead — the previous outcome is kept as a decision, the new
+   * goal arrives as the next user message, and everything stays in the one
+   * timeline the lead reads on its next turn. The spend counters restart for
+   * the new segment (they are budgets for work, not history); the finished
+   * tasks and turns stay as the record the team works from.
+   */
+  async continueRun(input: {
+    runId: string;
+    goal: string;
+    attachments?: readonly Pick<MessageAttachment, "path">[];
+  }): Promise<TeamRun> {
+    if (this.#active.has(input.runId)) {
+      throw new Error("This run is still going; send the team a note instead of a new goal.");
+    }
+    const snapshot = await this.#store.loadSnapshot(input.runId);
+    if (!snapshot) {
+      throw new TeamRunNotFoundError(input.runId);
+    }
+    const status = snapshot.run.status;
+    if (status === "running" || status === "pending") {
+      throw new Error("This run is still going; send the team a note instead of a new goal.");
+    }
+    if (status === "paused") {
+      throw new Error("This run is paused; resume it instead of starting a new goal.");
+    }
+    const goal = input.goal.trim();
+    if (!goal) {
+      throw new Error("A goal needs words before the team can continue.");
+    }
+    const team = await this.require(snapshot.run.teamId);
+    const now = new Date();
+
+    // The new goal message is written with the reopened run, before the
+    // orchestrator is driving again, so the lead's first turn already reads
+    // it — the same way a run started with files carries its goal as mail.
+    const kept = await this.#keepTeamAttachments(snapshot.run.id, input.attachments ?? []);
+    const continued: TeamRun = {
+      ...snapshot.run,
+      goal,
+      status: "pending",
+      stopReason: null,
+      outcome: null,
+      sharedState: { ...snapshot.run.sharedState, goal },
+      agentCalls: 0,
+      failures: 0,
+      // The new goal's own request below is the one message counted.
+      messageCount: 1,
+      finishedAt: null,
+    };
+    await this.#store.saveRun(continued);
+
+    const additions: TeamRunSnapshot = {
+      ...snapshot,
+      run: continued,
+      messages: [...snapshot.messages],
+      decisions: [...snapshot.decisions],
+    };
+    if (snapshot.run.outcome) {
+      const finished: TeamDecision = {
+        id: newDecisionId(),
+        runId: continued.id,
+        author: team.leadAgentId ?? team.agents[0]?.id ?? "user",
+        title: `Finished: ${snapshot.run.goal.slice(0, 120)}`,
+        reason: "",
+        decision: snapshot.run.outcome,
+        relatedTasks: [],
+        timestamp: now,
+      };
+      additions.decisions.push(finished);
+      await this.#store.saveDecision(finished);
+    }
+    const request: TeamMessage = {
+      id: newMessageId(),
+      runId: continued.id,
+      from: "user",
+      to: team.leadAgentId ?? "*",
+      type: "request",
+      content: goal,
+      taskId: null,
+      attachments: kept,
+      readAt: null,
+      timestamp: now,
+    };
+    additions.messages.push(request);
+    await this.#store.saveMessage(request);
+
+    this.#drive(team, await this.#runFolder(team, continued.workspaceId), additions);
+    return continued;
+  }
+
+  /**
+   * Runs the application was driving when it stopped — a crash, a kill, a
+   * restart during development — are still marked as going in the database,
+   * with nothing behind them: the screen says "Working", a note is refused as
+   * "not going" and a new goal as "still going". Called once at startup, before
+   * anything can drive a run, this settles them (spec §53):
+   *
+   * - the run is paused with the reason `interrupted`, so it offers Resume;
+   * - tasks a dead process had claimed become ready again;
+   * - turns cut off mid-answer are closed as failed, saying why.
+   *
+   * Nothing is started: resuming spends the person's quota and stays their
+   * decision.
+   */
+  async recoverInterruptedRuns(): Promise<{ runs: number; turns: number }> {
+    const rows = await this.#db
+      .select({ id: teamRuns.id })
+      .from(teamRuns)
+      .where(inArray(teamRuns.status, ["running", "pending"]));
+    let runs = 0;
+    let turns = 0;
+    const now = new Date();
+    for (const { id } of rows) {
+      if (this.#active.has(id)) {
+        continue;
+      }
+      try {
+        const snapshot = await this.#store.loadSnapshot(id);
+        if (!snapshot) {
+          continue;
+        }
+        for (const task of snapshot.tasks) {
+          if (task.status === "claimed" || task.status === "running") {
+            await this.#store.saveTask({ ...task, status: "ready", startedAt: null });
+          }
+        }
+        for (const turn of snapshot.turns) {
+          if (turn.status === "running") {
+            turns += 1;
+            await this.#store.saveTurn({
+              ...turn,
+              status: "failed",
+              error: "Interrupted: AI Workbench stopped while this turn was running.",
+              finishedAt: now,
+            });
+          }
+        }
+        await this.#store.saveRun({
+          ...snapshot.run,
+          status: "paused",
+          stopReason: "interrupted",
+        });
+        runs += 1;
+      } catch (error) {
+        // One unreadable run must not keep the others stuck.
+        this.#logger.warn("Interrupted run could not be recovered", {
+          runId: id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    if (runs > 0) {
+      this.#logger.info("Recovered interrupted team runs", { runs, turns });
+    }
+    return { runs, turns };
   }
 
   /** Picks a persisted run back up after a restart or a pause (spec §53). */
@@ -476,6 +737,20 @@ export class TeamManager {
         }
       }
     }
+    // A turn still open belongs to a process that is gone; left open, its
+    // member reads as working forever.
+    for (const [index, turn] of snapshot.turns.entries()) {
+      if (turn.status === "running") {
+        const closed = {
+          ...turn,
+          status: "failed" as const,
+          error: turn.error ?? "Interrupted: AI Workbench stopped while this turn was running.",
+          finishedAt: turn.finishedAt ?? new Date(),
+        };
+        await this.#store.saveTurn(closed);
+        snapshot.turns[index] = closed;
+      }
+    }
     const team = await this.require(snapshot.run.teamId);
     this.#drive(team, await this.#runFolder(team, snapshot.run.workspaceId), snapshot);
     return snapshot.run;
@@ -483,21 +758,61 @@ export class TeamManager {
 
   /**
    * A note from the person to a running team. It goes to the lead (or to
-   * everyone on a team without one) and is read on that agent's next turn,
-   * like any message on the team; nothing interrupts a turn in flight.
+   * everyone on a team without one) and the lead reads it on its next turn —
+   * a priority turn alongside any batch still working, never after it, so a
+   * note never waits behind long member turns. Files travel with it the way
+   * a solo chat sends them.
    */
-  async sendNote(runId: string, content: string): Promise<TeamMessage> {
+  async sendNote(
+    runId: string,
+    content: string,
+    attachments: readonly Pick<MessageAttachment, "path">[] = [],
+  ): Promise<TeamMessage> {
     const active = this.#active.get(runId);
     const status = active?.service.run.status;
     if (!active || (status !== "running" && status !== "pending")) {
       throw new Error("This run is not going; give the team a new goal instead.");
     }
-    return active.service.sendMessage({
+    const kept = await this.#keepTeamAttachments(runId, attachments);
+    const message = await active.service.sendMessage({
       from: "user",
       to: active.service.team.leadAgentId ?? "*",
       type: "request",
       content,
+      attachments: kept,
     });
+    // Wake the lead even while members are working; the orchestrator turns
+    // the flag into a priority lead turn. Never throws: the note is kept
+    // even if the nudge fails (the loop also polls unread user mail).
+    try {
+      active.orchestrator.notifyLeadMessage();
+    } catch (error) {
+      this.#logger.warn("Lead interrupt nudge failed", {
+        runId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return message;
+  }
+
+  /**
+   * Files going with a team message, checked on disk and copied into the run's
+   * own folder. No capability gate here: every adapter receives the same
+   * `AgentMessage.attachments` and applies its own profile flags, so the core
+   * stays provider-independent.
+   */
+  async #keepTeamAttachments(
+    runId: string,
+    attachments: readonly Pick<MessageAttachment, "path">[],
+  ): Promise<MessageAttachment[]> {
+    if (attachments.length === 0) {
+      return [];
+    }
+    const inspected = await inspectAttachments(attachments);
+    if (!this.#attachmentsDirectory) {
+      return inspected;
+    }
+    return keepAttachments(inspected, join(this.#attachmentsDirectory, runId, createId("files")));
   }
 
   async pauseRun(runId: string): Promise<TeamRun> {

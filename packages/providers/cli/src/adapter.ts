@@ -491,9 +491,9 @@ export class CliProviderAdapter implements AIProviderAdapter {
           if (event.type === "text_delta" || event.type === "message") {
             producedText = true;
           }
-          if (event.type === "usage" && event.usage.limits.length > 0) {
-            // A turn is also a fresh reading of the account's limits.
-            this.#usage.observeTurn(event.usage.limits);
+          if (event.type === "usage") {
+            // A turn is also a fresh reading of what the account spent.
+            this.#usage.observeUsage(event.usage);
           }
           yield event;
         }
@@ -689,9 +689,19 @@ export class CliProviderAdapter implements AIProviderAdapter {
       watch: (onMetrics) => {
         try {
           return telemetry.watch((metrics) => {
-            if (metrics.limits.length > 0) {
-              this.#usage.observeTurn(metrics.limits, metrics.updatedAt);
-            }
+            this.#usage.observeUsage(
+              {
+                limits: metrics.limits,
+                ...(metrics.tokens === undefined
+                  ? {}
+                  : {
+                      inputTokens: metrics.tokens.input,
+                      outputTokens: metrics.tokens.output,
+                    }),
+                ...(metrics.costUsd === undefined ? {} : { costUsd: metrics.costUsd }),
+              },
+              metrics.updatedAt,
+            );
             onMetrics(metrics);
           });
         } catch (error) {

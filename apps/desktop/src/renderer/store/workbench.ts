@@ -75,6 +75,35 @@ export type WorkspaceTab = "terminal" | "files" | "changes";
 type WorkspaceMode = "chat" | "terminals";
 
 const UI_STORAGE_KEY = "ai-workbench.ui";
+const DRAFT_STORAGE_KEY = "ai-workbench.drafts";
+
+/** Unsent composer text per draft key (usually the session id). */
+function readStoredDrafts(): Record<string, string> {
+  try {
+    const raw = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : {};
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const drafts: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value === "string" && value.length > 0 && key.length > 0) {
+          drafts[key] = value.slice(0, 20_000);
+        }
+      }
+      return drafts;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredDrafts(drafts: Record<string, string>): void {
+  try {
+    window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+  } catch {
+    // A draft that cannot be remembered is not worth an error.
+  }
+}
 
 interface StoredUi {
   readonly workspaceMode?: WorkspaceMode;
@@ -103,6 +132,7 @@ function writeStoredUi(patch: StoredUi): void {
 }
 
 const storedUi = typeof window === "undefined" ? {} : readStoredUi();
+const storedDrafts = typeof window === "undefined" ? {} : readStoredDrafts();
 
 interface WorkbenchState {
   ready: boolean;
@@ -164,6 +194,15 @@ interface WorkbenchState {
   messages: Record<string, ChatMessage[]>;
   status: Record<string, SessionStatus>;
   busy: Record<string, boolean>;
+  /**
+   * Unsent composer text per draft key (the session id for solo chats,
+   * `team:<sessionId>` inside a team session). Kept here — not in the
+   * Composer's local state — so tabbing to another session and back restores
+   * what was typed. Mirrored to localStorage so a reload keeps it too.
+   */
+  drafts: Record<string, string>;
+  setDraft(key: string, text: string): void;
+  clearDraft(key: string): void;
 
   initialize(): Promise<void>;
   setError(error: string | null): void;
@@ -226,6 +265,7 @@ interface WorkbenchState {
     teamId: string;
     /** Starts a run with this goal instead of opening an existing one. */
     goal?: string;
+    attachments?: MessageAttachment[];
   }): Promise<void>;
   /** Leaves team mode; the session is a normal solo conversation again. */
   clearSessionTeam(sessionId: string): Promise<void>;
@@ -299,11 +339,11 @@ interface WorkbenchState {
     allowOutsideWorkspace?: boolean;
   }): Promise<boolean>;
   /** Starts a run in the workspace that is open (or the given one). */
-  startTeamRun(teamId: string, goal: string, workspaceId?: string): Promise<void>;
+  startTeamRun(teamId: string, goal: string, workspaceId?: string, attachments?: MessageAttachment[]): Promise<void>;
   /** Name, members, lead and instructions; false (and an error) if refused. */
   updateTeam(input: UpdateTeamInputData): Promise<boolean>;
   /** A note to a running team's lead, read on its next turn. */
-  sendTeamNote(runId: string, content: string): Promise<boolean>;
+  sendTeamNote(runId: string, content: string, attachments?: MessageAttachment[]): Promise<boolean>;
   openTeamRun(runId: string | null): Promise<void>;
   refreshTeamRun(runId: string): Promise<void>;
   pauseTeamRun(runId: string): Promise<void>;
@@ -371,6 +411,20 @@ function scopeIdsOf(state: {
   };
 }
 
+/**
+ * The name a team session takes from the goal starting its run: the first
+ * line, collapsed and capped, exactly like a solo session takes the topic of
+ * its first exchange (`SessionManager`). Null when there is nothing to name
+ * from, or the session was already renamed by the person.
+ */
+function teamGoalName(current: string, goal: string | undefined): string | null {
+  if (!goal || !/^Session \d+$/.test(current)) {
+    return null;
+  }
+  const topic = goal.split("\n")[0]?.replace(/\s+/g, " ").trim() ?? "";
+  return topic.length > 0 ? topic.slice(0, 48) : null;
+}
+
 function byProviderId(
   configs: StoredProviderConfig[],
 ): Record<string, StoredProviderConfig> {
@@ -432,6 +486,38 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   messages: {},
   status: {},
   busy: {},
+  drafts: storedDrafts,
+
+  setDraft(key, text) {
+    if (!key) {
+      return;
+    }
+    set((state) => {
+      const next = { ...state.drafts };
+      if (text.length === 0) {
+        delete next[key];
+      } else {
+        next[key] = text.slice(0, 20_000);
+      }
+      writeStoredDrafts(next);
+      return { drafts: next };
+    });
+  },
+
+  clearDraft(key) {
+    if (!key) {
+      return;
+    }
+    set((state) => {
+      if (!(key in state.drafts)) {
+        return state;
+      }
+      const next = { ...state.drafts };
+      delete next[key];
+      writeStoredDrafts(next);
+      return { drafts: next };
+    });
+  },
 
   async initialize() {
     // A retry starts clean: the boot screen stays until this run settles.
@@ -671,6 +757,9 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async selectSession(id) {
     const token = ++sessionRequest;
     set({ activeSessionId: id, view: "chat" });
+    // Usage is cached per provider, so switching sessions re-reads what is
+    // known at once and refreshes it in the background when it went stale.
+    void get().refreshUsage();
     if (!id || get().messages[id]) {
       return;
     }
@@ -755,13 +844,18 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
           session.id === updated.id ? updated : session,
         ),
       }));
+      // A new provider or model may report different usage; the cached
+      // snapshot is re-read at once and refreshed when it went stale.
+      if (input.providerId !== undefined || input.modelId !== undefined) {
+        void get().refreshUsage();
+      }
       return;
     } catch (error) {
       set({ error: describeError(error) });
     }
   },
 
-  async setSessionTeam({ sessionId, teamId, goal }) {
+  async setSessionTeam({ sessionId, teamId, goal, attachments }) {
     try {
       const session = get().sessions.find((entry) => entry.id === sessionId);
       if (!session) {
@@ -770,15 +864,57 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       let runId: string | null = null;
       const value = goal?.trim();
       if (value) {
-        // A goal means a new run; otherwise the newest run of the team is
-        // shown, the live one first if there is one.
-        // The run works in this session's workspace, wherever the team was made.
-        const started = await invoke("team.startRun", {
-          teamId,
-          goal: value,
-          workspaceId: session.workspaceId,
-        });
-        runId = started.id;
+        const attachmentArgs =
+          attachments && attachments.length > 0
+            ? {
+                attachments: attachments.map(({ path, name, kind }) => ({ path, name, kind })),
+              }
+            : {};
+        // A finished run keeps its timeline: the next goal continues the same
+        // run instead of swapping the chat for an empty one. Only a run that
+        // is gone, or belongs to another team, starts fresh.
+        const prevRunId =
+          (session.uiState as Record<string, unknown>)["teamRunId"] ?? null;
+        const prevTeamId =
+          (session.uiState as Record<string, unknown>)["teamId"] ?? null;
+        let prevStatus: string | null = null;
+        if (typeof prevRunId === "string" && prevTeamId === teamId) {
+          try {
+            prevStatus = (await invoke("team.getRun", { runId: prevRunId })).run.status;
+          } catch {
+            prevStatus = null;
+          }
+        }
+        if (
+          typeof prevRunId === "string" &&
+          (prevStatus === "completed" ||
+            prevStatus === "failed" ||
+            prevStatus === "cancelled")
+        ) {
+          const continued = await invoke("team.continueRun", {
+            runId: prevRunId,
+            goal: value,
+            ...attachmentArgs,
+          });
+          runId = continued.id;
+        } else if (prevStatus === "paused") {
+          set({ error: "This run is paused — resume it instead of starting a new goal." });
+          return;
+        } else if (prevStatus !== null) {
+          set({ error: "This run is still going — send the team a note instead of a new goal." });
+          return;
+        } else {
+          // A goal means a new run; otherwise the newest run of the team is
+          // shown, the live one first if there is one.
+          // The run works in this session's workspace, wherever the team was made.
+          const started = await invoke("team.startRun", {
+            teamId,
+            goal: value,
+            workspaceId: session.workspaceId,
+            ...attachmentArgs,
+          });
+          runId = started.id;
+        }
       } else {
         const runs = await invoke("team.listRuns", { teamId });
         // A team picked in a session must never inherit a run from another
@@ -791,8 +927,13 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
           own[0]?.id ??
           null;
       }
+      // A session that still has its generated name takes the topic of the
+      // goal starting its team run, the same way a solo session takes the
+      // topic of its first exchange. Renamed sessions are never touched.
+      const goalName = teamGoalName(session.name, value);
       const updated = await invoke("session.update", {
         id: sessionId,
+        ...(goalName !== null ? { name: goalName } : {}),
         uiState: { ...session.uiState, teamId, teamRunId: runId },
       });
       set((state) => ({
@@ -823,6 +964,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async deleteSession(id) {
     try {
       await invoke("session.delete", { id });
+      get().clearDraft(id);
+      get().clearDraft(`team:${id}`);
       const remaining = get().sessions.filter((session) => session.id !== id);
       await get().selectSession(remaining[0]?.id ?? null);
     } catch (error) {
@@ -857,6 +1000,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
           ? { attachments: attachments.map(({ path, name, kind }) => ({ path, name, kind })) }
           : {}),
       });
+      // Sent means the draft is spent; dropping it keeps a resent box empty.
+      get().clearDraft(sessionId);
     } catch (error) {
       set((state) => ({
         error: describeError(error),
@@ -1237,9 +1382,21 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
    * outside the workspace is refused by the host unless the person allowed it
    * here — this is the switch that makes it a decision, not a side effect.
    */
-  async sendTeamNote(runId, content) {
+  async sendTeamNote(runId, content, attachments = []) {
     try {
-      await invoke("team.sendMessage", { runId, content });
+      await invoke("team.sendMessage", {
+        runId,
+        content,
+        ...(attachments.length > 0
+          ? { attachments: attachments.map(({ path, name, kind }) => ({ path, name, kind })) }
+          : {}),
+      });
+      const host = get().sessions.find(
+        (session) => (session.uiState as Record<string, unknown>)["teamRunId"] === runId,
+      );
+      if (host) {
+        get().clearDraft(`team:${host.id}`);
+      }
       await get().refreshTeamRun(runId);
       return true;
     } catch (error) {
@@ -1278,13 +1435,16 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  async startTeamRun(teamId, goal, workspaceId) {
+  async startTeamRun(teamId, goal, workspaceId, attachments = []) {
     try {
       const where = workspaceId ?? get().activeWorkspaceId ?? undefined;
       const run = await invoke("team.startRun", {
         teamId,
         goal,
         ...(where ? { workspaceId: where } : {}),
+        ...(attachments.length > 0
+          ? { attachments: attachments.map(({ path, name, kind }) => ({ path, name, kind })) }
+          : {}),
       });
       await get().refreshTeams();
       await get().openTeamRun(run.id);

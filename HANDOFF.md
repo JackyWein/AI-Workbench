@@ -39,6 +39,42 @@ editor if a team should follow each workspace. Repro: run in WS-A →
 new session (same or other workspace) → pick team → before fix the old
 goal/tasks/folder appeared, after fix the session is fresh.
 
+ Team next-goal keeps the chat (Builder, task_4dee9188, uncommitted): a new goal
+ in a session whose run already finished no longer starts a fresh run that swaps
+ the timeline for an empty one. `TeamManager.continueRun`
+ (`packages/core/src/team-manager.ts`) reopens the same run: status back to
+ pending, goal + `sharedState.goal` replaced, spend counters
+ (agentCalls/failures/messageCount) restarted for the new segment, previous
+ outcome kept as a decision, new goal stored as the next user `request` message
+ — all before `#drive`, so the lead's first turn already reads it. Refused while
+ going (send a note instead) or paused (resume instead). Wired through new
+ `team.continueRun` IPC (`shared/ipc/contract.ts`, `desktop/src/main/ipc.ts`);
+ `setSessionTeam` (`store/workbench.ts`) uses it when the session's own
+ `teamRunId` is finished, still `startRun`s when the run record is gone or belongs
+ to another team, and refuses to fork a parallel run when the old one is still
+ going/paused. Tests: `team-flow` +2 (history preserved incl. outcome decision,
+ refusal while going) — 14/14 pass; `typecheck` OK; `eslint` OK on touched files.
+ Full `bun run test` was still running when this was written; `verify:app` still
+ needs Linux/macOS (Windows fails by design) before PROGRESS.md moves.
+
+Crash handling and recovery (2026-09-24): the "random crashes" were mostly
+the dev build restarting while a team worked on this very repository
+(electron-vite restarts main on every source change), plus crashes nothing
+recorded. Now: `apps/desktop/src/main/crash-guard.ts` catches unhandled
+exceptions/rejections (log + report, keep running), reloads a crashed window
+(3 per minute, then asks), offers a reload for a hung window, logs dead helper
+processes, and keeps a `session.json` marker so the next start knows it was
+not a clean exit (report under `crash-reports/` with the log tail).
+`TeamManager.recoverInterruptedRuns` pauses runs a crash left "running" with
+stop reason `interrupted` and closes their open turns (before: stuck on
+"Working", notes refused). Renderer: every region has an error boundary,
+`AppCrashBoundary` wraps the app, errors reach the main log via
+`app.reportError`, and `RecoveryNotice` says what was recovered. The
+orchestrator now gives one agent at most one turn at a time (a batch used to
+run two tasks of one member on the same provider session). Verified against a
+copy of the real data: stuck run → Paused/Resume, hard kill → notice + report,
+forced renderer crash → window reloaded.
+
 ## Where things stand (2026-09-24, release 0.0.7)
 
 `bun run verify` passes end to end: lockfile, lint, typecheck, 942

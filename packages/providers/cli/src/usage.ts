@@ -85,6 +85,8 @@ export class UsageStore {
   readonly #staleAfterMs: number;
   #reading: ProviderUsageSnapshot | null = null;
   #turn: ProviderUsageSnapshot | null = null;
+  /** Whether the turn snapshot holds bare turn amounts rather than named limits. */
+  #turnSynthetic = false;
   #inFlight: Promise<void> | null = null;
   #lastAttemptAt = Number.NEGATIVE_INFINITY;
   #failed = false;
@@ -163,9 +165,45 @@ export class UsageStore {
 
   /** Records the limits a turn reported. */
   observeTurn(limits: readonly UsageLimit[], at: Date = new Date(this.#now())): void {
-    if (limits.length === 0) {
+    this.observeUsage({ limits }, at);
+  }
+
+  /**
+   * Records what a turn reported: its limits when it named any, otherwise its
+   * bare token and cost counts as amounts used (spec §55, §56). Some tools
+   * only name their rate limits in a separate event, so a turn that only says
+   * "this many tokens, this much cost" would otherwise leave nothing visible.
+   * Bare amounts only fill the gap while nothing named is known: they never
+   * hide rate limits the tool reported.
+   */
+  observeUsage(
+    usage: {
+      readonly limits: readonly UsageLimit[];
+      readonly inputTokens?: number;
+      readonly outputTokens?: number;
+      readonly costUsd?: number;
+    },
+    at: Date = new Date(this.#now()),
+  ): void {
+    if (usage.limits.length > 0) {
+      this.#storeTurn([...usage.limits], false, at);
       return;
     }
+    if (this.#reading && this.#reading.limits.length > 0) {
+      return;
+    }
+    if (this.#turn && !this.#turnSynthetic) {
+      return;
+    }
+    const amounts = turnAmounts(usage);
+    if (amounts.length === 0) {
+      return;
+    }
+    this.#storeTurn(amounts, true, at);
+  }
+
+  /** Stores a turn snapshot and persists it when what callers see changed. */
+  #storeTurn(limits: UsageLimit[], synthetic: boolean, at: Date): void {
     const before = signature(this.#freshest());
     const plan = this.#reading?.plan;
     this.#turn = {
@@ -177,6 +215,7 @@ export class UsageStore {
       // The plan does not change between turns; a turn just does not say it.
       ...(plan === undefined ? {} : { plan }),
     };
+    this.#turnSynthetic = synthetic;
     if (signature(this.#freshest()) !== before) {
       this.#notify();
     }
@@ -320,9 +359,29 @@ function reviveDates(record: unknown): unknown {
   };
 }
 
+/**
+ * A turn's bare token and cost counts as used-amount limits, the same shape
+ * the stats commands report: what was spent, never a remaining quota.
+ */
+function turnAmounts(usage: {
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+  readonly costUsd?: number;
+}): UsageLimit[] {
+  const limits: UsageLimit[] = [];
+  const input = usage.inputTokens ?? 0;
+  const output = usage.outputTokens ?? 0;
+  if (usage.inputTokens !== undefined || usage.outputTokens !== undefined) {
+    limits.push({ id: "tokens", label: "Tokens", used: input + output, unit: "tokens" });
+  }
+  if (usage.costUsd !== undefined) {
+    limits.push({ id: "cost", label: "Cost", used: usage.costUsd, unit: "usd" });
+  }
+  return limits;
+}
+
 /** What a caller would see, without the time it was read. */
-function signature(snapshot: ProviderUsageSnapshot | null): string {
-  if (!snapshot) {
+function signature(snapshot: ProviderUsageSnapshot | null): string {  if (!snapshot) {
     return "";
   }
   const { state, limits, plan, note } = snapshot;

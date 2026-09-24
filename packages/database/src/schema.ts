@@ -506,6 +506,10 @@ export const teamMessages = sqliteTable("team_messages", {
   type: text("type").notNull(),
   content: text("content").notNull(),
   taskId: text("task_id"),
+  attachments: text("attachments", { mode: "json" })
+    .$type<unknown[]>()
+    .notNull()
+    .default(sql`'[]'`),
   readAt: integer("read_at", { mode: "timestamp_ms" }),
   timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
 });

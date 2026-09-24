@@ -10,6 +10,7 @@ import type {
   TeamTask,
 } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { effortLabel } from "../lib/reasoning-effort.js";
 import { useNow } from "../lib/usage.js";
 import { Logo } from "./Logo.js";
 
@@ -137,13 +138,14 @@ export function MemberAvatar({
   );
 }
 
-/** What a member runs on, in words: "Claude Code · Sonnet". */
+/** What a member runs on, in words: "Claude Code · Sonnet · High". */
 export function runsOn(agent: AgentDefinition, providers: readonly ProviderSummary[]): string {
   const provider = providers.find((entry) => entry.metadata.id === agent.providerId);
   const model = provider?.models.find((entry) => entry.id === agent.modelId);
+  const effort = agent.settings["reasoningEffort"];
   return `${provider?.metadata.displayName ?? agent.providerId}${
     agent.modelId ? ` · ${model?.displayName ?? agent.modelId}` : ""
-  }`;
+  }${typeof effort === "string" && effort.trim() ? ` · ${effortLabel(effort.trim())}` : ""}`;
 }
 
 export function TaskIcon({ task }: { readonly task: TeamTask }): JSX.Element {
@@ -249,6 +251,8 @@ export function stopReasonLabel(reason: TeamRunStopReason): string {
       return "Too many failures";
     case "limitReached":
       return "Limit reached";
+    case "interrupted":
+      return "Interrupted — the app stopped";
   }
 }
 

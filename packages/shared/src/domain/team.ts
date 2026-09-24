@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { messageAttachmentSchema } from "./message.js";
 
 /**
  * The team model (spec §40–§53).
@@ -35,6 +36,17 @@ export const AGENT_INSTRUCTIONS_LIMIT = 8_000;
 export function agentInstructions(agent: Pick<AgentDefinition, "settings">): string {
   const value = agent.settings["instructions"];
   return typeof value === "string" ? value.trim().slice(0, AGENT_INSTRUCTIONS_LIMIT) : "";
+}
+
+/**
+ * A member's reasoning effort — how hard its tool should think — kept in its
+ * settings next to its instructions. Empty when it uses the tool's default.
+ * Stored in settings (not a dedicated column) like `agentInstructions`, so
+ * existing teams and IPC payloads keep working without a migration.
+ */
+export function agentReasoningEffort(agent: Pick<AgentDefinition, "settings">): string {
+  const value = agent.settings["reasoningEffort"];
+  return typeof value === "string" ? value.trim() : "";
 }
 
 /**
@@ -195,6 +207,8 @@ export const teamMessageSchema = z.object({
   type: teamMessageTypeSchema,
   content: z.string().max(100_000),
   taskId: z.string().min(1).nullable().default(null),
+  /** Files the person sent with this message, kept like a solo chat. */
+  attachments: z.array(messageAttachmentSchema).default([]),
   /** Set once the recipient has read it through the team interface. */
   readAt: z.date().nullable().default(null),
   timestamp: z.date(),
@@ -295,6 +309,11 @@ export const teamRunStopReasonSchema = z.enum([
   "tooManyFailures",
   "cancelled",
   "paused",
+  /**
+   * The application stopped while the run was going — a crash, a kill, a
+   * restart. The run is paused where it was and waits to be resumed.
+   */
+  "interrupted",
 ]);
 export type TeamRunStopReason = z.infer<typeof teamRunStopReasonSchema>;
 

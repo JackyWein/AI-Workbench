@@ -20,9 +20,10 @@ import {
   User,
   type LucideIcon,
 } from "lucide-react";
-import { agentInstructions, type ProviderSummary, type TeamDefinition } from "@ai-workbench/shared";
+import { agentInstructions, agentReasoningEffort, type ProviderSummary, type TeamDefinition } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
+import { effortLabel, reasoningEffortsFor } from "../lib/reasoning-effort.js";
 import {
   CUSTOM_ROLE,
   ROLE_PRESETS,
@@ -59,6 +60,8 @@ interface MemberDraft {
   instructions: string;
   providerId: string;
   modelId: string;
+  /** Reasoning effort, or "" for the tool's default. */
+  effort: string;
   /** Settings the editor does not show, kept as they were. */
   readonly settings: Record<string, unknown>;
 }
@@ -71,6 +74,7 @@ function draftFrom(preset: RolePreset | typeof CUSTOM_ROLE, key: number, provide
     instructions: preset.instructions,
     providerId,
     modelId: "",
+    effort: "",
     settings: {},
   };
 }
@@ -115,6 +119,7 @@ export function TeamEditor({
           instructions: agentInstructions(agent),
           providerId: agent.providerId,
           modelId: agent.modelId ?? "",
+          effort: agentReasoningEffort(agent),
           settings: agent.settings,
         }))
       : templateMembers(TEAM_TEMPLATES[0]?.members ?? [], nextKey, ""),
@@ -153,6 +158,13 @@ export function TeamEditor({
           const provider = providers.find((entry) => entry.metadata.id === change.providerId);
           if (!provider?.models.some((model) => model.id === next.modelId)) {
             next.modelId = "";
+          }
+        }
+        // Another tool or model drops an effort it does not offer.
+        if (change.providerId !== undefined || change.modelId !== undefined || change.effort !== undefined) {
+          const provider = providers.find((entry) => entry.metadata.id === next.providerId);
+          if (next.effort && !reasoningEffortsFor(provider, next.modelId || null).includes(next.effort)) {
+            next.effort = "";
           }
         }
         return next;
@@ -202,10 +214,23 @@ export function TeamEditor({
       return;
     }
     const leadIndex = Math.max(0, roster.findIndex((member) => member.key === leadKey));
-    const settingsOf = (member: MemberDraft): Record<string, unknown> => ({
-      ...member.settings,
-      instructions: member.instructions.trim(),
-    });
+    const settingsOf = (member: MemberDraft): Record<string, unknown> => {
+      const next: Record<string, unknown> = {
+        ...member.settings,
+        instructions: member.instructions.trim(),
+      };
+      // Empty means the tool's default; no stale effort may survive a reset.
+      // Only an effort the member's tool actually offers is kept — a stored
+      // value from another tool or an older model list is dropped, never sent.
+      const provider = providers.find((entry) => entry.metadata.id === (member.providerId || firstProviderId));
+      const offered = reasoningEffortsFor(provider, member.modelId || null);
+      if (member.effort && offered.includes(member.effort)) {
+        next["reasoningEffort"] = member.effort;
+      } else {
+        delete next["reasoningEffort"];
+      }
+      return next;
+    };
     setSaving(true);
     try {
       if (!team) {
@@ -438,6 +463,9 @@ function MemberEditor({
   // picked for someone new.
   const choices = provider && !pickable.includes(provider) ? [...pickable, provider] : pickable;
   const models = provider?.capabilities.supported.includes("modelSelection") ? provider.models : [];
+  // Only what the member's tool offers for this model — same source as the
+  // chat picker, so a team never offers an effort its tool does not know.
+  const efforts = reasoningEffortsFor(provider, member.modelId || null);
   const edited = preset !== null && preset.instructions !== member.instructions;
 
   return (
@@ -538,6 +566,21 @@ function MemberEditor({
             {models.map((model) => (
               <option key={model.id} value={model.id}>
                 {model.displayName}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        {efforts.length > 0 ? (
+          <select
+            className="select member-card__model"
+            aria-label={`Reasoning effort for member ${index + 1}`}
+            value={efforts.includes(member.effort) ? member.effort : ""}
+            onChange={(event) => onPatch({ effort: event.target.value })}
+          >
+            <option value="">The tool's default effort</option>
+            {efforts.map((effort) => (
+              <option key={effort} value={effort}>
+                {effortLabel(effort)}
               </option>
             ))}
           </select>

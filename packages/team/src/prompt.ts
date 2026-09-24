@@ -1,4 +1,4 @@
-import { agentInstructions, type AgentDefinition, type TeamMessage, type TeamTask } from "@ai-workbench/shared";
+import { agentInstructions, type AgentDefinition, type MessageAttachment, type TeamMessage, type TeamTask } from "@ai-workbench/shared";
 import { TEAM_PROTOCOL_INSTRUCTIONS } from "./protocol.js";
 import type { TeamService } from "./service.js";
 
@@ -68,7 +68,7 @@ export function buildAgentPrompt(input: {
   if (inbox.length > 0) {
     sections.push(
       `MESSAGES FOR YOU\n${inbox
-        .map((message) => `from ${message.from} (${message.type}): ${message.content}`)
+        .map((message) => `from ${message.from} (${message.type}): ${message.content}${describeAttachments(message.attachments)}`)
         .join("\n")}`,
     );
   }
@@ -94,4 +94,33 @@ export function buildAgentPrompt(input: {
 
   sections.push(TEAM_PROTOCOL_INSTRUCTIONS);
   return sections.join("\n\n");
+}
+
+/**
+ * Files arriving with a team message, as the agent reads them: the kept paths
+ * on this computer, so a provider that takes no attachment flag can still open
+ * them. Providers with a flag of their own get the same files via
+ * `AgentMessage.attachments` (see the orchestrator).
+ */
+function describeAttachments(attachments: readonly MessageAttachment[] | undefined): string {
+  if (!attachments || attachments.length === 0) {
+    return "";
+  }
+  const lines = attachments.map((entry) => `- ${entry.path} (${entry.kind}, ${entry.name})`);
+  return `\nAttached files (read them from these paths):\n${lines.join("\n")}`;
+}
+
+/** Every file attached to unread mail, deduplicated by path, for provider forwarding. */
+export function inboxAttachments(inbox: readonly TeamMessage[]): MessageAttachment[] {
+  const seen = new Set<string>();
+  const collected: MessageAttachment[] = [];
+  for (const message of inbox) {
+    for (const attachment of message.attachments ?? []) {
+      if (!seen.has(attachment.path)) {
+        seen.add(attachment.path);
+        collected.push(attachment);
+      }
+    }
+  }
+  return collected;
 }

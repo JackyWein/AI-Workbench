@@ -1,10 +1,13 @@
-import { BrowserWindow, dialog, ipcMain } from "electron";
+import { BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { mkdir, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { inspectMemoryVault, openMemoryVault } from "@ai-workbench/mcp";
 import {
   APP_EVENT_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
+  MAX_ATTACHMENT_BYTES,
   ipcContract,
   type IpcChannel,
   type IpcHandlerInput,
@@ -16,6 +19,7 @@ import { importSkillFile, importSkillFolder } from "@ai-workbench/skills";
 import { remoteRoot } from "@ai-workbench/workspace-ssh";
 import type { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
 import { toProviderConfigOverrides, type AppServices } from "./services.js";
+import type { CrashGuard } from "./crash-guard.js";
 import type { IslandController } from "./island-controller.js";
 import {
   checkForUpdates,
@@ -38,6 +42,8 @@ export interface RegisterIpcOptions {
   readonly appVersion: string;
   readonly userDataPath: string;
   readonly island: IslandController;
+  /** Keeps what the interface reports and knows how the last run ended. */
+  readonly crashGuard: CrashGuard;
 }
 
 /** Subscriptions that push main-process events to the renderer. */
@@ -157,6 +163,8 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     return [...found.values()];
   };
 
+  let rendererErrorTimes: number[] = [];
+
   const handlers: Handlers = {
     "app.getInfo": () => ({
       version: options.appVersion,
@@ -164,6 +172,37 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       userDataPath: options.userDataPath,
       username: localUsername(),
     }),
+    "app.getRecovery": () => {
+      const previous = options.crashGuard.previousExit;
+      return {
+        uncleanExit: previous.unclean,
+        previousStartedAt: previous.startedAt,
+        reportPath: previous.reportPath,
+        recoveredTurns: services.recovered.turns,
+        recoveredTeamRuns: services.recovered.teamRuns,
+        recoveredTeamTurns: services.recovered.teamTurns,
+      };
+    },
+    "app.reportError": (input) => {
+      const now = Date.now();
+      // At most a burst per window of time: a view that fails on every frame
+      // must not fill the disk or drown the log.
+      rendererErrorTimes = rendererErrorTimes.filter((at) => now - at < 60_000);
+      if (rendererErrorTimes.length >= 30) {
+        return { recorded: false };
+      }
+      rendererErrorTimes.push(now);
+      options.crashGuard.recordRendererError(input);
+      return { recorded: true };
+    },
+    "app.openCrashReports": async () => {
+      const directory = options.crashGuard.reportsDirectory;
+      if (!directory) {
+        return { opened: false };
+      }
+      await mkdir(directory, { recursive: true });
+      return { opened: (await shell.openPath(directory)) === "" };
+    },
     "window.getState": () => {
       const window = findMainWindow();
       return { maximized: window?.isMaximized() ?? false, fullscreen: window?.isFullScreen() ?? false };
@@ -213,6 +252,38 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       }
       // Described from the disk; the session checks them again when sent.
       return inspectAttachments(result.filePaths.map((path) => ({ path })));
+    },
+    "session.savePastedImage": async (input) => {
+      const extensions = {
+        "image/png": "png",
+        "image/jpeg": "jpg",
+        "image/gif": "gif",
+        "image/webp": "webp",
+      } as const;
+      const extension = extensions[input.mimeType];
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(input.dataBase64, "base64");
+      } catch {
+        throw new Error("The pasted picture could not be read.");
+      }
+      if (bytes.byteLength === 0 || bytes.byteLength > MAX_ATTACHMENT_BYTES) {
+        throw new Error(
+          `The pasted picture is larger than ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB.`,
+        );
+      }
+      // Staged under a generated name in our own folder: the clipboard gives
+      // no path, and any name it carries is display-only, never a path.
+      const folder = join(options.userDataPath, "pasted-images");
+      await mkdir(folder, { recursive: true });
+      const fileName = `pasted-image-${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
+      const path = join(folder, fileName);
+      await writeFile(path, bytes);
+      const [inspected] = await inspectAttachments([{ path }]);
+      if (!inspected) {
+        throw new Error("The pasted picture could not be saved.");
+      }
+      return inspected;
     },
     "session.cancel": async (input) => ({
       cancelled: await services.sessions.cancel(input.sessionId),
@@ -601,7 +672,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     },
     "team.setLead": (input) => services.teams.setLeadAgent(input.teamId, input.agentId),
     "team.update": (input) => services.teams.update(input),
-    "team.sendMessage": (input) => services.teams.sendNote(input.runId, input.content),
+    "team.sendMessage": (input) => services.teams.sendNote(input.runId, input.content, input.attachments ?? []),
     "team.setWorkingDirectory": (input) =>
       services.teams.setWorkingDirectory(
         input.teamId,
@@ -614,8 +685,20 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
 
     "team.listRuns": (input) => services.teams.listRuns(input.teamId),
     "team.getRun": (input) => services.teams.getSnapshot(input.runId),
-    "team.startRun": (input) => services.teams.startRun(input),
+    "team.startRun": (input) =>
+      services.teams.startRun({
+        teamId: input.teamId,
+        goal: input.goal,
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.attachments ? { attachments: input.attachments } : {}),
+      }),
     "team.resumeRun": (input) => services.teams.resumeRun(input.runId),
+    "team.continueRun": (input) =>
+      services.teams.continueRun({
+        runId: input.runId,
+        goal: input.goal,
+        ...(input.attachments ? { attachments: input.attachments } : {}),
+      }),
     "team.pauseRun": (input) => services.teams.pauseRun(input.runId),
     "team.cancelRun": (input) => services.teams.cancelRun(input.runId),
 

@@ -8,6 +8,7 @@ import {
 import type { ProviderFactory } from "@ai-workbench/provider-base";
 import { claudeCodeProfile } from "./profile.js";
 import { configHomeOf, statusLineTelemetry } from "./telemetry.js";
+import { readUsage } from "./usage.js";
 
 export { claudeCodeProfile } from "./profile.js";
 
@@ -15,11 +16,16 @@ export { claudeCodeProfile } from "./profile.js";
 export const claudeCode = parseProfile(claudeCodeProfile);
 export * from "./telemetry.js";
 export * from "./attention.js";
+export * from "./usage.js";
 export { parseResetTime } from "./reset-time.js";
 
 /** What Claude Code needs beyond its profile data. */
 export const claudeCodeExtensions: CliProviderExtensions = {
   interactiveTelemetry: statusLineTelemetry,
+  // Token totals from the tool's own local transcripts, so usage is known
+  // before the first turn in the application; current rate limits still only
+  // arrive while the tool works.
+  readUsage,
   // Claude Code's own skill folders: the user's, and the project's.
   discoverImportables: async (context, request) => ({
     skills: await findSkills([

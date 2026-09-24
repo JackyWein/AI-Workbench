@@ -67,4 +67,33 @@ describe("UsageStore", () => {
     second.observeTurn(newer, new Date("2026-09-23T02:00:00Z"));
     expect((await second.get()).limits[0]?.used).toBe(40);
   });
+
+  it("shows a turn's token and cost counts when it names no limits", async () => {
+    const store = new UsageStore({ providerId: "tool", logger: nullLogger, onChange: () => {} });
+    await store.load(directory);
+    expect(await store.get()).toMatchObject({ state: "unavailable" });
+
+    // A `result` event carries counts but no rate-limit windows.
+    store.observeUsage({ limits: [], inputTokens: 100, outputTokens: 25, costUsd: 0.01 });
+    expect(await store.get()).toMatchObject({ state: "available" });
+    expect((await store.get()).limits).toEqual([
+      { id: "tokens", label: "Tokens", used: 125, unit: "tokens" },
+      { id: "cost", label: "Cost", used: 0.01, unit: "usd" },
+    ]);
+  });
+
+  it("keeps named limits when a turn reports them", async () => {
+    const store = new UsageStore({ providerId: "tool", logger: nullLogger, onChange: () => {} });
+    await store.load(directory);
+    store.observeUsage({ limits, inputTokens: 100, outputTokens: 25 });
+    expect((await store.get()).limits).toEqual(limits);
+  });
+
+  it("never hides named limits behind a turn's bare counts", async () => {
+    const store = new UsageStore({ providerId: "tool", logger: nullLogger, onChange: () => {} });
+    await store.load(directory);
+    store.observeUsage({ limits });
+    store.observeUsage({ limits: [], inputTokens: 100, outputTokens: 25, costUsd: 0.01 });
+    expect((await store.get()).limits).toEqual(limits);
+  });
 });

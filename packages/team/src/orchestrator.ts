@@ -9,7 +9,7 @@ import type {
   TeamTask,
 } from "@ai-workbench/shared";
 import { canCallAgent } from "./limits.js";
-import { buildAgentPrompt } from "./prompt.js";
+import { buildAgentPrompt, inboxAttachments } from "./prompt.js";
 import { parseTeamActions, type TeamAction } from "./protocol.js";
 import { TeamLimitError, TeamRuleError, type TeamService } from "./service.js";
 import { hasStalled } from "./task-graph.js";
@@ -38,6 +38,14 @@ const PROGRESS_MS = 5_000;
 interface AgentSession {
   readonly adapter: AIProviderAdapter;
   readonly handle: ProviderSessionHandle;
+  /** The effort the session was created with; a change recreates the session. */
+  readonly reasoningEffort: string;
+}
+
+/** Effort a member's definition carries, or "" for the tool's default. */
+function effortOf(agent: AgentDefinition): string {
+  const value = agent.settings["reasoningEffort"];
+  return typeof value === "string" ? value.trim() : "";
 }
 
 /**
@@ -58,6 +66,20 @@ export class TeamOrchestrator {
   #stopping = false;
   #stopReason: "paused" | "cancelled" = "paused";
   #running: Promise<TeamRun> | null = null;
+  /**
+   * A user's note to the lead arrived while other agents are working. The
+   * loop gives the lead a priority turn for it instead of waiting for the
+   * batch in flight — set by `notifyLeadMessage`, consumed by the loop.
+   */
+  #leadInterrupt = false;
+  /** A lead priority turn is already running; never start a second one. */
+  #leadTurnRunning = false;
+  /**
+   * Agents with a turn in flight. One agent is one provider conversation:
+   * two turns at once would resume the same session twice, and the tool's
+   * own history, the cancel handle and the session id would race.
+   */
+  readonly #busyAgents = new Set<string>();
 
   constructor(options: TeamOrchestratorOptions) {
     this.#service = options.service;
@@ -91,6 +113,16 @@ export class TeamOrchestrator {
       this.#running = null;
     });
     return this.#running;
+  }
+
+  /**
+   * A user's note to the lead arrived while the run is going. The next loop
+   * pass gives the lead a priority turn for it, even when other agents are
+   * still working — in-flight turns are never killed, the lead turn runs
+   * alongside them and may re-plan or re-assign through the service.
+   */
+  notifyLeadMessage(): void {
+    this.#leadInterrupt = true;
   }
 
   /** Asks the run to stop after the turns in flight; never kills mid-answer. */
@@ -202,16 +234,24 @@ export class TeamOrchestrator {
         this.#logger.warn("Run stopped by a limit", { reason: "no agent calls left" });
         return this.#service.stop("completed", "limitReached");
       }
-      const batch = view.runnable.slice(0, Math.max(0, Math.min(capacity, remainingCalls)));
+      const batch = this.#pickBatch(view.runnable, Math.max(0, Math.min(capacity, remainingCalls)));
 
       if (batch.length > 0) {
-        await Promise.all(batch.map((task) => this.#workOn(task)));
+        // A batch blocks the loop while its members work. A user's note to
+        // the lead must not wait behind it: the wait below gives the lead a
+        // priority turn alongside the batch instead of after it.
+        await this.#waitForBatch(batch.map((task) => this.#workOn(task)));
         continue;
       }
 
       if (view.inFlight.length > 0) {
         // Concurrency is saturated by turns claimed outside this loop (e.g.
-        // via Team MCP). Wait for progress instead of spinning hot.
+        // via Team MCP). Wait for progress instead of spinning hot — but a
+        // user's note still earns the lead a turn right away.
+        if (this.#takeLeadInterrupt()) {
+          await this.#leadTurnIfNeeded();
+          continue;
+        }
         await new Promise((resolve) => setTimeout(resolve, 100));
         continue;
       }
@@ -258,6 +298,126 @@ export class TeamOrchestrator {
     }
   }
 
+  /**
+   * The next batch: ready tasks in their scheduled order, at most one per
+   * agent and none for an agent already at work. A second task for the same
+   * member simply waits for the next pass instead of sharing its session.
+   */
+  #pickBatch(runnable: readonly TeamTask[], limit: number): TeamTask[] {
+    const batch: TeamTask[] = [];
+    const taken = new Set<string>();
+    for (const task of runnable) {
+      if (batch.length >= limit) {
+        break;
+      }
+      const agentId = this.#agentFor(task)?.id;
+      if (agentId && (taken.has(agentId) || this.#busyAgents.has(agentId))) {
+        continue;
+      }
+      if (agentId) {
+        taken.add(agentId);
+      }
+      batch.push(task);
+    }
+    return batch;
+  }
+
+  /**
+   * True when the lead is owed a turn for a user's note: either flagged via
+   * `notifyLeadMessage`, or unread user mail is sitting in its inbox (covers
+   * a flag lost across a resume). Reading the mail consumes it.
+   */
+  #takeLeadInterrupt(): boolean {
+    const leadId = this.#leadId();
+    if (!leadId) {
+      this.#leadInterrupt = false;
+      return false;
+    }
+    const unreadUserMail = this.#service.peekUnread(leadId, { from: "user" });
+    if (this.#leadInterrupt || unreadUserMail.length > 0) {
+      this.#leadInterrupt = false;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * One lead turn for a user's note, outside the normal scheduling. Guarded
+   * so a batch wait and the in-flight wait can never start two of them, and
+   * skipped while the lead itself is working — its turn already reads the
+   * same inbox.
+   */
+  async #leadTurnIfNeeded(): Promise<void> {
+    if (this.#leadTurnRunning || this.#stopping) {
+      return;
+    }
+    const lead = this.#lead();
+    if (!lead || this.#service.run.status !== "running") {
+      return;
+    }
+    // The lead is working on a task of this batch: its conversation is busy.
+    // The note stays unread and gets its own turn once that one is done.
+    if (this.#busyAgents.has(lead.id)) {
+      return;
+    }
+    if (this.#service.peekUnread(lead.id, { from: "user" }).length === 0) {
+      return;
+    }
+    this.#leadTurnRunning = true;
+    try {
+      await this.#turn(lead, null);
+    } finally {
+      this.#leadTurnRunning = false;
+    }
+  }
+
+  /**
+   * Waits for a batch without burying the lead's mail behind it. Every 250 ms
+   * the wait checks for a user's note to the lead and, when there is one,
+   * runs the lead turn concurrently with the batch still in flight — the
+   * members are never cancelled, the lead just gets to re-plan, answer, or
+   * re-assign while they work. A 5 s grace after the last member keeps Stop
+   * from hanging on the race (same bound as `cancel`).
+   */
+  async #waitForBatch(work: Array<Promise<void>>): Promise<void> {
+    const pending = new Set<Promise<void>>();
+    for (const turn of work) {
+      const tracked: Promise<void> = turn
+        .catch((error: unknown) => {
+          // #workOn/#turn handle expected turn failures themselves; anything
+          // reaching here is unexpected (e.g. failTask throwing, an action
+          // re-throw escaping #turn). Log it so a batch member never fails
+          // silently while the loop just continues.
+          this.#logger.error("Team batch turn failed", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+        .then(() => {
+          pending.delete(tracked);
+        });
+      pending.add(tracked);
+    }
+    while (pending.size > 0) {
+      if (this.#takeLeadInterrupt()) {
+        await this.#leadTurnIfNeeded();
+      }
+      if (pending.size === 0) {
+        break;
+      }
+      await Promise.race([
+        ...pending,
+        new Promise((resolve) => setTimeout(resolve, 250)),
+      ]);
+      if (this.#stopping) {
+        await Promise.race([
+          Promise.allSettled([...pending]),
+          new Promise((resolve) => setTimeout(resolve, 5000)),
+        ]);
+        return;
+      }
+    }
+  }
+
   async #workOn(task: TeamTask): Promise<void> {
     const agent = this.#agentFor(task);
     if (!agent) {
@@ -293,6 +453,24 @@ export class TeamOrchestrator {
   }
 
   async #turn(agent: AgentDefinition, task: TeamTask | null): Promise<void> {
+    if (this.#busyAgents.has(agent.id)) {
+      // Never reached through the loop (batches and priority turns both check
+      // first); kept as the last line of defence for the session's integrity.
+      this.#logger.warn("Turn skipped: the agent is already at work", { agentId: agent.id });
+      return;
+    }
+    this.#busyAgents.add(agent.id);
+    try {
+      await this.#runTurn(agent, task);
+    } finally {
+      this.#busyAgents.delete(agent.id);
+    }
+  }
+
+  async #runTurn(agent: AgentDefinition, task: TeamTask | null): Promise<void> {
+    if (agent.id === this.#leadId()) {
+      this.#leadInterrupt = false;
+    }
     const inbox = await this.#service.getMessages(agent.id, { unreadOnly: true });
     const prompt = buildAgentPrompt({
       service: this.#service,
@@ -301,13 +479,17 @@ export class TeamOrchestrator {
       task,
       inbox,
     });
+    // Files the person attached to a note or a goal travel with the prompt the
+    // same way a solo chat sends them: as `AgentMessage.attachments`, so each
+    // adapter applies its own profile flags (provider-independent).
+    const attachments = inboxAttachments(inbox);
 
     // The turn is kept as it happens — what the member writes and every step
     // its tool reports — so a person can read what each member did.
     const turn = await this.#service.beginTurn(agent.id, task?.id ?? null);
     let answer: string;
     try {
-      answer = await this.#ask(agent, prompt, turn.id);
+      answer = await this.#ask(agent, prompt, turn.id, attachments);
       await this.#service.endTurn(turn.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -476,12 +658,20 @@ export class TeamOrchestrator {
    * the silence budget) stops a provider that trickles one event per minute
    * from holding the run forever.
    */
-  async #ask(agent: AgentDefinition, prompt: string, turnId: string): Promise<string> {
+  async #ask(
+    agent: AgentDefinition,
+    prompt: string,
+    turnId: string,
+    attachments: readonly { readonly kind: "file" | "image"; readonly path: string }[] = [],
+  ): Promise<string> {
     const session = await this.#sessionFor(agent);
     await this.#service.countAgentCall();
 
     const collected: string[] = [];
-    const stream = session.adapter.sendMessage(session.handle, { text: prompt });
+    const stream = session.adapter.sendMessage(session.handle, {
+      text: prompt,
+      ...(attachments.length > 0 ? { attachments: [...attachments] } : {}),
+    });
     const silenceMs = this.#silenceMs;
     const hardCapMs = Math.max(
       silenceMs,
@@ -604,9 +794,25 @@ export class TeamOrchestrator {
   }
 
   async #sessionFor(agent: AgentDefinition): Promise<AgentSession> {
+    const wantedEffort = effortOf(agent);
     const existing = this.#sessions.get(agent.id);
     if (existing) {
-      return existing;
+      if (existing.reasoningEffort === wantedEffort) {
+        return existing;
+      }
+      // Effort changed while the run is going (edited mid-run): the provider
+      // session holds the old effort, so drop it — the next turn starts fresh
+      // with the new one instead of silently keeping the old.
+      this.#sessions.delete(agent.id);
+      try {
+        await existing.adapter.destroySession?.(existing.handle);
+      } catch (error) {
+        this.#logger.warn("Agent session cleanup failed", {
+          agentId: agent.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      this.#emitStopped(agent.id);
     }
 
     const adapter = this.#runtime.adapterFor(agent);
@@ -618,13 +824,16 @@ export class TeamOrchestrator {
       sessionId: `${this.#service.run.id}:${agent.id}`,
       workingDirectory: agent.workingDirectory,
       ...(agent.modelId ? { modelId: agent.modelId } : {}),
+      ...(wantedEffort ? { reasoningEffort: wantedEffort } : {}),
     });
     const session: AgentSession = {
       adapter,
+      reasoningEffort: wantedEffort,
       handle: {
         providerSessionId: info.providerSessionId,
         sessionId: `${this.#service.run.id}:${agent.id}`,
         ...(info.modelId ? { modelId: info.modelId } : {}),
+        ...(wantedEffort ? { reasoningEffort: wantedEffort } : {}),
       },
     };
     this.#sessions.set(agent.id, session);

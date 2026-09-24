@@ -15,6 +15,7 @@ import {
   type TeamTurnRow,
 } from "@ai-workbench/database";
 import type {
+  MessageAttachment,
   SharedTeamState,
   TeamArtifact,
   TeamDecision,
@@ -135,6 +136,7 @@ export class SqlTeamRunStore implements TeamRunStore {
       type: message.type,
       content: message.content,
       taskId: message.taskId,
+      attachments: message.attachments as unknown as unknown[],
       readAt: message.readAt,
       timestamp: message.timestamp,
     };
@@ -258,6 +260,7 @@ export function toMessage(row: TeamMessageRow): TeamMessage {
     type: teamMessageTypeSchema.catch("info").parse(row.type),
     content: row.content,
     taskId: row.taskId,
+    attachments: (Array.isArray(row.attachments) ? row.attachments : []) as MessageAttachment[],
     readAt: row.readAt,
     timestamp: row.timestamp,
   };

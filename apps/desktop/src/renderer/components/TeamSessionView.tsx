@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
-import { FileText, Flag, FolderOpen, Pause, Play, Square, Users } from "lucide-react";
+import { FileText, Flag, FolderOpen, Image, Pause, Play, Square, Users } from "lucide-react";
 import type {
   AgentDefinition,
   ProviderSummary,
@@ -16,6 +16,16 @@ import type {
 import { Composer } from "./Composer.js";
 import { MessageBody } from "./MessageItem.js";
 import { SessionHeader } from "./SessionHeader.js";
+import {
+  ARTIFACT_MAX_LINES,
+  ARTIFACT_PREVIEW_LINES,
+  artifactLanguage,
+  artifactReason,
+  classifyArtifact,
+  diffLineKind,
+  diffStats,
+  extractCodeContent,
+} from "../lib/team-artifacts.js";
 import {
   MemberAvatar,
   TaskIcon,
@@ -96,6 +106,9 @@ export function TeamSessionView({
     workspaces.find((entry) => entry.id === (run?.workspaceId ?? session.workspaceId))?.path ??
     workspace?.path ??
     null;
+  // Files go with a note or a goal when at least one member's provider takes
+  // them (capability-based, never by provider name).
+  const attach = teamAttachSupport(team, providers);
 
   return (
     <>
@@ -128,6 +141,8 @@ export function TeamSessionView({
         />
 
         <Composer
+          key={`team:${session.id}`}
+          draftKey={`team:${session.id}`}
           busy={false}
           disabled={false}
           placeholder={
@@ -137,12 +152,13 @@ export function TeamSessionView({
                 ? "Give the team its next goal…"
                 : "Give the team a goal…"
           }
-          onSend={(text) => {
+          attach={attach}
+          onSend={(text, attachments) => {
             if (going && run) {
-              void sendTeamNote(run.id, text);
+              void sendTeamNote(run.id, text, attachments);
             } else {
               // One new run, in this session's workspace.
-              void setSessionTeam({ sessionId: session.id, teamId: team.id, goal: text });
+              void setSessionTeam({ sessionId: session.id, teamId: team.id, goal: text, attachments });
             }
           }}
           onCancel={() => undefined}
@@ -183,6 +199,7 @@ function RunHeader({
   const tasks = snapshot?.tasks ?? [];
   const done = tasks.filter((task) => task.status === "completed").length;
   const failed = tasks.filter((task) => task.status === "failed").length;
+  const active = tasks.filter((task) => task.status === "running" || task.status === "claimed").length;
   const started = run?.startedAt ?? run?.createdAt ?? null;
 
   return (
@@ -195,6 +212,11 @@ function RunHeader({
         {run ? (
           <span className="pill" data-tone={runTone(run)}>
             {runLabel(run)}
+          </span>
+        ) : null}
+        {run && active > 1 ? (
+          <span className="pill" data-tone="live" title={`${active} tasks running at the same time`}>
+            {active} parallel
           </span>
         ) : null}
         <span className="team-run__spacer" />
@@ -241,8 +263,6 @@ function RunHeader({
           Solo session
         </button>
       </div>
-
-      {run ? <h2 className="team-run__goal">{run.goal}</h2> : null}
 
       {run ? (
         <div
@@ -623,6 +643,20 @@ function EntryBody({
       return (
         <div className="team-message" data-type={message.type}>
           {message.type !== "info" ? <span className="team-entry__tag">{message.type}</span> : null}
+          {(message.attachments ?? []).length > 0 ? (
+            <ul className="message__files" aria-label="Attached files">
+              {(message.attachments ?? []).map((file) => (
+                <li key={file.path} className="file-chip" title={file.path}>
+                  {file.kind === "image" ? (
+                    <Image size={13} strokeWidth={1.75} aria-hidden="true" />
+                  ) : (
+                    <FileText size={13} strokeWidth={1.75} aria-hidden="true" />
+                  )}
+                  <span className="file-chip__name">{file.name}</span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <Collapsible text={withNames(message.content, team)} />
         </div>
       );
@@ -651,20 +685,9 @@ function EntryBody({
     }
     case "artifact": {
       const { artifact } = entry;
+      const task = artifact.taskId ? snapshot.tasks.find((item) => item.id === artifact.taskId) : undefined;
       return (
-        <div className="team-file">
-          <div className="team-file__head">
-            <FileText size={14} strokeWidth={1.75} aria-hidden="true" />
-            <span className="team-file__name">{artifact.path ?? artifact.name}</span>
-            <span className="team-entry__tag">{artifact.type}</span>
-          </div>
-          {artifact.content ? (
-            <details className="team-file__details">
-              <summary>Show content</summary>
-              <MessageBody content={artifact.content} role="assistant" />
-            </details>
-          ) : null}
-        </div>
+        <ArtifactBody artifact={artifact} taskTitle={task?.title ?? null} team={team} />
       );
     }
     case "decision": {
@@ -688,6 +711,119 @@ function EntryBody({
 
 /** Steps shown while a turn runs; the rest fold away. */
 const LIVE_STEPS = 5;
+
+/**
+ * A published artifact: code/diff types render as visual lines (added/
+ * removed highlighting, file path, counts), everything else keeps the plain
+ * markdown view. The "why" comes only from data the agent actually sent
+ * (artifact metadata) or the linked task — never invented.
+ */
+function ArtifactBody({
+  artifact,
+  taskTitle,
+  team,
+}: {
+  readonly artifact: TeamArtifact;
+  readonly taskTitle: string | null;
+  readonly team: TeamDefinition;
+}): JSX.Element {
+  const kind = classifyArtifact(artifact);
+  const reason = artifactReason(artifact.metadata);
+  const content = artifact.content?.trim() ? artifact.content : null;
+  const stats = kind === "diff" && content ? diffStats(content) : null;
+  return (
+    <div className="team-file" data-artifact-kind={kind}>
+      <div className="team-file__head">
+        <FileText size={14} strokeWidth={1.75} aria-hidden="true" />
+        <span className="team-file__name" title={artifact.path ?? artifact.name}>
+          {artifact.path ?? artifact.name}
+        </span>
+        <span className="team-entry__tag">{artifact.type}</span>
+        {stats && (stats.added > 0 || stats.removed > 0) ? (
+          <span className="team-entry__tag" data-status="completed" title={`${stats.added} added, ${stats.removed} removed`}>
+            +{stats.added} −{stats.removed}
+          </span>
+        ) : null}
+      </div>
+      {artifact.name && artifact.path && artifact.name !== artifact.path ? (
+        <p className="team-file__title">{withNames(artifact.name, team)}</p>
+      ) : null}
+      {taskTitle ? <p className="team-file__task">For “{taskTitle}”</p> : null}
+      {reason ? <p className="team-file__reason">{withNames(reason, team)}</p> : null}
+      {content ? (
+        kind === "diff" ? (
+          <ArtifactDiff content={content} />
+        ) : kind === "code" ? (
+          <ArtifactCode content={content} language={artifactLanguage(artifact)} />
+        ) : (
+          <details className="team-file__details">
+            <summary>Show content</summary>
+            <MessageBody content={content} role="assistant" />
+          </details>
+        )
+      ) : null}
+    </div>
+  );
+}
+
+/** Unified diff with added/removed/hunk highlighting; long diffs fold. */
+function ArtifactDiff({ content }: { readonly content: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const lines = content.split("\n").slice(0, ARTIFACT_MAX_LINES);
+  const truncated = content.split("\n").length > ARTIFACT_MAX_LINES;
+  const shown = open ? lines : lines.slice(0, ARTIFACT_PREVIEW_LINES);
+  return (
+    <div className="diff-preview" data-source="artifact">
+      <pre className="diff-preview__pre">
+        {shown.map((line, index) => (
+          <span key={index} className="diff-preview__line" data-kind={diffLineKind(line)}>
+            {line || " "}
+          </span>
+        ))}
+      </pre>
+      {lines.length > ARTIFACT_PREVIEW_LINES || truncated ? (
+        <button type="button" className="link-button" onClick={() => setOpen((value) => !value)}>
+          {open ? "Show less" : `Show all ${truncated ? "(capped)" : `(${lines.length} lines)`}`}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Code with line numbers; unwraps one outer markdown fence if present. */
+function ArtifactCode({ content, language }: { readonly content: string; readonly language: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const code = extractCodeContent(content.trim());
+  const lines = code.split("\n");
+  const shown = open ? lines.slice(0, ARTIFACT_MAX_LINES) : lines.slice(0, ARTIFACT_PREVIEW_LINES);
+  return (
+    <div className="codeblock" data-source="artifact">
+      <div className="codeblock__head">
+        <span className="codeblock__lang">{language || "code"}</span>
+        <span className="row__meta">
+          {lines.length} line{lines.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <pre className="codeblock__pre">
+        {shown.map((line, index) => (
+          <span key={index} className="codeblock__line">
+            <span className="codeblock__no" aria-hidden="true">
+              {index + 1}
+            </span>
+            <span>{line || " "}</span>
+          </span>
+        ))}
+      </pre>
+      {lines.length > ARTIFACT_PREVIEW_LINES ? (
+        <div className="codeblock__head">
+          <button type="button" className="link-button" onClick={() => setOpen((value) => !value)}>
+            {open ? "Show less" : `Show all (${lines.length} lines)`}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * One turn of one member, as it happened: what it worked on, every step its
@@ -860,4 +996,25 @@ function feedFor(snapshot: TeamRunSnapshot, member: string): FeedEntry[] {
     }
   }
   return entries.sort((a, b) => a.at.getTime() - b.at.getTime());
+}
+
+/**
+ * Whether the team takes files, by capability rather than provider name: one
+ * member whose provider supports attachments is enough, since each adapter
+ * applies its own profile flags to the files it receives.
+ */
+function teamAttachSupport(
+  team: TeamDefinition,
+  providers: readonly ProviderSummary[],
+): { supported: boolean; reason?: string } {
+  if (team.agents.length === 0) {
+    return { supported: false, reason: "Add a member to the team to attach files" };
+  }
+  const byId = new Map(providers.map((entry) => [entry.metadata.id, entry]));
+  const capable = team.agents.some((agent) =>
+    byId.get(agent.providerId)?.capabilities.supported.includes("attachments"),
+  );
+  return capable
+    ? { supported: true }
+    : { supported: false, reason: "No member's provider takes files" };
 }

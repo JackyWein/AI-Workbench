@@ -464,6 +464,9 @@ function RunDetail({
                   <span className="changes__badge">{message.type}</span>
                   <span className="row__text">
                     {message.from} → {message.to}: {message.content}
+                    {(message.attachments ?? []).length > 0
+                      ? ` (${(message.attachments ?? []).map((file) => file.name).join(", ")})`
+                      : ""}
                   </span>
                 </li>
               ))

@@ -1,6 +1,7 @@
 import type {
   AgentDefinition,
   Logger,
+  MessageAttachment,
   SharedTeamState,
   TeamArtifact,
   TeamDecision,
@@ -71,7 +72,7 @@ export interface TeamServiceOptions {
  * records what agents decide.
  */
 export class TeamService {
-  readonly #team: TeamDefinition;
+  #team: TeamDefinition;
   readonly #store: TeamRunStore;
   readonly #logger: Logger;
   readonly #emit: (event: TeamEvent) => void;
@@ -112,6 +113,16 @@ export class TeamService {
 
   get team(): TeamDefinition {
     return this.#team;
+  }
+
+  /**
+   * Replaces the team definition for a run that is already going. Only used
+   * for changes that are safe mid-run (added members, rename, instructions,
+   * lead): the run keeps its tasks, messages and turns, it just sees the new
+   * roster from here on.
+   */
+  setTeam(team: TeamDefinition): void {
+    this.#team = team;
   }
 
   get run(): TeamRun {
@@ -380,6 +391,7 @@ export class TeamService {
     type: TeamMessageType;
     content: string;
     taskId?: string | null;
+    attachments?: readonly MessageAttachment[];
   }): Promise<TeamMessage> {
     const verdict = canSendMessage(this.#run);
     if (!verdict.allowed) {
@@ -397,6 +409,7 @@ export class TeamService {
       type: input.type,
       content: input.content,
       taskId: input.taskId ?? null,
+      attachments: input.attachments ? [...input.attachments] : [],
       readAt: null,
       timestamp: this.#now(),
     };
@@ -406,6 +419,21 @@ export class TeamService {
     await this.#store.saveRun(this.#run);
     this.#emit({ type: "MESSAGE_SENT", runId: this.#run.id, message });
     return message;
+  }
+
+  /**
+   * Unread mail without marking anything read. The orchestrator uses it to
+   * notice a user's note to the lead while other agents are still working,
+   * so the lead can be given a priority turn instead of waiting for them.
+   */
+  peekUnread(agentId: string, options: { from?: string } = {}): TeamMessage[] {
+    return this.#messages.filter(
+      (message) =>
+        (message.to === agentId || message.to === EVERYONE) &&
+        message.from !== agentId &&
+        message.readAt === null &&
+        (!options.from || message.from === options.from),
+    );
   }
 
   /** An agent's inbox. Reading marks the messages read, so none arrives twice. */
