@@ -22,6 +22,11 @@ look changes on update. Settings has a Mode control under the theme picker,
 whose swatches show each theme light and dark; the command palette has
 "Theme: …" and "Mode: …". The contrast test and the startup check cover
 all twelve. How it is put together: `DEVELOPMENT.md` → Themes.
+The mode defaults to System for a new install (an existing one keeps what it
+had) and has a toggle in the sidebar head. The island follows theme and mode
+with a palette per mode and a style per theme (`STATUS_ISLAND.md` → Theme);
+light islands are new, so how they sit on a real light desktop is worth a
+look on the person's machine.
 
 What changed in 0.0.6 over 0.0.5, each verified by tests and the startup check:
 

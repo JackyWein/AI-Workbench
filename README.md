@@ -111,7 +111,8 @@ Pick a **theme** under Settings and the whole app changes with it — colours, t
 terminals and the status island: calm **Quiet**, warm **Atelier** with serif headings, dense
 **Mission Control** with lime signals, bold **Playground** with thick outlines, **Aurora** in
 violet and cyan light, and strict black, white and red **Swiss**. Every theme comes **light and
-dark** — pick one, or let it follow your system. The typefaces ship with the app, and every
+dark** — the toggle in the sidebar switches, or it follows your system. The status island
+takes on the theme too, down to the shape of its bubble. The typefaces ship with the app, and every
 theme is checked to stay readable in both modes.
 
 ## How it works

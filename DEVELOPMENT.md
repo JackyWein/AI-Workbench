@@ -103,7 +103,8 @@ migrations folder being present at runtime.
 
 A theme is chosen together with a mode. The `theme` setting is one of
 Quiet, Atelier, Mission Control, Playground, Aurora and Swiss; the `mode`
-setting is light, dark or the system's. `resolveTheme` in `packages/ui`
+setting is light, dark or the system's (the default), switched under
+Settings, in the command palette or with the toggle in the sidebar. `resolveTheme` in `packages/ui`
 turns both into the name the stylesheets use: Quiet is `dark` or `light`,
 every other theme `<theme>-light` or `<theme>-dark`, set as `data-theme`.
 Settings written before the two were split (0.0.6 and earlier, where the
@@ -118,9 +119,9 @@ mode was part of the theme) are read through `upgradeStoredSettings` in
 - `packages/ui/src/themes.css` — the other themes. Each has a block matched
   with `[data-theme|="<theme>"]` (both modes) holding its typefaces, shape
   (`--radius-scale`, `--radius-pill`), the outline of grouped surfaces
-  (`--card-*`), the island's own dark palette and the colours of its first
-  mode, and a block for `<theme>-light` or `<theme>-dark` with the colours of
-  the other mode.
+  (`--card-*`) and the colours of its first mode, the island's palette
+  included, and a block for `<theme>-light` or `<theme>-dark` with the
+  colours of the other mode.
 - `packages/ui/src/fonts.css` — the typefaces, from `@fontsource` packages,
   Latin only, bundled into the app (the page's policy loads nothing from
   outside).
@@ -128,6 +129,9 @@ mode was part of the theme) are read through `upgradeStoredSettings` in
   (display face, labels, grouped surfaces, the sidebar's palette) and each
   theme's touches that a token cannot express, written with `|=` and
   tokens so they hold in both modes.
+- `apps/desktop/src/renderer/island/island.css` → themes — the island's
+  character per theme (outline, lift, bubble shape, faces), through
+  `--island-edge`, `--island-drop` and `--island-bubble-radius`.
 - `apps/desktop/src/renderer/lib/themes.ts` — the names the picker shows;
   the ids themselves are the `theme` setting's enum in `packages/shared`.
 

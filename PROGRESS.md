@@ -41,8 +41,12 @@ light and a dark mode; the contrast test measures all twelve from the
 stylesheets; in the built app each is picked in Settings in both modes,
 drawn with the matching colour scheme and readable title and sidebar text,
 with its typeface loaded. Settings stored by 0.0.6 and earlier keep the
-look they had (unit test of the upgrade). Not verified: the modes against
-a real Windows or macOS system theme switch.
+look they had (unit test of the upgrade). A new install follows the system;
+the sidebar's toggle steps System, Light, Dark (startup check). The island
+takes each theme's style and mode, and its text reads on its body in both
+(contrast test for every island palette; startup check in three of them).
+Not verified: the modes against a real Windows or macOS system theme
+switch, and light islands over a real desktop.
 
 ### Release 0.0.6 (2026-09-24)
 

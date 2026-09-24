@@ -74,13 +74,19 @@ tiny: state, open, dismiss, cycle — nothing else.
 
 ## Theme
 
-The island draws in the app's theme and mode — its typeface, shape and
-accent — and switches with them: main pushes both on its own channel
-(`ISLAND_THEME_CHANNEL`) when they change and whenever the island page
-loads. Its body stays dark in every theme and mode, each theme giving it a dark palette of
-its own (`--island-*` tokens), because it floats over windows the app knows
-nothing about, and a light theme's ink on that body once made titles
-unreadable. With nothing running it shows the app's logo.
+The island is drawn in the app's theme and mode and switches with them:
+main pushes both on its own channel (`ISLAND_THEME_CHANNEL`) when they
+change and whenever the island page loads. Each theme gives it a palette
+per mode (`--island-*` tokens: dark in the dark modes, light in the light
+ones), and its own hand in `island.css` → themes: Atelier's serif and a
+terracotta ring in the bubble, Mission Control's square bubble, monospace
+capitals and lit edge, Playground's thick ink, hard shadow and yellow
+bubble, Aurora's violet-to-cyan ring and glow, Swiss's square, flat,
+full-ink outline. It never takes the page's ink, which once put dark titles
+on its dark card; a light island carries a longer shadow so it holds off a
+light desktop. The contrast test measures every island palette, and the
+startup check that the island follows theme and mode and its text reads.
+With nothing running it shows the app's logo.
 
 ## Tray
 
