@@ -150,8 +150,6 @@ interface WorkbenchState {
   view: MainView;
   paletteOpen: boolean;
   paletteQuery: string;
-  /** Design preview: team inside a session (mock data, developer mode only). */
-  teamPreview: boolean;
   workspacePanelOpen: boolean;
   workspaceTab: WorkspaceTab;
   workspaceMode: WorkspaceMode;
@@ -168,7 +166,6 @@ interface WorkbenchState {
   setError(error: string | null): void;
   setView(view: MainView): void;
   setPaletteOpen(open: boolean, initialQuery?: string): void;
-  setTeamPreview(on: boolean): void;
   setWorkspacePanelOpen(open: boolean): void;
   toggleWorkspacePanel(tab?: WorkspaceTab): void;
   setWorkspaceTab(tab: WorkspaceTab): void;
@@ -416,7 +413,6 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     set({ focusTileId: null });
   },
   paletteQuery: "",
-  teamPreview: false,
   workspacePanelOpen: false,
   workspaceTab: "terminal",
   workspaceMode: storedUi.workspaceMode ?? "chat",
@@ -468,7 +464,6 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       paletteOpen,
       paletteQuery: paletteOpen ? (initialQuery ?? state.paletteQuery) : state.paletteQuery,
     })),
-  setTeamPreview: (teamPreview) => set({ teamPreview }),
   setWorkspacePanelOpen: (workspacePanelOpen) => set({ workspacePanelOpen }),
   setWorkspaceTab: (workspaceTab) => set({ workspaceTab, workspacePanelOpen: true }),
   setWorkspaceMode: (workspaceMode) => {

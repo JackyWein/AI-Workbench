@@ -170,22 +170,6 @@ export function CommandPalette(): JSX.Element | null {
       },
     ];
 
-    // Design preview (developer mode only): team inside a session with mock
-    // data. No backend, no IPC — delete with TeamSessionPreview.tsx.
-    if (settings.developerMode && activeSessionId) {
-      list.push({
-        id: "preview.team-session",
-        label: store.getState().teamPreview
-          ? "Preview off: team in session (mockup)"
-          : "Preview on: team in session (mockup)",
-        group: "Session",
-        run: () => {
-          const state = store.getState();
-          state.setTeamPreview(!state.teamPreview);
-        },
-      });
-    }
-
     // Reasoning effort lives here now that the header is crumbs + pills: only
     // the active tool's own options appear, and Default clears back to none.
     if (activeSessionId) {
@@ -391,7 +375,6 @@ export function CommandPalette(): JSX.Element | null {
     providers,
     settings.theme,
     settings.statusIsland,
-    settings.developerMode,
     activeSessionId,
   ]);
 

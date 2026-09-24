@@ -15,10 +15,6 @@ import { ConnectorsView } from "./components/ConnectorsView.js";
 import { ProvidersView } from "./components/ProvidersView.js";
 import { SessionHeader } from "./components/SessionHeader.js";
 import { SettingsView } from "./components/SettingsView.js";
-import {
-  TeamPreviewPanel,
-  TeamSessionPreview,
-} from "./components/TeamSessionPreview.js";
 import { TeamSessionView } from "./components/TeamSessionView.js";
 import { TeamPanel } from "./components/TeamPanel.js";
 import { UsageView } from "./components/UsageView.js";
@@ -193,15 +189,7 @@ export function App(): JSX.Element {
         ) : null}
 
         {state.view === "chat" && state.workspaceMode === "chat" && session ? (
-          state.teamPreview && state.settings.developerMode ? (
-            <TeamSessionPreview
-              session={session}
-              workspace={workspace}
-              providers={state.providers}
-              usage={state.usage}
-              status={state.status[session.id]}
-            />
-          ) : sessionTeam ? (
+          sessionTeam ? (
             <RendererErrorBoundary fallbackTitle="Team session">
               <TeamSessionView
                 session={session}
@@ -305,9 +293,7 @@ export function App(): JSX.Element {
       </main>
 
       {state.view === "chat" && state.workspaceMode === "chat" && session ? (
-        state.teamPreview && state.settings.developerMode ? (
-          <TeamPreviewPanel />
-        ) : sessionTeam ? (
+        sessionTeam ? (
           <TeamPanel team={sessionTeam} snapshot={teamSnapshot ?? null} />
         ) : (
         <ContextPanel
