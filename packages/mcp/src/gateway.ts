@@ -15,6 +15,8 @@ export interface McpGatewayRoute {
    * in. `force` asks for a renewed one after the server refused the last.
    */
   authorization(force: boolean): Promise<string | null>;
+  /** Sends the credential in this header instead of Authorization. */
+  readonly header?: string;
 }
 
 /** The tools of several servers, for a tool that takes only one server. */
@@ -192,7 +194,7 @@ export class McpGateway {
         return null;
       }
       const outgoing = new Headers(headers);
-      outgoing.set("authorization", authorization);
+      outgoing.set(route.header ?? "authorization", authorization);
       const abort = new AbortController();
       response.on("close", () => abort.abort());
       return this.#fetch(target, {

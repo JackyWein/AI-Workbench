@@ -1,14 +1,13 @@
-import { join } from "node:path";
 import {
   cliProviderFactory,
-  findSkills,
   parseProfile,
   type CliProviderExtensions,
 } from "@ai-workbench/provider-cli";
 import type { ProviderFactory } from "@ai-workbench/provider-base";
 import { claudeCodeProfile } from "./profile.js";
-import { configHomeOf, statusLineTelemetry } from "./telemetry.js";
+import { statusLineTelemetry } from "./telemetry.js";
 import { readUsage } from "./usage.js";
+import { discoverClaudeImportables } from "./importables.js";
 
 export { claudeCodeProfile } from "./profile.js";
 
@@ -26,16 +25,8 @@ export const claudeCodeExtensions: CliProviderExtensions = {
   // before the first turn in the application; current rate limits still only
   // arrive while the tool works.
   readUsage,
-  // Claude Code's own skill folders: the user's, and the project's.
-  discoverImportables: async (context, request) => ({
-    skills: await findSkills([
-      { path: join(configHomeOf(context), "skills"), source: "your Claude Code skills" },
-      ...(request.workspacePath
-        ? [{ path: join(request.workspacePath, ".claude", "skills"), source: "this project's Claude Code skills" }]
-        : []),
-    ]),
-    mcpServers: [],
-  }),
+  // Skills and MCP servers Claude Code already has, to use in every tool.
+  discoverImportables: discoverClaudeImportables,
 };
 
 

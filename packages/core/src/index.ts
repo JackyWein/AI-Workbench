@@ -20,3 +20,5 @@ export * from "./workspace-removal.js";
 export * from "./connection-service.js";
 export * from "./attachments.js";
 export * from "./skill-drafter.js";
+export * from "./server-guidance.js";
+export * from "./tool-mcp-import.js";

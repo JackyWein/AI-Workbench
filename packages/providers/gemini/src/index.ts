@@ -2,6 +2,8 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  readJsonFile,
+  readJsonMcpServers,
   cliProviderFactory,
   field,
   findSkills,
@@ -168,7 +170,24 @@ export const geminiExtensions: CliProviderExtensions = {
             ]
           : []),
       ]),
-      mcpServers: [],
+      // Gemini CLI keeps MCP servers in settings.json, in the shared format.
+      mcpServers: [
+        ...readJsonMcpServers(
+          ((await readJsonFile(join(home, ".gemini", "settings.json"))) as Record<string, unknown> | null)?.[
+            "mcpServers"
+          ],
+          "Gemini CLI · your servers",
+        ),
+        ...(request.workspacePath
+          ? readJsonMcpServers(
+              ((await readJsonFile(join(request.workspacePath, ".gemini", "settings.json"))) as Record<
+                string,
+                unknown
+              > | null)?.["mcpServers"],
+              "Gemini CLI · this project",
+            )
+          : []),
+      ],
     };
   },
   mcpLaunch: geminiMcpLaunch,

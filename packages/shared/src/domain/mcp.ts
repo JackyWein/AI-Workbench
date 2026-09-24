@@ -26,6 +26,15 @@ export const mcpServerConfigSchema = z
      * renderer (spec §57).
      */
     credentialReference: z.string().min(1).max(200).optional(),
+    /**
+     * The header the stored key goes in, for a service that wants its own
+     * (e.g. X-Goog-Api-Key) rather than "Authorization: Bearer <key>". The
+     * key is then sent exactly as stored.
+     */
+    apiKeyHeader: z
+      .string()
+      .regex(/^[A-Za-z0-9-]{1,100}$/, "a header name")
+      .optional(),
     enabled: z.boolean().default(true),
     /** Working directory for a stdio server. */
     cwd: z.string().optional(),
@@ -140,7 +149,38 @@ export const mcpServerSaveInputSchema = z.object({
     .optional(),
   /** A new API key sent as the Authorization header; replaces the stored one. */
   apiKey: z.string().min(1).max(10_000).optional(),
+  /** Sends the key in this header instead of Authorization. */
+  apiKeyHeader: z
+    .string()
+    .regex(/^[A-Za-z0-9-]{1,100}$/, "a header name")
+    .optional(),
   /** Forgets the stored API key. */
   clearApiKey: z.boolean().optional(),
 });
 export type McpServerSaveInput = z.input<typeof mcpServerSaveInputSchema>;
+
+/**
+ * An MCP server one of the person's tools is already configured with, as the
+ * window sees it: never a secret value, only the names of the variables and
+ * headers that carry one. Importing it is done by `key` in the main process,
+ * which still holds the values and moves the secrets into secure storage.
+ */
+export const discoveredMcpServerSchema = z.object({
+  /** Identifies this finding for the import; not a server id. */
+  key: z.string().min(1),
+  name: z.string().min(1),
+  /** Where the tool keeps it, in words. */
+  source: z.string(),
+  providerId: z.string().min(1),
+  providerName: z.string().min(1),
+  transport: mcpTransportSchema,
+  command: z.string().optional(),
+  /** Arguments with anything that looks like a secret replaced. */
+  args: z.array(z.string()),
+  url: z.string().optional(),
+  /** Variables and headers whose values are secrets. */
+  secretNames: z.array(z.string()),
+  /** A server with this name is connected already. */
+  imported: z.boolean(),
+});
+export type DiscoveredMcpServer = z.infer<typeof discoveredMcpServerSchema>;

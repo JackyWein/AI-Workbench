@@ -58,6 +58,7 @@ import {
   resolvedPluginSchema,
 } from "../domain/plugin.js";
 import {
+  discoveredMcpServerSchema,
   mcpServerConfigSchema,
   mcpServerSaveInputSchema,
   mcpServerStatusSchema,
@@ -511,6 +512,26 @@ export const ipcContract = {
   },
 
   "mcp.list": { input: z.void(), output: z.array(mcpServerConfigSchema) },
+  /** MCP servers the person's tools are already configured with, to import. */
+  "mcp.discover": {
+    input: z.object({ workspaceId: z.string().min(1).optional() }),
+    output: z.array(discoveredMcpServerSchema),
+  },
+  /**
+   * Imports servers found by `mcp.discover`; nothing else can be named. Keys
+   * move into secure storage; what could not be carried over is said.
+   */
+  "mcp.importDiscovered": {
+    input: z.object({
+      keys: z.array(z.string().min(1)).min(1).max(100),
+      workspaceId: z.string().min(1).optional(),
+    }),
+    output: z.object({
+      imported: z.array(mcpServerConfigSchema),
+      failed: z.array(z.object({ key: z.string(), reason: z.string() })),
+      notes: z.array(z.object({ key: z.string(), note: z.string() })),
+    }),
+  },
   "mcp.save": { input: mcpServerSaveInputSchema, output: mcpServerConfigSchema },
   /** Selects a local Markdown vault; its path is chosen in the main process. */
     "mcp.chooseMemoryVault": { input: z.void(), output: mcpServerConfigSchema.nullable() },

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type JSX } from "react";
-import { BookOpen, Check, ChevronRight, ExternalLink, Plus, Search, X } from "lucide-react";
+import { BookOpen, Check, ChevronRight, Download, ExternalLink, Plus, Search, X } from "lucide-react";
 import {
   CONNECTOR_CATALOG,
   catalogEntry,
   type ConnectorCatalogEntry,
+  type DiscoveredMcpServer,
   type McpServerConfig,
   type McpServerSaveInput,
   type McpServerStatus,
@@ -27,7 +28,13 @@ export function ConnectorsView(): JSX.Element {
   const chooseMemoryVault = useWorkbench((state) => state.chooseMemoryVault);
   const [tab, setTab] = useState<Tab>(servers.length > 0 ? "yours" : "discover");
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<{ kind: "server"; id: string } | { kind: "catalog"; id: string } | { kind: "custom" } | null>(null);
+  const [open, setOpen] = useState<
+    | { kind: "server"; id: string }
+    | { kind: "catalog"; id: string }
+    | { kind: "custom" }
+    | { kind: "import" }
+    | null
+  >(null);
 
   useEffect(() => {
     void refreshMcp();
@@ -58,6 +65,10 @@ export function ConnectorsView(): JSX.Element {
               </p>
             </div>
             <div className="view__actions">
+              <button type="button" className="ghost-button" onClick={() => setOpen({ kind: "import" })}>
+                <Download size={13} strokeWidth={2} aria-hidden="true" />
+                Import from your tools
+              </button>
               <button type="button" className="primary-button" onClick={() => setOpen({ kind: "custom" })}>
                 <Plus size={13} strokeWidth={2} aria-hidden="true" />
                 Add
@@ -144,7 +155,14 @@ export function ConnectorsView(): JSX.Element {
 
       {open ? (
         <ConnectorPanel onClose={() => setOpen(null)}>
-          {open.kind === "custom" ? (
+          {open.kind === "import" ? (
+            <ImportServersFromTools
+              onDone={() => {
+                setTab("yours");
+                setOpen(null);
+              }}
+            />
+          ) : open.kind === "custom" ? (
             <CustomConnector
               onSaved={(id) => {
                 setTab("yours");
@@ -164,6 +182,134 @@ export function ConnectorsView(): JSX.Element {
         </ConnectorPanel>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * MCP servers the person's tools already have — Claude Code, Codex, Gemini
+ * CLI, Claude Desktop — offered for import so every session and terminal
+ * agent can use them. The window only ever sees the names of their secrets;
+ * the values move into secure storage in the main process.
+ */
+function ImportServersFromTools({ onDone }: { readonly onDone: () => void }): JSX.Element {
+  const discover = useWorkbench((state) => state.discoverMcpServers);
+  const importKeys = useWorkbench((state) => state.importDiscoveredMcpServers);
+  const [found, setFound] = useState<DiscoveredMcpServer[] | null>(null);
+  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [notes, setNotes] = useState<string[]>([]);
+
+  useEffect(() => {
+    let current = true;
+    void discover().then((servers) => {
+      if (current) {
+        setFound(servers);
+        setChosen(new Set(servers.filter((server) => !server.imported).map((server) => server.key)));
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, [discover]);
+
+  const run = async (): Promise<void> => {
+    setBusy(true);
+    setProblem(null);
+    try {
+      const result = await importKeys([...chosen]);
+      setNotes(result.notes);
+      if (result.failed) {
+        setProblem(result.failed);
+        return;
+      }
+      if (result.notes.length === 0) {
+        onDone();
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const byTool = new Map<string, DiscoveredMcpServer[]>();
+  for (const server of found ?? []) {
+    byTool.set(server.providerName, [...(byTool.get(server.providerName) ?? []), server]);
+  }
+
+  return (
+    <>
+      <div className="connector-panel__head">
+        <span className="connector-logo" style={{ width: 44, height: 44 }} aria-hidden="true">
+          <Download size={18} strokeWidth={1.75} />
+        </span>
+        <div>
+          <h2 className="connector-panel__title">Import from your tools</h2>
+          <p className="connector-panel__publisher">MCP servers your tools are already set up with.</p>
+        </div>
+      </div>
+      {found === null ? (
+        <p className="setting__description">Looking…</p>
+      ) : found.length === 0 ? (
+        <p className="setting__description">
+          None of your tools has an MCP server configured. Claude Code keeps them in ~/.claude.json,
+          Codex in ~/.codex/config.toml, Gemini CLI in ~/.gemini/settings.json.
+        </p>
+      ) : (
+        [...byTool.entries()].map(([tool, servers]) => (
+          <div className="connector-panel__section" key={tool}>
+            <p className="connector-panel__label">{tool}</p>
+            {servers.map((server) => (
+              <label className="radio-row" key={server.key} title={server.url ?? [server.command, ...server.args].join(" ")}>
+                <input
+                  type="checkbox"
+                  disabled={server.imported}
+                  checked={server.imported || chosen.has(server.key)}
+                  onChange={(event) => {
+                    const next = new Set(chosen);
+                    if (event.target.checked) {
+                      next.add(server.key);
+                    } else {
+                      next.delete(server.key);
+                    }
+                    setChosen(next);
+                  }}
+                />
+                <span>
+                  {server.name}
+                  {server.imported ? " · imported" : ""}
+                  <span className="field__description">
+                    {server.url ?? [server.command, ...server.args].join(" ")}
+                    {server.secretNames.length > 0 ? ` · key kept securely: ${server.secretNames.join(", ")}` : ""}
+                    {` · ${server.source}`}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </div>
+        ))
+      )}
+      {problem ? (
+        <p className="setting__description" data-tone="error" role="alert">
+          {problem}
+        </p>
+      ) : null}
+      {notes.map((note) => (
+        <p className="setting__description" key={note}>
+          {note}
+        </p>
+      ))}
+      <div className="connector-panel__actions">
+        {notes.length > 0 && !problem ? (
+          <button type="button" className="primary-button" onClick={onDone}>
+            Done
+          </button>
+        ) : (
+          <button type="button" className="primary-button" disabled={chosen.size === 0 || busy} onClick={() => void run()}>
+            {busy ? "Importing…" : chosen.size > 0 ? `Import ${chosen.size}` : "Import"}
+          </button>
+        )}
+      </div>
+    </>
   );
 }
 

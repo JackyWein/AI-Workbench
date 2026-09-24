@@ -118,7 +118,22 @@ export type PermissionArgs = z.infer<typeof permissionArgsSchema>;
 export const cliMcpSchema = z
   .discriminatedUnion("via", [
     z.object({ via: z.literal("none") }),
-    z.object({ via: z.literal("json-arg"), args: z.array(z.string()).min(1) }),
+    z.object({
+      via: z.literal("json-arg"),
+      args: z.array(z.string()).min(1),
+      /**
+       * How the tool pre-approves the tools of a trusted server: `item` is
+       * one approval with `{server}` for the server's key, joined by
+       * `separator` into `{trusted}` in `args`.
+       */
+      trust: z
+        .object({
+          args: z.array(z.string()).min(1),
+          item: z.string().min(1),
+          separator: z.string().default(","),
+        })
+        .optional(),
+    }),
     z.object({
       via: z.literal("config-overrides"),
       flag: z.string().min(1),

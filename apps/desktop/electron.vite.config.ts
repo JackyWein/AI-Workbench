@@ -75,6 +75,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, "src/main/index.ts"),
           "memory-server": resolve(__dirname, "src/main/memory-server.ts"),
+          "skills-server": resolve(__dirname, "src/main/skills-server.ts"),
         },
         // CommonJS keeps main and preload on the same module system and lets
         // the main process use __dirname to locate its bundled siblings.

@@ -15,7 +15,14 @@ import {
   type IpcOutput,
   type Theme,
 } from "@ai-workbench/shared";
-import { draftSkill, inspectAttachments, removeWorkspace } from "@ai-workbench/core";
+import {
+  describeFinding,
+  discoverToolMcpServers,
+  draftSkill,
+  inspectAttachments,
+  removeWorkspace,
+  toSaveInput,
+} from "@ai-workbench/core";
 import { importSkillFile, importSkillFolder } from "@ai-workbench/skills";
 import { remoteRoot } from "@ai-workbench/workspace-ssh";
 import type { WorkspaceFileSystem } from "@ai-workbench/workspace-fs";
@@ -129,6 +136,12 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       files: services.access.fileSystemFor(workspace),
       root: services.access.rootForSession(workspace, session.workingDirectory),
     };
+  };
+
+  /** A workspace's folder on this machine; none for a remote workspace. */
+  const localWorkspacePath = async (workspaceId: string | undefined): Promise<string | undefined> => {
+    const workspace = workspaceId ? await services.workspaces.get(workspaceId) : null;
+    return workspace && !workspace.connectionId ? workspace.path : undefined;
   };
 
   /** Skills the registered tools keep in their own folders, found by their adapters. */
@@ -518,7 +531,11 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
           continue;
         }
         try {
-          imported.push(await services.skills.save(await importSkillFolder(path)));
+          const saved = await services.skills.save(await importSkillFolder(path));
+          // Skills reach sessions on demand — a line each until one is loaded —
+          // so a skill the person brings over is available everywhere at once.
+          await services.skills.assign({ skillId: saved.id, scope: "global", enabled: true });
+          imported.push(saved);
         } catch (error) {
           failed.push({ path, reason: error instanceof Error ? error.message : String(error) });
         }
@@ -603,6 +620,42 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     }),
 
     "mcp.list": () => services.mcp.list(),
+    "mcp.discover": async (input) => {
+      const [findings, existing] = await Promise.all([
+        discoverToolMcpServers(services.providers, await localWorkspacePath(input.workspaceId)),
+        services.mcp.list(),
+      ]);
+      return findings.map((finding) => describeFinding(finding, existing));
+    },
+    "mcp.importDiscovered": async (input) => {
+      // Only servers the tools themselves name can be imported this way.
+      const findings = await discoverToolMcpServers(
+        services.providers,
+        await localWorkspacePath(input.workspaceId),
+      );
+      const byKey = new Map(findings.map((finding) => [finding.key, finding]));
+      const taken = new Set((await services.mcp.list()).map((config) => config.id));
+      const imported = [];
+      const failed: Array<{ key: string; reason: string }> = [];
+      const notes: Array<{ key: string; note: string }> = [];
+      for (const key of input.keys) {
+        const finding = byKey.get(key);
+        if (!finding) {
+          failed.push({ key, reason: "It is not one of the servers your tools have." });
+          continue;
+        }
+        try {
+          const converted = toSaveInput(finding, taken);
+          const saved = await services.mcp.saveFromWindow(converted.input);
+          taken.add(saved.id);
+          imported.push(saved);
+          notes.push(...converted.notes.map((note) => ({ key, note })));
+        } catch (error) {
+          failed.push({ key, reason: error instanceof Error ? error.message : String(error) });
+        }
+      }
+      return { imported, failed, notes };
+    },
       "mcp.save": async (input) => {
         if (input.id === "obsidian-memory") {
           throw new Error("Change the shared vault from the Obsidian page.");

@@ -1,8 +1,5 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
   cliProviderFactory,
-  findSkills,
   parseProfile,
   type CliExtensionContext,
   type CliProviderExtensions,
@@ -16,6 +13,7 @@ import { toModelInfos } from "./models.js";
 import { codexProfile } from "./profile.js";
 import { readRolloutUsage, rolloutTelemetry, sessionsRoot } from "./rollout.js";
 import { toUsageSnapshot } from "./usage.js";
+import { discoverCodexImportables } from "./importables.js";
 
 export { codexProfile, codexNotice } from "./profile.js";
 export * from "./rollout.js";
@@ -44,16 +42,8 @@ function probe(context: CliExtensionContext): Promise<CodexProbe> {
  * and from there to "unavailable"; nothing is guessed.
  */
 export const codexExtensions: CliProviderExtensions = {
-  // Codex keeps skills in $CODEX_HOME/skills (its own built-ins in .system).
-  discoverImportables: async (context) => ({
-    skills: await findSkills([
-      {
-        path: join(context.accountHome ?? context.env["CODEX_HOME"] ?? process.env["CODEX_HOME"] ?? join(homedir(), ".codex"), "skills"),
-        source: "your Codex skills",
-      },
-    ]),
-    mcpServers: [],
-  }),
+  // Skills and MCP servers Codex already has, to use in every tool.
+  discoverImportables: discoverCodexImportables,
   discoverModels: async (context) => {
     const { models } = await probe(context);
     return models ? toModelInfos(models) : null;

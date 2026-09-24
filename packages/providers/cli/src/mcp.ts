@@ -58,7 +58,20 @@ export function buildMcpLaunch(mcp: CliMcp, servers: readonly CliMcpServer[]): C
       // The rest of each argument (a flag, or a `--flag=` prefix) is kept as
       // written; only `{mcpConfig}` is replaced.
       const args = substitute(mcp.args, { mcpConfig: JSON.stringify({ mcpServers: map }) });
-      return args ? { args, env: {} } : NO_MCP;
+      if (!args) {
+        return NO_MCP;
+      }
+      // The application's own read-only servers run without a prompt nobody
+      // could answer in a background session; everything else still asks.
+      const trust = mcp.trust;
+      const trusted = trust ? servers.filter((server) => server.trusted && server.id in map) : [];
+      const trustArgs =
+        trust && trusted.length > 0
+          ? substitute(trust.args, {
+              trusted: trusted.map((server) => trust.item.replace("{server}", server.id)).join(trust.separator),
+            })
+          : null;
+      return { args: [...args, ...(trustArgs ?? [])], env: {} };
     }
     case "env-json": {
       const map = commonServerMap(servers);

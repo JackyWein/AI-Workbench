@@ -11,6 +11,7 @@ import type {
   ProviderAccount,
   AppSettings,
   ChatMessage,
+  DiscoveredMcpServer,
   DiscoveredSkill,
   MessageAttachment,
   McpServerSaveInput,
@@ -299,6 +300,14 @@ interface WorkbenchState {
   importDiscoveredSkills(paths: string[]): Promise<{ imported: number; failed: string | null }>;
   /** Imports Markdown files picked in the system's dialog. */
   importSkillFiles(): Promise<void>;
+  /** MCP servers the person's tools already have, to import. */
+  discoverMcpServers(): Promise<DiscoveredMcpServer[]>;
+  /** Imports servers found by discoverMcpServers; what happened, in words. */
+  importDiscoveredMcpServers(keys: string[]): Promise<{
+    imported: number;
+    failed: string | null;
+    notes: string[];
+  }>;
   /** Has a tool draft a skill; the draft, or why there is none. */
   draftSkill(input: {
     providerId: string;
@@ -1199,6 +1208,35 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       };
     } catch (error) {
       return { imported: 0, failed: describeError(error) };
+    }
+  },
+
+  async discoverMcpServers() {
+    try {
+      const workspaceId = get().activeWorkspaceId;
+      return await invoke("mcp.discover", workspaceId ? { workspaceId } : {});
+    } catch (error) {
+      set({ error: describeError(error) });
+      return [];
+    }
+  },
+
+  async importDiscoveredMcpServers(keys) {
+    try {
+      const workspaceId = get().activeWorkspaceId;
+      const result = await invoke("mcp.importDiscovered", {
+        keys,
+        ...(workspaceId ? { workspaceId } : {}),
+      });
+      await get().refreshMcp();
+      const first = result.failed[0];
+      return {
+        imported: result.imported.length,
+        failed: first ? `${result.failed.length} could not be imported — ${first.reason}` : null,
+        notes: result.notes.map((entry) => entry.note),
+      };
+    } catch (error) {
+      return { imported: 0, failed: describeError(error), notes: [] };
     }
   },
 

@@ -100,6 +100,45 @@ export interface CreateServicesOptions {
   readonly fetch?: typeof fetch;
 }
 
+/** The built-in MCP server that serves skills on demand. */
+const SKILLS_SERVER_ID = "ai-workbench-skills";
+
+/**
+ * Registers the built-in skills server, or points it at this installation
+ * after an update moved the application. Whether it is switched on stays the
+ * person's choice once it exists.
+ */
+async function ensureSkillsServer(mcp: McpService, library: string, logger: Logger): Promise<void> {
+  const script = join(__dirname, "skills-server.js");
+  const existing = await mcp.get(SKILLS_SERVER_ID);
+  const current =
+    existing?.command === process.execPath &&
+    existing.args[0] === script &&
+    existing.args[1] === library;
+  if (current) {
+    return;
+  }
+  try {
+    await mcp.save({
+      id: SKILLS_SERVER_ID,
+      name: "Skills",
+      transport: "stdio",
+      command: process.execPath,
+      args: [script, library],
+      // Electron runs the bundled server as plain Node.
+      env: { ELECTRON_RUN_AS_NODE: "1" },
+      cwd: library,
+      enabled: existing?.enabled ?? true,
+      availability: existing?.availability ?? "everywhere",
+      workspaceIds: existing?.workspaceIds ?? [],
+    });
+  } catch (error) {
+    logger.warn("The skills server could not be registered", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** Maps stored user overrides onto the adapter configuration shape. */
 export function toProviderConfigOverrides(
   stored: StoredProviderConfig | undefined,
@@ -281,8 +320,28 @@ async function createServicesInner(
       access.verifyRemoteDirectory(connectionId, path),
   });
 
-  const skills = new SkillService({ db: database.db, logger });
+  // Skills are also written to a library folder the built-in skills server
+  // reads, so every tool can load one when a task needs it. When the library
+  // changes the server is reconnected, which refreshes the list it announces.
+  const skillsLibrary = join(options.userDataPath, "skills-library");
+  let skillsReconnect: NodeJS.Timeout | null = null;
+  const skills = new SkillService({
+    db: database.db,
+    logger,
+    libraryDirectory: skillsLibrary,
+    onLibraryChanged: () => {
+      if (skillsReconnect) {
+        clearTimeout(skillsReconnect);
+      }
+      skillsReconnect = setTimeout(() => {
+        skillsReconnect = null;
+        void mcpRef?.connect(SKILLS_SERVER_ID).catch(() => undefined);
+      }, 500);
+      skillsReconnect.unref();
+    },
+  });
   await skills.load();
+  await skills.syncLibrary();
 
   const plugins = new PluginService({ db: database.db, logger, credentials });
   await plugins.load();
@@ -339,6 +398,10 @@ async function createServicesInner(
     db: database.db,
     logger,
     manager: mcpManager,
+    // The application's own servers — the shared memory (search, read, add a
+    // note; never change or delete one) and the skills library (read only) —
+    // may be used without a prompt nobody could answer in a background session.
+    trustedServerIds: ["obsidian-memory", SKILLS_SERVER_ID],
     oauth: mcpOAuth,
     gateway: mcpGateway,
     credentials: {
@@ -365,6 +428,7 @@ async function createServicesInner(
   });
   // Servers the user enabled come up with the application; one that refuses to
   // start is reported, never thrown (spec §60).
+  await ensureSkillsServer(mcp, skillsLibrary, logger);
   const connected = await mcp.connectEnabled();
   if (connected.length > 0) {
     logger.child("MCP").info("Configured servers", {
@@ -398,6 +462,7 @@ async function createServicesInner(
   });
 
   const sessions = new SessionManager({
+    skillsServerId: SKILLS_SERVER_ID,
     db: database.db,
     events,
     logger,

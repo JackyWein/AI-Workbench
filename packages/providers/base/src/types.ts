@@ -47,6 +47,13 @@ export interface ProviderToolAccess {
     readonly cwd?: string;
     /** Sent with every request to a remote server (the gateway's key). */
     readonly headers?: Readonly<Record<string, string>>;
+    /**
+     * The application's own servers — the shared memory, which only adds
+     * notes, and the skills library, which only reads. A tool whose profile
+     * says how may run their tools without asking; every other server still
+     * goes through the tool's own approval.
+     */
+    readonly trusted?: boolean;
   }>;
   /**
    * One local endpoint serving the tools of all `mcpServers`, for a tool that

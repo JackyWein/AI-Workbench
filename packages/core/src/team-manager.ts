@@ -66,6 +66,7 @@ import { ToolBridge } from "./tool-bridge.js";
 import { SqlTeamRunStore, toRun } from "./team-store.js";
 import { inspectAttachments, keepAttachments } from "./attachments.js";
 import { createId } from "./ids.js";
+import { withServerGuidance, type ServerInstructionsLookup } from "./server-guidance.js";
 
 export class TeamNotFoundError extends Error {
   constructor(id: string) {
@@ -1046,10 +1047,12 @@ export class TeamManager {
     if (!this.#mcp && !this.#teamMcp) {
       return inner;
     }
+    const mcp = this.#mcp;
     return new TeamScopedAdapter(
       inner,
       () => this.#toolAccessFor(agent, inner, service),
       this.#logger,
+      mcp ? (ids) => mcp.instructionsFor(ids) : undefined,
     );
   }
 
@@ -1204,6 +1207,7 @@ class TeamScopedAdapter implements AIProviderAdapter {
   readonly #inner: AIProviderAdapter;
   readonly #resolve: () => Promise<ProviderToolAccess | null>;
   readonly #logger: Logger;
+  readonly #lookup: ServerInstructionsLookup | undefined;
 
   authenticate?: (request?: AuthRequest) => Promise<AuthResult>;
   logout?: () => Promise<void>;
@@ -1224,10 +1228,12 @@ class TeamScopedAdapter implements AIProviderAdapter {
     inner: AIProviderAdapter,
     resolve: () => Promise<ProviderToolAccess | null>,
     logger: Logger,
+    lookup?: ServerInstructionsLookup,
   ) {
     this.#inner = inner;
     this.#resolve = resolve;
     this.#logger = logger;
+    this.#lookup = lookup;
     this.metadata = inner.metadata;
     const authenticate = inner.authenticate?.bind(inner);
     if (authenticate) {
@@ -1325,20 +1331,24 @@ class TeamScopedAdapter implements AIProviderAdapter {
       return config;
     }
     const existing = config.toolAccess;
-    if (!existing) {
-      return { ...config, toolAccess: access };
-    }
     const incoming = new Set(access.mcpServers.map((server) => server.id));
+    const toolAccess: ProviderToolAccess = existing
+      ? {
+          kind: access.kind,
+          mcpServers: [
+            ...access.mcpServers,
+            ...existing.mcpServers.filter((server) => !incoming.has(server.id)),
+          ],
+          hostTools: access.hostTools,
+        }
+      : access;
+    // A member is told what its servers are for — the shared memory first of
+    // all — the same way a solo session is.
+    const systemInstructions = withServerGuidance(config.systemInstructions, toolAccess, this.#lookup);
     return {
       ...config,
-      toolAccess: {
-        kind: access.kind,
-        mcpServers: [
-          ...access.mcpServers,
-          ...existing.mcpServers.filter((server) => !incoming.has(server.id)),
-        ],
-        hostTools: access.hostTools,
-      },
+      toolAccess,
+      ...(systemInstructions ? { systemInstructions } : {}),
     };
   }
 }

@@ -22,6 +22,7 @@ import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
 import type { EventBus } from "./event-bus.js";
 import type { McpService } from "./mcp-service.js";
 import { createId } from "./ids.js";
+import { withServerGuidance } from "./server-guidance.js";
 import type { ProviderManager } from "./provider-manager.js";
 import type { WorkspaceManager } from "./workspace-manager.js";
 
@@ -79,7 +80,7 @@ export interface AgentTerminalServiceOptions {
    * The MCP servers an agent in this workspace may use. Without it agents
    * get none — the same as a session with no servers.
    */
-  readonly mcp?: Pick<McpService, "enabledForWorkspace" | "toolAccess">;
+  readonly mcp?: Pick<McpService, "enabledForWorkspace" | "toolAccess" | "instructionsFor">;
 }
 
 interface Runtime {
@@ -626,9 +627,17 @@ export class AgentTerminalService {
     let launch: InteractiveLaunch;
     try {
       const toolAccess = await this.#toolAccess(terminal.workspaceId, adapter);
+      // A terminal agent is told what its servers are for, like a chat is.
+      const mcp = this.#mcp;
+      const systemInstructions = withServerGuidance(
+        undefined,
+        toolAccess,
+        mcp ? (ids) => mcp.instructionsFor(ids) : undefined,
+      );
       launch = await adapter.describeInteractiveLaunch({
         workingDirectory: terminal.workingDirectory,
         ...(toolAccess ? { toolAccess } : {}),
+        ...(systemInstructions ? { systemInstructions } : {}),
         runId: `${terminal.id}-${Date.now().toString(36)}`,
         startedAt: new Date(),
         ...(terminal.modelId ? { modelId: terminal.modelId } : {}),

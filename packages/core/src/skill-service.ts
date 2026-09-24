@@ -7,6 +7,7 @@ import {
   type SkillRow,
 } from "@ai-workbench/database";
 import { SkillManager } from "@ai-workbench/skills";
+import { skillFolderOf, writeSkillsLibrary } from "@ai-workbench/mcp";
 import type {
   EffectiveSkill,
   Logger,
@@ -19,6 +20,14 @@ import type {
 export interface SkillServiceOptions {
   readonly db: Database;
   readonly logger: Logger;
+  /**
+   * Where the skills are written for the skills server, which lets every tool
+   * load one when a task needs it. Without it skills only reach sessions as
+   * full instructions.
+   */
+  readonly libraryDirectory?: string;
+  /** Called after the library changed, so the server can be told. */
+  readonly onLibraryChanged?: () => void;
 }
 
 /**
@@ -30,11 +39,83 @@ export class SkillService {
   readonly #db: Database;
   readonly #logger: Logger;
   readonly #manager: SkillManager;
+  readonly #libraryDirectory: string | undefined;
+  readonly #onLibraryChanged: (() => void) | undefined;
+  #syncing: Promise<void> = Promise.resolve();
 
   constructor(options: SkillServiceOptions) {
     this.#db = options.db;
     this.#logger = options.logger.child("SKILL");
     this.#manager = new SkillManager({ logger: options.logger });
+    this.#libraryDirectory = options.libraryDirectory;
+    this.#onLibraryChanged = options.onLibraryChanged;
+  }
+
+  /** Where the library is, when there is one. */
+  get libraryDirectory(): string | undefined {
+    return this.#libraryDirectory;
+  }
+
+  /**
+   * Writes every skill to the library folder: which exist, which are switched
+   * on for everyone, and each one's text. Runs one at a time, so quick edits
+   * cannot interleave; a failure is logged and never fails the edit.
+   */
+  syncLibrary(): Promise<void> {
+    const directory = this.#libraryDirectory;
+    if (!directory) {
+      return Promise.resolve();
+    }
+    this.#syncing = this.#syncing.then(async () => {
+      try {
+        const rows = await this.#db.select().from(skills);
+        await writeSkillsLibrary(
+          directory,
+          rows.map((row) => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            instructions: row.instructions,
+            enabled: row.enabledGlobally,
+            folder: skillFolderOf(
+              typeof (row.source as { path?: unknown }).path === "string"
+                ? ((row.source as { path?: string }).path)
+                : undefined,
+            ),
+          })),
+        );
+        this.#onLibraryChanged?.();
+      } catch (error) {
+        this.#logger.warn("The skills library could not be written", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    });
+    return this.#syncing;
+  }
+
+  /** Ids of the skills switched on for everyone — the ones the library offers. */
+  async globallyEnabled(): Promise<Set<string>> {
+    const rows = await this.#db.select({ id: skills.id, enabled: skills.enabledGlobally }).from(skills);
+    return new Set(rows.filter((row) => row.enabled).map((row) => row.id));
+  }
+
+  /**
+   * The on-demand form of a session's skills: one line each, loaded in full
+   * with skill_read when a task needs them. Skills the library already
+   * offers everyone are left out, so nothing is said twice.
+   */
+  buildListing(effective: readonly EffectiveSkill[], alreadyOffered: ReadonlySet<string>): string {
+    const extra = effective.filter((entry) => !alreadyOffered.has(entry.skill.id));
+    if (extra.length === 0) {
+      return "";
+    }
+    return [
+      "Also available here (load with skill_read before a task that matches):",
+      ...extra.map(
+        (entry) => `- ${entry.skill.name}: ${entry.skill.description.replace(/\s+/g, " ").slice(0, 300)}`,
+      ),
+    ].join("\n");
   }
 
   /** Loads every stored skill into memory. Called once at startup. */
@@ -86,12 +167,14 @@ export class SkillService {
       .values(values)
       .onConflictDoUpdate({ target: skills.id, set: { ...values, createdAt: values.createdAt } });
 
+    void this.syncLibrary();
     return manifest;
   }
 
   async delete(id: string): Promise<boolean> {
     this.#manager.unregister(id);
     await this.#db.delete(skills).where(eq(skills.id, id));
+    void this.syncLibrary();
     return true;
   }
 
@@ -102,6 +185,7 @@ export class SkillService {
         .update(skills)
         .set({ enabledGlobally: input.enabled, updatedAt: new Date() })
         .where(eq(skills.id, input.skillId));
+      void this.syncLibrary();
       return;
     }
 

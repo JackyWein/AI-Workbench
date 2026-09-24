@@ -91,7 +91,13 @@ export const claudeCodeProfile: CliProviderProfileInput = {
    * The session's servers are added to the user's own; --strict-mcp-config is
    * deliberately absent so those keep working.
    */
-  mcp: { via: "json-arg", args: ["--mcp-config", "{mcpConfig}"] },
+  mcp: {
+    via: "json-arg",
+    args: ["--mcp-config", "{mcpConfig}"],
+    // A server-wide permission rule approves every tool of the application's
+    // own read-only servers (memory, skills); nothing else is pre-approved.
+    trust: { args: ["--allowedTools", "{trusted}"], item: "mcp__{server}" },
+  },
   resumeArgs: ["--resume", "{providerSessionId}"],
   promptVia: "stdin",
   // Files are listed in the prompt and read with Claude Code's own Read tool,

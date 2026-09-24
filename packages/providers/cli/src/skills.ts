@@ -56,3 +56,58 @@ function frontMatter(text: string): Record<string, string> {
   }
   return attributes;
 }
+
+/** Folders never worth walking into when looking for skills. */
+const SKIPPED = new Set(["node_modules", ".git", ".venv", "dist", "out", "build", "__pycache__"]);
+
+/**
+ * Every skill below a folder, however deep the tool nests them — plugin
+ * caches and synced organisation skills sit several levels down. The walk is
+ * bounded in depth and in count, never follows a folder that starts with ".",
+ * and a skill found twice (the same plugin in a marketplace and in its cache)
+ * is kept once. `sourceOf` names where each one came from.
+ */
+export async function findSkillsDeep(
+  root: string,
+  sourceOf: (skillPath: string) => string,
+  options: { readonly maxDepth?: number; readonly limit?: number } = {},
+): Promise<ImportableSkill[]> {
+  const maxDepth = options.maxDepth ?? 7;
+  const limit = options.limit ?? 300;
+  const found: ImportableSkill[] = [];
+  const seen = new Set<string>();
+
+  const walk = async (folder: string, depth: number): Promise<void> => {
+    if (found.length >= limit || depth > maxDepth) {
+      return;
+    }
+    const file = join(folder, "SKILL.md");
+    const info = await stat(file).catch(() => null);
+    if (info?.isFile() && info.size <= 1024 * 1024) {
+      const text = await readFile(file, "utf8").catch(() => "");
+      const attributes = frontMatter(text);
+      const name = attributes["name"] ?? folder.split(/[\\/]/).pop() ?? "skill";
+      const description = attributes["description"] ?? "";
+      const key = `${name}\u0000${description}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        found.push({ path: folder, name, description, source: sourceOf(folder) });
+      }
+      // A skill folder holds the skill's own files, not further skills.
+      return;
+    }
+    const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith(".") || SKIPPED.has(entry.name)) {
+        continue;
+      }
+      await walk(join(folder, entry.name), depth + 1);
+      if (found.length >= limit) {
+        return;
+      }
+    }
+  };
+
+  await walk(root, 0);
+  return found;
+}

@@ -28,6 +28,7 @@ import { AttachmentError, forgetAttachments, inspectAttachments, keepAttachments
 import type { EventBus } from "./event-bus.js";
 import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
 import { createId } from "./ids.js";
+import { withServerGuidance } from "./server-guidance.js";
 import type { ProviderManager } from "./provider-manager.js";
 import type { McpService } from "./mcp-service.js";
 import type { SkillService } from "./skill-service.js";
@@ -71,6 +72,12 @@ export interface SessionManagerOptions {
   readonly workspaces: WorkspaceManager;
   /** Optional: without them a session simply gets no skills and no tools. */
   readonly skills?: SkillService;
+  /**
+   * The MCP server that serves skills on demand. A session that has it gets
+   * its skills as a short list and loads one when a task needs it, instead
+   * of carrying every skill's full text on every turn.
+   */
+  readonly skillsServerId?: string;
   readonly mcp?: McpService;
   /**
    * Where each session keeps copies of the files sent in it. Without one,
@@ -91,6 +98,7 @@ export class SessionManager {
   readonly #providers: ProviderManager;
   readonly #workspaces: WorkspaceManager;
   readonly #skills: SkillService | undefined;
+  readonly #skillsServerId: string | undefined;
   readonly #mcp: McpService | undefined;
   readonly #attachmentsDirectory: string | undefined;
   readonly #runs = new Map<string, ActiveRun>();
@@ -102,6 +110,7 @@ export class SessionManager {
     this.#providers = options.providers;
     this.#workspaces = options.workspaces;
     this.#skills = options.skills;
+    this.#skillsServerId = options.skillsServerId;
     this.#mcp = options.mcp;
     this.#attachmentsDirectory = options.attachmentsDirectory;
   }
@@ -662,6 +671,7 @@ export class SessionManager {
   async #buildSystemInstructions(
     session: Session,
     capabilities: ProviderCapabilities | null,
+    onDemand: boolean,
   ): Promise<string> {
     if (!this.#skills) {
       return "";
@@ -672,6 +682,11 @@ export class SessionManager {
         workspaceId: session.workspaceId,
         ...(capabilities ? { capabilities } : {}),
       });
+      // With the skills server the session lists its skills and loads one
+      // when needed; the server already offers the ones on for everyone.
+      if (onDemand) {
+        return this.#skills.buildListing(effective, await this.#skills.globallyEnabled());
+      }
       return this.#skills.buildInstructions(effective);
     } catch (error) {
       // A skill problem must not stop the conversation.
@@ -746,8 +761,19 @@ export class SessionManager {
     adapter: AIProviderAdapter,
   ): Promise<{ handle: ProviderSessionHandle }> {
     const capabilities = await this.#safeCapabilities(adapter);
-    const systemInstructions = await this.#buildSystemInstructions(session, capabilities);
     const toolAccess = await this.#buildToolAccess(session, capabilities);
+    // Skills, then what the session's servers say about using them — so the
+    // shared memory and every other server is used without being asked.
+    const mcp = this.#mcp;
+    const skillsServerId = this.#skillsServerId;
+    const onDemand = Boolean(
+      skillsServerId && toolAccess?.mcpServers.some((server) => server.id === skillsServerId),
+    );
+    const systemInstructions = withServerGuidance(
+      await this.#buildSystemInstructions(session, capabilities, onDemand),
+      toolAccess,
+      mcp ? (ids) => mcp.instructionsFor(ids) : undefined,
+    );
     // Effort and permission are chosen per session and apply from the next
     // turn on, without starting a new provider conversation.
     const runtime = readSessionRuntimeSettings(session.settings);

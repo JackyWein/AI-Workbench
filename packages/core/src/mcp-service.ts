@@ -37,6 +37,11 @@ export interface McpServiceOptions {
    * process, at connect time (spec §57).
    */
   readonly credentials?: McpCredentialSource;
+  /**
+   * The application's own read-only servers, whose tools a tool may run
+   * without asking (see ProviderToolAccess). Only ids listed here.
+   */
+  readonly trustedServerIds?: readonly string[];
 }
 
 /** Anything that can turn a credential reference into its secret. */
@@ -54,6 +59,8 @@ export interface McpCredentialSource {
  * the reference is stored there, never the secret (spec §57).
  */
 const CREDENTIAL_ENV_KEY = "AI_WORKBENCH_MCP_CREDENTIAL_REFERENCE";
+/** Kept next to the reference the same way: which header the key goes in. */
+const CREDENTIAL_HEADER_KEY = "AI_WORKBENCH_MCP_CREDENTIAL_HEADER";
 
 /**
  * Stores MCP server configurations, keeps the connections in step with them and
@@ -66,6 +73,7 @@ export class McpService {
   readonly #oauth: McpOAuth | undefined;
   readonly #gateway: Pick<McpGateway, "endpointFor" | "endpointForAll"> | undefined;
   readonly #credentials: McpCredentialSource | undefined;
+  readonly #trusted: ReadonlySet<string>;
   readonly #toolBridge = new ToolBridge();
 
   constructor(options: McpServiceOptions) {
@@ -75,6 +83,7 @@ export class McpService {
     this.#oauth = options.oauth;
     this.#gateway = options.gateway;
     this.#credentials = options.credentials;
+    this.#trusted = new Set(options.trustedServerIds ?? []);
     if (options.credentials) {
       const source = options.credentials;
       this.#manager.setCredentialResolver((reference) => source.resolve(reference));
@@ -116,13 +125,20 @@ export class McpService {
       return null;
     }
     const source = this.#credentials;
+    const header = config.apiKeyHeader;
     return {
       url: config.url,
       name: config.name,
+      ...(header ? { header } : {}),
       authorization: async () => {
         const secret = await source?.resolve(reference);
         if (!secret) {
           return null;
+        }
+        // A service's own key header takes the key as it is; Authorization
+        // takes a scheme, Bearer unless the stored value names one.
+        if (header) {
+          return secret;
         }
         return /^\S+\s+\S/.test(secret) ? secret : `Bearer ${secret}`;
       },
@@ -218,7 +234,13 @@ export class McpService {
         : config.url
           ? { url: config.url }
           : {}),
+      ...(this.#trusted.has(config.id) ? { trusted: true } : {}),
     };
+  }
+
+  /** Usage instructions of the connected servers among these, from the servers. */
+  instructionsFor(serverIds: readonly string[]): Array<{ serverId: string; instructions: string }> {
+    return this.#manager.instructionsFor(serverIds);
   }
 
   get manager(): McpManager {
@@ -249,8 +271,14 @@ export class McpService {
     const env = { ...config.env };
     if (config.credentialReference && config.transport !== "stdio") {
       env[CREDENTIAL_ENV_KEY] = config.credentialReference;
+      if (config.apiKeyHeader) {
+        env[CREDENTIAL_HEADER_KEY] = config.apiKeyHeader;
+      } else {
+        delete env[CREDENTIAL_HEADER_KEY];
+      }
     } else {
       delete env[CREDENTIAL_ENV_KEY];
+      delete env[CREDENTIAL_HEADER_KEY];
     }
 
     // A sign-in made before is kept when the form that saves the server does
@@ -488,7 +516,9 @@ export function availableServers(
 function toConfig(row: McpServerRow): McpServerConfig {
   const env = { ...row.env };
   const credentialReference = env[CREDENTIAL_ENV_KEY];
+  const apiKeyHeader = env[CREDENTIAL_HEADER_KEY];
   delete env[CREDENTIAL_ENV_KEY];
+  delete env[CREDENTIAL_HEADER_KEY];
   return {
     id: row.id,
     name: row.name,
@@ -501,6 +531,7 @@ function toConfig(row: McpServerRow): McpServerConfig {
     ...(typeof credentialReference === "string" && credentialReference.length > 0
       ? { credentialReference }
       : {}),
+    ...(typeof apiKeyHeader === "string" && apiKeyHeader.length > 0 ? { apiKeyHeader } : {}),
     enabled: row.enabled,
     availability: row.availability,
     workspaceIds: row.workspaceIds,

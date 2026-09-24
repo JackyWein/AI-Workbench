@@ -115,3 +115,28 @@ describe("team server on the CLI call", () => {
     expect(mcpServersFor(providerMcpAccess([fileServer]))).toEqual([fileServer]);
   });
 });
+
+describe("pre-approving the application's own servers", () => {
+  const claudeLike = {
+    via: "json-arg" as const,
+    args: ["--mcp-config", "{mcpConfig}"],
+    trust: { args: ["--allowedTools", "{trusted}"], item: "mcp__{server}", separator: "," },
+  };
+
+  it("approves only the servers marked trusted, in the tool's own rule format", () => {
+    const launch = buildMcpLaunch(claudeLike, [
+      { id: "obsidian-memory", name: "Memory", transport: "stdio", command: "node", args: [], trusted: true },
+      { id: "ai-workbench-skills", name: "Skills", transport: "stdio", command: "node", args: [], trusted: true },
+      { id: "stitch", name: "Stitch", transport: "http", url: "http://127.0.0.1:1/mcp" },
+    ]);
+    expect(launch.args.slice(-2)).toEqual(["--allowedTools", "mcp__obsidian-memory,mcp__ai-workbench-skills"]);
+    expect(launch.args.join(" ")).not.toContain("mcp__stitch");
+  });
+
+  it("adds nothing when no server is trusted, or the tool has no rule for it", () => {
+    const servers = [{ id: "stitch", name: "Stitch", transport: "http", url: "http://127.0.0.1:1/mcp" }];
+    expect(buildMcpLaunch(claudeLike, servers).args).not.toContain("--allowedTools");
+    const trusted = [{ id: "memory", name: "M", transport: "stdio", command: "node", args: [], trusted: true }];
+    expect(buildMcpLaunch({ via: "json-arg", args: ["--mcp-config", "{mcpConfig}"] }, trusted).args).toHaveLength(2);
+  });
+});
