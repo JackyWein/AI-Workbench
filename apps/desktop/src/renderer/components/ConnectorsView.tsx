@@ -48,8 +48,22 @@ export function ConnectorsView(): JSX.Element {
     <div className="connectors">
       <div className="view">
         <div className="view__inner">
-          <div className="view__header connectors__header">
-            <h1 className="view__title">Connectors</h1>
+          <header className="view__header connectors__header">
+            <div className="view__heading">
+              <h1 className="view__title">Connectors</h1>
+              <p className="view__lede">
+                Services your agents work with — mail, issues, docs. Sign in once and every session and
+                terminal agent can use it, or only the workspaces you choose.
+              </p>
+            </div>
+            <div className="view__actions">
+              <button type="button" className="primary-button" onClick={() => setOpen({ kind: "custom" })}>
+                <Plus size={13} strokeWidth={2} aria-hidden="true" />
+                Add
+              </button>
+            </div>
+          </header>
+          <div className="view__toolbar">
             <Segmented<Tab>
               label="Show"
               value={tab}
@@ -68,15 +82,7 @@ export function ConnectorsView(): JSX.Element {
                 onChange={(event) => setQuery(event.target.value)}
               />
             </label>
-            <button type="button" className="primary-button" onClick={() => setOpen({ kind: "custom" })}>
-              <Plus size={13} strokeWidth={2} aria-hidden="true" />
-              Add
-            </button>
           </div>
-          <p className="connectors__lede">
-            A connector gives your agents a service to work with — mail, issues, docs. Sign in once and
-            every session and terminal agent can use it, or only the workspaces you choose.
-          </p>
 
           {tab === "discover" ? (
             <div className="connector-grid">

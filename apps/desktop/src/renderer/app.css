@@ -830,7 +830,7 @@ span.pill {
 }
 
 .chat__inner {
-  max-width: 620px;
+  max-width: 680px;
   margin: 0 auto;
   padding: var(--space-6) 20px var(--space-4);
   display: flex;
@@ -870,6 +870,11 @@ span.pill {
   font-weight: 600;
 }
 
+.message__model {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
 .message__meta time {
   font-size: 10.5px;
   font-weight: 400;
@@ -878,8 +883,8 @@ span.pill {
 }
 
 .message__body {
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: var(--text-reading);
+  line-height: 1.65;
   color: var(--text-primary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -897,7 +902,7 @@ span.pill {
   border: 1px solid var(--border-subtle);
   border-radius: 4px 12px 12px 12px;
   padding: 8px 12px;
-  font-size: 12.5px;
+  font-size: var(--text-reading);
   display: inline-block;
 }
 
@@ -1215,7 +1220,7 @@ input[type="checkbox"].mini-switch:disabled {
 }
 
 .composer__inner {
-  max-width: 620px;
+  max-width: 680px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -1809,8 +1814,11 @@ input[type="checkbox"].mini-switch:disabled {
 }
 
 .view__inner {
-  /* Wide enough to use the window, narrow enough that a line stays readable. */
-  max-width: 880px;
+  /*
+   * Every screen shares one frame: the same width, the same top and the same
+   * header, so moving between them never makes the page jump.
+   */
+  max-width: 840px;
   margin: 0 auto;
   padding: var(--space-7) var(--space-6);
   display: flex;
@@ -1846,8 +1854,10 @@ input[type="checkbox"].mini-switch:disabled {
 }
 
 .view__title {
+  font-family: var(--font-display);
   font-size: var(--text-xl);
-  font-weight: 560;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
@@ -1858,9 +1868,26 @@ input[type="checkbox"].mini-switch:disabled {
 
 .view__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-4);
+  gap: var(--space-5);
+}
+
+/* The page's own actions, beside its title. */
+.view__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  padding-top: 2px;
+}
+
+/* Filters and search for what the page lists, just above the list. */
+.view__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: calc(-1 * var(--space-3));
 }
 
 .notice {
@@ -2687,14 +2714,16 @@ input[type="checkbox"].mini-switch:disabled {
 .view__heading {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
 }
 
 .view__lede {
   margin: 0;
-  font-size: var(--text-sm);
-  color: var(--text-muted);
+  max-width: 62ch;
+  font-size: var(--text-md);
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 .view__empty {
@@ -3253,10 +3282,6 @@ button.sidebar__user[aria-current="true"] {
 /* ------------------------------------------------------------- settings -- */
 
 /* Preferences read as one calm column, not a page-wide form. */
-.view__inner--narrow {
-  max-width: 700px;
-}
-
 .setting-group {
   display: flex;
   flex-direction: column;
@@ -4722,17 +4747,6 @@ button.sidebar__user[aria-current="true"] {
   min-width: 0;
 }
 
-.connectors__header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.connectors__header .view__title {
-  margin-right: var(--space-2);
-}
-
 .connectors__search {
   flex: 1;
   min-width: 180px;
@@ -4759,20 +4773,6 @@ button.sidebar__user[aria-current="true"] {
   background: none;
   font-size: 12.5px;
   color: var(--text-primary);
-}
-
-.connectors__header .primary-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.connectors__lede {
-  margin: var(--space-2) 0 var(--space-5);
-  max-width: 64ch;
-  color: var(--text-secondary);
-  font-size: 12.5px;
-  line-height: 1.5;
 }
 
 .connectors__empty {
@@ -5117,12 +5117,8 @@ button.sidebar__user[aria-current="true"] {
 
 /* --------------------------------------------------------------- skills -- */
 
-.connectors__spacer {
-  flex: 1;
-}
-
-.connectors__header .ghost-button,
-.connectors__header .primary-button {
+.view__actions .ghost-button,
+.view__actions .primary-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -5232,4 +5228,114 @@ button.sidebar__user[aria-current="true"] {
   border-color: var(--accent);
   color: var(--text-primary);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* ---- A team on the Teams screen ------------------------------------------ */
+
+.team-card {
+  gap: var(--space-4);
+}
+
+.team-card__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.team-card__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.team-card__actions {
+  display: flex;
+  gap: var(--space-1);
+  flex: none;
+}
+
+.team-card__members {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3) var(--space-4);
+}
+
+.team-card__member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.team-card__member-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.team-card__member-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.team-card__member-role {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-card__start {
+  display: flex;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.team-card__start .text-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.team-card__start .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.team-card__where {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: calc(-1 * var(--space-2));
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.team-card__where svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.team-card__path {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.team-card__runs {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.team-card__runs .link-button {
+  margin: var(--space-2) 0 0 var(--space-3);
 }

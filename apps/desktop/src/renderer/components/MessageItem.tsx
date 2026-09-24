@@ -1,6 +1,6 @@
 import { type JSX, useState } from "react";
 import { Check, ChevronRight, Copy, FileText, Image, RotateCcw, Square } from "lucide-react";
-import type { ChatMessage, ToolCallRecord } from "@ai-workbench/shared";
+import type { ChatMessage, ProviderSummary, ToolCallRecord } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 
 interface MessageItemProps {
@@ -17,7 +17,9 @@ interface MessageItemProps {
 export function MessageItem({ message, streaming, onRetry }: MessageItemProps): JSX.Element {
   const isAssistant = message.role === "assistant";
   const cancel = useWorkbench((state) => state.cancel);
+  const providers = useWorkbench((state) => state.providers);
   const [copied, setCopied] = useState(false);
+  const author = isAssistant ? authorOf(message, providers) : null;
 
   const copyBody = async (): Promise<void> => {
     try {
@@ -32,7 +34,8 @@ export function MessageItem({ message, streaming, onRetry }: MessageItemProps): 
   return (
     <article className="message" data-role={message.role} data-status={message.status}>
       <div className="message__meta">
-        <span>{isAssistant ? modelLabel(message) : "You"}</span>
+        <span>{author ? author.name : "You"}</span>
+        {author?.model ? <span className="message__model">{author.model}</span> : null}
         <time dateTime={message.createdAt.toISOString()}>
           {message.createdAt.toLocaleTimeString([], {
             hour: "2-digit",
@@ -257,6 +260,18 @@ function ToolCallBlock({ toolCall }: { readonly toolCall: ToolCallRecord }): JSX
   );
 }
 
-function modelLabel(message: ChatMessage): string {
-  return message.modelId ?? message.providerId ?? "Assistant";
+/** Who answered, by the names the tool gives itself and its model. */
+function authorOf(
+  message: ChatMessage,
+  providers: readonly ProviderSummary[],
+): { name: string; model: string | null } {
+  const provider = providers.find((entry) => entry.metadata.id === message.providerId);
+  const model = provider?.models.find((entry) => entry.id === message.modelId);
+  if (!provider) {
+    return { name: message.modelId ?? message.providerId ?? "Assistant", model: null };
+  }
+  return {
+    name: provider.metadata.displayName,
+    model: model?.displayName ?? message.modelId ?? null,
+  };
 }

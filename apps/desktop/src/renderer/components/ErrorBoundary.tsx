@@ -37,7 +37,7 @@ export class RendererErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
     if (this.state.error) {
       return (
         <div className="view">
-          <div className="view__inner view__inner--narrow">
+          <div className="view__inner">
             <header className="view__header">
               <div className="view__heading">
                 <h1 className="view__title">{this.props.fallbackTitle} unavailable</h1>

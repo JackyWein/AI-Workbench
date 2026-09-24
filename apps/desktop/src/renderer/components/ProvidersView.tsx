@@ -75,7 +75,7 @@ export function ProvidersView({ providers, configs }: ProvidersViewProps): JSX.E
 
   return (
     <div className="view">
-      <div className="view__inner view__inner--narrow">
+      <div className="view__inner">
         <header className="view__header">
           <div className="view__heading">
             <h1 className="view__title">Providers</h1>
@@ -83,20 +83,22 @@ export function ProvidersView({ providers, configs }: ProvidersViewProps): JSX.E
               What each tool reports about itself. Unverified stays unverified.
             </p>
           </div>
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-          >
-            <RefreshCw
-              size={13}
-              strokeWidth={1.75}
-              aria-hidden="true"
-              className={refreshing ? "spin" : undefined}
-            />
-            {refreshing ? "Checking…" : "Check again"}
-          </button>
+          <div className="view__actions">
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => void refresh()}
+              disabled={refreshing}
+            >
+              <RefreshCw
+                size={13}
+                strokeWidth={1.75}
+                aria-hidden="true"
+                className={refreshing ? "spin" : undefined}
+              />
+              {refreshing ? "Checking…" : "Check again"}
+            </button>
+          </div>
         </header>
 
         {installed.length > 0 ? <div className="entry-list">{installed.map(entry)}</div> : null}

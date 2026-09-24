@@ -46,8 +46,13 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
 
   return (
     <div className="view">
-      <div className="view__inner view__inner--narrow">
-        <h1 className="view__title">Settings</h1>
+      <div className="view__inner">
+        <header className="view__header">
+          <div className="view__heading">
+            <h1 className="view__title">Settings</h1>
+            <p className="view__lede">How AI Workbench looks, and what it does in the background.</p>
+          </div>
+        </header>
 
         <IslandSettings settings={settings} />
 

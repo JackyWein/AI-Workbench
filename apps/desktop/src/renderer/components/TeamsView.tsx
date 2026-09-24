@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from "react";
-import { Pause, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
+import { FolderOpen, Pause, Pencil, Play, Plus, Square, Trash2 } from "lucide-react";
 import type {
   ProviderSummary,
   TeamDefinition,
@@ -10,6 +10,7 @@ import type {
 import { useWorkbench } from "../store/workbench.js";
 import { Logo } from "./Logo.js";
 import { Switch } from "./Controls.js";
+import { MemberAvatar, runsOn } from "./TeamParts.js";
 import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
 
 /**
@@ -36,22 +37,24 @@ export function TeamsView(): JSX.Element {
   return (
     <div className="view">
       <div className="view__inner">
-        <div className="view__header">
-          <h1 className="view__title">Teams</h1>
-          <button
-            type="button"
-            className="quiet-button"
-            onClick={() => setCreating((open) => !open)}
-          >
-            <Plus size={13} strokeWidth={1.75} aria-hidden="true" />
-            {creating ? "Cancel" : "New team"}
-          </button>
-        </div>
-
-        <p className="field__description">
-          Teams live globally: create one from any workspace and start new runs
-          on it from here at any time.
-        </p>
+        <header className="view__header">
+          <div className="view__heading">
+            <h1 className="view__title">Teams</h1>
+            <p className="view__lede">
+              Agents that work on one goal together. Pick a team in any session, or start a run here.
+            </p>
+          </div>
+          <div className="view__actions">
+            <button
+              type="button"
+              className={creating ? "ghost-button" : "primary-button"}
+              onClick={() => setCreating((open) => !open)}
+            >
+              {creating ? null : <Plus size={13} strokeWidth={2} aria-hidden="true" />}
+              {creating ? "Cancel" : "New team"}
+            </button>
+          </div>
+        </header>
 
         {creating ? <TeamForm onDone={() => setCreating(false)} /> : null}
 
@@ -96,9 +99,9 @@ function TeamEntry({
   const openRunId = useWorkbench((state) => state.openRunId);
   const startRun = useWorkbench((state) => state.startTeamRun);
   const deleteTeam = useWorkbench((state) => state.deleteTeam);
-  const setLead = useWorkbench((state) => state.setTeamLead);
   const openRun = useWorkbench((state) => state.openTeamRun);
   const [editing, setEditing] = useState(false);
+  const [allRuns, setAllRuns] = useState(false);
 
   // Where a run started here writes. Shown, not implied: a team that runs in
   // the wrong folder is the one mistake that cannot be undone quietly.
@@ -125,93 +128,16 @@ function TeamEntry({
   };
 
   return (
-    <article className="provider-entry">
-      <div className="provider-entry__head">
-        <span className="provider-entry__name">{team.name}</span>
-        {/* The compact state the specification asks for (spec §70). */}
-        <span className="row__meta">
-          {team.agents.length} agents · {active} active · {homeName}
-        </span>
-      </div>
-
-      {editing ? <TeamForm team={team} onDone={() => setEditing(false)} /> : null}
-
-      <dl className="detail-list">
-        <div className="detail">
-          <dt className="detail__label">Works in</dt>
-          <dd className="detail__value">
-            {team.settings.workingDirectory ? (
-              <>
-                <span className="detail__value--path">{team.settings.workingDirectory}</span>
-                <span className="detail__note">always this folder</span>
-              </>
-            ) : (
-              <>
-                The workspace a run is started from
-                <span className="detail__note">
-                  From a session, the session&apos;s workspace
-                  {activeWorkspace ? `; from here, ${activeWorkspace.name}` : ""}.
-                </span>
-              </>
-            )}
-          </dd>
+    <article className="provider-entry team-card">
+      <div className="team-card__head">
+        <div className="team-card__title">
+          <span className="provider-entry__name">{team.name}</span>
+          {/* The compact state the specification asks for (spec §70). */}
+          <span className="row__meta">
+            {team.agents.length} agents · {active} active · {homeName}
+          </span>
         </div>
-        {team.agents.map((agent) => (
-          <div className="detail" key={agent.id}>
-            <dt className="detail__label">
-              {agent.displayName}
-              {agent.id === team.leadAgentId ? " · lead" : ""}
-            </dt>
-            <dd className="detail__value">
-              <AgentProvider providerId={agent.providerId} providers={providers} />
-              {agent.modelId ? ` · ${agent.modelId}` : ""}
-              {agent.role ? ` — ${agent.role}` : ""}
-            </dd>
-          </div>
-        ))}
-      </dl>
-
-      <div className="provider-entry__config">
-        <label className="stacked-field">
-          <span className="field__description">Goal</span>
-          <input
-            className="text-input"
-            value={goal}
-            placeholder="What should this team achieve?"
-            onChange={(event) => setGoal(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void begin();
-              }
-            }}
-          />
-        </label>
-        <div className="scope-toggles">
-          <button
-            type="button"
-            className="ghost-button"
-            disabled={starting || goal.trim().length === 0}
-            onClick={() => void begin()}
-          >
-            <Play size={13} strokeWidth={1.75} aria-hidden="true" />
-            {starting ? "Starting" : "Start run"}
-          </button>
-          {team.agents.length > 1 ? (
-            <label className="scope-toggle">
-              <span>Lead</span>
-              <select
-                className="select"
-                value={team.leadAgentId ?? ""}
-                onChange={(event) => void setLead(team.id, event.target.value)}
-              >
-                {team.agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.displayName}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
+        <div className="team-card__actions">
           <button
             type="button"
             className="quiet-button"
@@ -224,23 +150,77 @@ function TeamEntry({
           <button
             type="button"
             className="quiet-button"
+            data-tone="danger"
             onClick={() => void deleteTeam(team.id)}
           >
             <Trash2 size={13} strokeWidth={1.75} aria-hidden="true" />
             Remove
           </button>
         </div>
-        <p className="field__description">
-          {runsIn
-            ? `A run started here works in ${runsIn}.`
-            : "Open a workspace to start a run here; from a session, it runs in the session's workspace."}
-        </p>
       </div>
 
+      {editing ? <TeamForm team={team} onDone={() => setEditing(false)} /> : null}
+
+      <ul className="team-card__members">
+        {team.agents.map((agent) => (
+          <li className="team-card__member" key={agent.id}>
+            <MemberAvatar agent={agent} providers={providers} size={26} />
+            <span className="team-card__member-text">
+              <span className="team-card__member-name">
+                {agent.displayName}
+                {agent.id === team.leadAgentId ? <span className="team-member__lead">lead</span> : null}
+              </span>
+              <span className="team-card__member-role">
+                {[runsOn(agent, providers), agent.role.trim()].filter(Boolean).join(" · ")}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="team-card__start">
+        <input
+          className="text-input"
+          value={goal}
+          aria-label={`Goal for ${team.name}`}
+          placeholder="Give the team a goal…"
+          onChange={(event) => setGoal(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              void begin();
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="primary-button"
+          disabled={starting || goal.trim().length === 0}
+          onClick={() => void begin()}
+        >
+          <Play size={13} strokeWidth={1.75} aria-hidden="true" />
+          {starting ? "Starting" : "Start run"}
+        </button>
+      </div>
+      <p className="team-card__where">
+        <FolderOpen size={12} strokeWidth={1.75} aria-hidden="true" />
+        {team.settings.workingDirectory ? (
+          <span>
+            Always works in <span className="team-card__path">{team.settings.workingDirectory}</span>
+          </span>
+        ) : runsIn ? (
+          <span>
+            A run started here works in <span className="team-card__path">{runsIn}</span>; from a
+            session, in the session&apos;s workspace.
+          </span>
+        ) : (
+          <span>Open a workspace to start a run here; from a session, it runs in the session&apos;s workspace.</span>
+        )}
+      </p>
+
       {runs.length > 0 ? (
-        <div className="section">
+        <div className="section team-card__runs">
           <p className="section__label">Runs</p>
-          {runs.map((run) => (
+          {(allRuns ? runs : runs.slice(0, RECENT_RUNS)).map((run) => (
             <button
               type="button"
               key={run.id}
@@ -253,6 +233,11 @@ function TeamEntry({
               <span className="row__meta">{runLabel(run)}</span>
             </button>
           ))}
+          {runs.length > RECENT_RUNS ? (
+            <button type="button" className="link-button" onClick={() => setAllRuns((value) => !value)}>
+              {allRuns ? "Show recent runs" : `Show all ${runs.length} runs`}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -262,6 +247,9 @@ function TeamEntry({
     </article>
   );
 }
+
+/** Runs a team card shows before "Show all". */
+const RECENT_RUNS = 3;
 
 type RunTab = "tasks" | "agents" | "messages" | "artifacts" | "decisions";
 

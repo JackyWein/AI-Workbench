@@ -283,7 +283,6 @@ interface WorkbenchState {
     }>;
   }): Promise<void>;
   deleteTeam(teamId: string): Promise<void>;
-  setTeamLead(teamId: string, agentId: string): Promise<void>;
   /** Moves a team to a folder; outside the workspace needs the explicit flag. */
   setTeamWorkingDirectory(input: {
     teamId: string;
@@ -1163,15 +1162,6 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   async deleteTeam(teamId) {
     try {
       await invoke("team.delete", { teamId });
-      await get().refreshTeams();
-    } catch (error) {
-      set({ error: describeError(error) });
-    }
-  },
-
-  async setTeamLead(teamId, agentId) {
-    try {
-      await invoke("team.setLead", { teamId, agentId });
       await get().refreshTeams();
     } catch (error) {
       set({ error: describeError(error) });

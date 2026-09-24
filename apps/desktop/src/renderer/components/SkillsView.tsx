@@ -44,72 +44,74 @@ export function SkillsView(): JSX.Element {
     <div className="connectors">
       <div className="view">
         <div className="view__inner">
-          <div className="view__header connectors__header">
-            <h1 className="view__title">Skills</h1>
-            <span className="connectors__spacer" />
-            <div className="menu-anchor">
-              <button
-                type="button"
-                className="ghost-button"
-                aria-expanded={menu}
-                onClick={() => setMenu((value) => !value)}
-              >
-                <Download size={13} strokeWidth={1.75} aria-hidden="true" />
-                Import
-                <ChevronDown size={12} strokeWidth={1.75} aria-hidden="true" />
-              </button>
-              {menu ? (
-                <div className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(false);
-                      setPanel({ kind: "import" });
-                    }}
-                  >
-                    From your tools…
-                    <span>Claude Code, Codex, Gemini CLI, OpenCode</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(false);
-                      void importFiles();
-                    }}
-                  >
-                    Markdown files…
-                    <span>A SKILL.md, or any .md</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(false);
-                      void importFolder();
-                    }}
-                  >
-                    A folder…
-                    <span>Every skill in it</span>
-                  </button>
-                </div>
-              ) : null}
+          <header className="view__header connectors__header">
+            <div className="view__heading">
+              <h1 className="view__title">Skills</h1>
+              <p className="view__lede">
+                Instructions your agents follow where they apply. Write one, have a tool draft it, or
+                bring over the ones you made for another tool.
+              </p>
             </div>
-            <button type="button" className="ghost-button" onClick={() => setPanel({ kind: "draft" })}>
-              <Sparkles size={13} strokeWidth={1.75} aria-hidden="true" />
-              Draft with AI
-            </button>
-            <button type="button" className="primary-button" onClick={() => setPanel({ kind: "edit", skill: null })}>
-              <PenLine size={13} strokeWidth={1.75} aria-hidden="true" />
-              New skill
-            </button>
-          </div>
-          <p className="connectors__lede">
-            Skills are instructions your agents follow where they apply — how to review a change, how
-            to write a commit, the rules of a project. Write one, have one of your tools draft it, or
-            bring over the ones you made for another tool.
-          </p>
+            <div className="view__actions">
+              <div className="menu-anchor">
+                <button
+                  type="button"
+                  className="ghost-button"
+                  aria-expanded={menu}
+                  onClick={() => setMenu((value) => !value)}
+                >
+                  <Download size={13} strokeWidth={1.75} aria-hidden="true" />
+                  Import
+                  <ChevronDown size={12} strokeWidth={1.75} aria-hidden="true" />
+                </button>
+                {menu ? (
+                  <div className="menu" role="menu" onMouseLeave={() => setMenu(false)}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu(false);
+                        setPanel({ kind: "import" });
+                      }}
+                    >
+                      From your tools…
+                      <span>Claude Code, Codex, Gemini CLI, OpenCode</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu(false);
+                        void importFiles();
+                      }}
+                    >
+                      Markdown files…
+                      <span>A SKILL.md, or any .md</span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu(false);
+                        void importFolder();
+                      }}
+                    >
+                      A folder…
+                      <span>Every skill in it</span>
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              <button type="button" className="ghost-button" onClick={() => setPanel({ kind: "draft" })}>
+                <Sparkles size={13} strokeWidth={1.75} aria-hidden="true" />
+                Draft with AI
+              </button>
+              <button type="button" className="primary-button" onClick={() => setPanel({ kind: "edit", skill: null })}>
+                <PenLine size={13} strokeWidth={1.75} aria-hidden="true" />
+                New skill
+              </button>
+            </div>
+          </header>
 
           {skills.length === 0 ? (
             <div className="start-tiles">

@@ -83,6 +83,8 @@
   --text-sm: 12px;
   --text-md: 13px;
   --text-lg: 15px;
+  /* A conversation is read at length; it gets a size of its own. */
+  --text-reading: 13.5px;
   --text-xl: 20px;
   --line-tight: 1.35;
   --line-body: 1.6;
@@ -146,6 +148,7 @@
   --space-5: 13px;
   --space-6: 18px;
   --header-height: 38px;
+  --text-reading: 12.5px;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -78,20 +78,22 @@ export function UsageView(): JSX.Element {
             <h1 className="view__title">Usage</h1>
             <p className="view__lede">What each tool last reported about its account.</p>
           </div>
-          <button
-            type="button"
-            className="ghost-button"
-            onClick={() => void refresh()}
-            disabled={refreshing}
-          >
-            <RefreshCw
-              size={13}
-              strokeWidth={1.75}
-              aria-hidden="true"
-              className={refreshing ? "spin" : undefined}
-            />
-            {refreshing ? "Asking the tools…" : "Refresh"}
-          </button>
+          <div className="view__actions">
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={() => void refresh()}
+              disabled={refreshing}
+            >
+              <RefreshCw
+                size={13}
+                strokeWidth={1.75}
+                aria-hidden="true"
+                className={refreshing ? "spin" : undefined}
+              />
+              {refreshing ? "Asking the tools…" : "Refresh"}
+            </button>
+          </div>
         </header>
 
         {shown.length === 0 ? (
