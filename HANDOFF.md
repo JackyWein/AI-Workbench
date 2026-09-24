@@ -10,9 +10,9 @@ branch `design/approved-rollout` is merged into it and can be deleted.
 
 ## Where things stand (2026-09-24, release 0.0.6)
 
-`bun run verify` passes end to end: lockfile, lint, typecheck, 874
+`bun run verify` passes end to end: lockfile, lint, typecheck, 882
 tests (20 real-tool tests skipped without their tools), the build and both
-startup phases (198 checks, none failing).
+startup phases (200 checks, none failing).
 
 0.0.6 was first published from `0420668` with one mode per theme and
 replaced the same day, at the person's request, by a build of this state
@@ -53,6 +53,27 @@ Also in 0.0.6 over 0.0.5, each verified by tests and the startup check:
   elements, never HTML), a team session opening as its team after a restart,
   the island's text on a light system theme, and a stored skill or plugin
   that no longer parses no longer stopping the start.
+
+Since the re-published 0.0.6 (not released yet):
+
+- **Updates by commit, in the background.** Each build knows the commit it
+  was made from (`BUILD_COMMIT`, `apps/desktop/src/main/build-info.ts`, set
+  in `electron.vite.config.ts` from `GITHUB_SHA` or the checkout), and the
+  release job writes the commit into `latest*.yml` (`commit:`). A release
+  is an update when its version is newer or, for the same version, its
+  commit differs (`isNewerBuild`; electron-updater's own gate, which only
+  compares versions, is wrapped by `acceptNewBuilds`, tested against the
+  installed package's class). Builds that go to the release page compare the
+  release's `target_commitish`. With the new setting `autoUpdate` (on by
+  default) an update downloads in the background and installs when the app
+  quits; the app checks hourly. Nothing of this was run against a real
+  published release yet: 0.0.6 builds lack it, so the first release carrying
+  it arrives by version, and only the one after that can arrive by commit.
+- **Signing is ready, certificates are not.** The release job signs and
+  notarizes on macOS and signs on Windows (a `.pfx` or Azure Trusted
+  Signing) when the secrets in `SIGNING.md` exist, and builds unsigned as
+  before when they do not. Not run with real certificates: the project has
+  none. A Mac build made with a certificate updates itself (`SIGNED_MAC`).
 
 What changed in 0.0.5 (built from `d318d08`):
 

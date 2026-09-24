@@ -170,12 +170,18 @@ Get the latest version from [Releases](https://github.com/JackyWein/AI-Workbench
 | Platform | File | Updates |
 |---|---|---|
 | Windows | `…-windows-x64.exe` (installer) or `…-windows-portable-x64.exe` | The installer updates itself; the portable version tells you |
-| macOS | `…-macos-arm64.dmg` (Apple silicon) or `…-macos-x64.dmg` (Intel) | The app tells you, you install |
+| macOS | `…-macos-arm64.dmg` (Apple silicon) or `…-macos-x64.dmg` (Intel) | The app tells you, you install (a signed build updates itself) |
 | Linux | `…-linux-x86_64.AppImage` or `…-linux-x64.tar.gz` | The AppImage updates itself; the archive tells you |
 
-The packages are **not code signed** yet. Windows SmartScreen and macOS Gatekeeper warn on the
+Updates run in the background: the app checks every hour, downloads a new version by itself and
+installs it the next time it quits — or right away with **Restart to update**. A release counts as
+new by its version or, for the same version, by the commit it was built from, so a version
+published again reaches everyone on it. Switch it off under Settings → About.
+
+The packages are **not code signed** yet, so Windows SmartScreen and macOS Gatekeeper warn on the
 first start; on macOS open the app once with right click → Open, or run
-`xattr -dr com.apple.quarantine "/Applications/AI Workbench.app"`.
+`xattr -dr com.apple.quarantine "/Applications/AI Workbench.app"`. The release build signs by
+itself once the project's certificates are in place — see [`SIGNING.md`](SIGNING.md).
 
 Install the tools you want to use (Claude Code, Codex, Gemini CLI, OpenCode) and sign in to them
 as usual; AI Workbench finds them on its own and shows what it found under **Providers**.
@@ -209,6 +215,7 @@ what is still open. [`HANDOFF.md`](HANDOFF.md) says where things stand right now
 | [`TEAM_SYSTEM.md`](TEAM_SYSTEM.md) | How teams of agents work together |
 | [`STATUS_ISLAND.md`](STATUS_ISLAND.md) | The floating status island |
 | [`SECURITY.md`](SECURITY.md) | Renderer isolation, IPC validation, secrets |
+| [`SIGNING.md`](SIGNING.md) | Code signing and notarization for releases |
 | [`DEVELOPMENT.md`](DEVELOPMENT.md) | Setup, commands, layout, conventions |
 | [`CLAUDE.md`](CLAUDE.md) | Rules for coding agents working in this repository |
 | [`docs/adr/`](docs/adr) | Architecture decision records |

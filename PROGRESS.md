@@ -25,14 +25,26 @@ Weighted contribution = weight x completion.
 
 **G7 — UX, security, reliability and performance.** As of 2026-09-24
 (release 0.0.6) `bun run verify` passes end to end: lockfile, lint,
-typecheck, 874 tests, the build and both startup phases
-(198 checks, none failing). What remains in G6 is the tray,
+typecheck, 882 tests, the build and both startup phases
+(200 checks, none failing). What remains in G6 is the tray,
 multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
 real providers collaborating. Antigravity (`agy`) could not be installed or
 read about here and stays unverified. No criterion was ticked for the 0.0.5
 or 0.0.6 work below: it deepens criteria already ticked or is a judgement
 (G7 "dark mode polished", "visual hierarchy follows Quiet UI principles")
 that stays the person's.
+
+### Updates by commit and in the background; signing-ready (2026-09-24)
+
+Verified here by unit tests: a release is offered when its version is newer
+or it is the same version built from another commit, never an older one and
+never on a guess (both commits must be known); electron-updater's installed
+class refuses the same version and, wrapped, accepts a new build of it; the
+setting that turns background updates on reads true from settings stored
+before it existed. The startup check confirms a built app knows its commit
+and has background updates on. Not verified: a real update from one
+published build to another (needs two releases carrying the change), and
+signed builds (no certificates).
 
 ### Every theme light and dark (2026-09-24, in the re-published 0.0.6)
 
