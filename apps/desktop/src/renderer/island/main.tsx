@@ -21,7 +21,7 @@ import {
   type IslandState,
   type IslandTarget,
   type IslandUsageRow,
-  type Theme,
+  type Appearance,
 } from "@ai-workbench/shared";
 import { LOGOS, resolveTheme } from "@ai-workbench/ui";
 import { AppLogo } from "../components/AppLogo.js";
@@ -192,9 +192,9 @@ function Island(): JSX.Element | null {
     return () => window.clearTimeout(timer);
   }, [docked]);
 
-  // The island draws in the app's theme: its type, shape and accent. Its
-  // body stays dark in every theme (each theme gives it a dark palette of
-  // its own), because a light theme's dark ink on that body once made
+  // The island draws in the app's theme and mode: its type, shape and
+  // accent. Its body stays dark in every theme (each gives it a dark palette
+  // of its own), because a light theme's dark ink on that body once made
   // titles nobody could read.
   useEffect(() => {
     const root = document.documentElement;
@@ -203,13 +203,13 @@ function Island(): JSX.Element | null {
       return undefined;
     }
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    let preference: Theme = "dark";
+    let appearance: Appearance = { theme: "quiet", mode: "dark" };
     const apply = (): void => {
-      root.dataset["theme"] = resolveTheme(preference, media.matches);
+      root.dataset["theme"] = resolveTheme(appearance.theme, appearance.mode, media.matches);
     };
     media.addEventListener("change", apply);
-    const off = bridge.onTheme((theme) => {
-      preference = theme;
+    const off = bridge.onAppearance((next) => {
+      appearance = next;
       apply();
     });
     return () => {

@@ -7,7 +7,7 @@ import type {
   IslandState,
   IslandTarget,
   TerminalEvent,
-  Theme,
+  Appearance,
 } from "@ai-workbench/shared";
 
 export interface WorkbenchApi {
@@ -42,8 +42,8 @@ export interface WorkbenchIslandApi {
   resetPosition(): Promise<void>;
   /** Reports the size the current face needs so the window fits it. */
   resize(width: number, height: number): Promise<void>;
-  /** The theme the app is set to; the island draws in the same one. */
-  onTheme(listener: (theme: Theme) => void): () => void;
+  /** The theme and mode the app is set to; the island draws in the same. */
+  onAppearance(listener: (appearance: Appearance) => void): () => void;
   /** Live drag state: the rail the pill rides, or where a blob would dock. */
   onDrag(listener: (drag: IslandDrag) => void): () => void;
   /** Hands the unit to main, which moves the window with the pointer. */

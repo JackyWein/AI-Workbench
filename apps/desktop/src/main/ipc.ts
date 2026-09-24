@@ -577,8 +577,8 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "settings.get": () => services.settings.get(),
     "settings.update": async (input) => {
       const settings = await services.settings.update(input);
-      if (input.theme !== undefined) {
-        island.setTheme(settings.theme);
+      if (input.theme !== undefined || input.mode !== undefined) {
+        island.setAppearance({ theme: settings.theme, mode: settings.mode });
       }
       return settings;
     },

@@ -263,8 +263,8 @@
  * theme may still set its own.
  */
 [data-theme="light"],
-[data-theme="atelier"],
-[data-theme="swiss"] {
+[data-theme="atelier-light"],
+[data-theme="swiss-light"] {
   --term-black: #24292f;
   --term-red: #cf222e;
   --term-green: #116329;

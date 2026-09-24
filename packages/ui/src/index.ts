@@ -17,17 +17,17 @@ export const layout = {
 } as const;
 
 /**
- * Resolves a theme preference to the theme to draw: "system" follows the OS
- * between the house theme's dark and light modes, anything else is itself.
+ * The theme to draw, as the stylesheets name it: Quiet is "dark" or "light",
+ * every other theme "<theme>-dark" or "<theme>-light". The "system" mode
+ * follows the OS.
  */
-export function resolveTheme<T extends string>(
-  preference: T | "system",
+export function resolveTheme(
+  theme: string,
+  mode: "system" | "dark" | "light",
   prefersDark: boolean,
-): Exclude<T, "system"> | "dark" | "light" {
-  if (preference === "system") {
-    return prefersDark ? "dark" : "light";
-  }
-  return preference as Exclude<T, "system">;
+): string {
+  const scheme = mode === "system" ? (prefersDark ? "dark" : "light") : mode;
+  return theme === "quiet" ? scheme : `${theme}-${scheme}`;
 }
 
 export { LOGOS, type LogoDefinition } from "./logos.js";

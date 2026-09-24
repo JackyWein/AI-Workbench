@@ -10,7 +10,7 @@ import {
   Terminal,
 } from "lucide-react";
 import type { IslandWidgetId, ModelInfo, ProviderSummary } from "@ai-workbench/shared";
-import { THEMES } from "../lib/themes.js";
+import { MODES, THEMES } from "../lib/themes.js";
 import { useWorkbench } from "../store/workbench.js";
 
 const ISLAND_WIDGET_LABELS: Record<IslandWidgetId, string> = {
@@ -158,13 +158,21 @@ export function CommandPalette(): JSX.Element | null {
           void store.getState().refreshUsage();
         },
       },
-      // Every theme is one command away: "theme" lists them all.
+      // Every theme and mode is one command away: "theme" or "mode" lists them.
       ...THEMES.filter((theme) => theme.id !== settings.theme).map((theme) => ({
         id: `theme.${theme.id}`,
         label: `Theme: ${theme.name}`,
         group: "Appearance",
         run: () => {
           void store.getState().updateSettings({ theme: theme.id });
+        },
+      })),
+      ...MODES.filter((mode) => mode.value !== settings.mode).map((mode) => ({
+        id: `mode.${mode.value}`,
+        label: `Mode: ${mode.label}`,
+        group: "Appearance",
+        run: () => {
+          void store.getState().updateSettings({ mode: mode.value });
         },
       })),
     ];
@@ -373,6 +381,7 @@ export function CommandPalette(): JSX.Element | null {
     sessions,
     providers,
     settings.theme,
+    settings.mode,
     settings.statusIsland,
     activeSessionId,
   ]);

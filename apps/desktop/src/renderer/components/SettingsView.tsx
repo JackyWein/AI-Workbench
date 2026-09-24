@@ -16,6 +16,7 @@ import {
 } from "./Controls.js";
 import { ConnectionSettings } from "./ConnectionsView.js";
 import { KeyboardShortcuts } from "./KeyboardShortcuts.js";
+import { MODES } from "../lib/themes.js";
 import { ThemePicker } from "./ThemePicker.js";
 import { UpdateSection } from "./UpdateSection.js";
 
@@ -53,7 +54,19 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
 
         <SettingGroup title="Appearance">
           <SettingRow label="Theme" description="Colours, type and shape of the whole app, the island included.">
-            <ThemePicker value={settings.theme} onChange={(theme) => void updateSettings({ theme })} />
+            <ThemePicker
+              value={settings.theme}
+              mode={settings.mode}
+              onChange={(theme) => void updateSettings({ theme })}
+            />
+          </SettingRow>
+          <SettingRow label="Mode" description="Every theme comes light and dark; System follows your computer.">
+            <Segmented
+              label="Mode"
+              value={settings.mode}
+              options={MODES}
+              onChange={(mode) => void updateSettings({ mode })}
+            />
           </SettingRow>
           <SettingRow label="Density" description="Compact tightens spacing.">
             <Segmented

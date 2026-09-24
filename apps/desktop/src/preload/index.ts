@@ -15,7 +15,7 @@ import {
   type IslandState,
   type IslandTarget,
   type TerminalEvent,
-  type Theme,
+  type Appearance,
 } from "@ai-workbench/shared";
 
 /**
@@ -132,8 +132,8 @@ const islandApi = {
     await ipcRenderer.invoke("statusIsland.resize", { width, height });
   },
 
-  onTheme(listener: (theme: Theme) => void): () => void {
-    const handler = (_event: Electron.IpcRendererEvent, payload: Theme): void => {
+  onAppearance(listener: (appearance: Appearance) => void): () => void {
+    const handler = (_event: Electron.IpcRendererEvent, payload: Appearance): void => {
       listener(payload);
     };
     ipcRenderer.on(ISLAND_THEME_CHANNEL, handler);

@@ -126,49 +126,49 @@
 /* ============================================================ Atelier == */
 
 /* Softer, rounder buttons; headings breathe a little more. */
-[data-theme="atelier"] .primary-button,
-[data-theme="atelier"] .ghost-button,
-[data-theme="atelier"] .composer__send {
+[data-theme|="atelier"] .primary-button,
+[data-theme|="atelier"] .ghost-button,
+[data-theme|="atelier"] .composer__send {
   border-radius: var(--radius-pill);
 }
 
-[data-theme="atelier"] .view__title {
+[data-theme|="atelier"] .view__title {
   font-size: 26px;
 }
 
-[data-theme="atelier"] .team-intro__title {
+[data-theme|="atelier"] .team-intro__title {
   font-size: 24px;
 }
 
-[data-theme="atelier"] .md__heading[data-level="1"] {
+[data-theme|="atelier"] .md__heading[data-level="1"] {
   font-size: 1.45em;
 }
 
 /* ==================================================== Mission Control == */
 
 /* Status reads like a readout: labels and numbers in monospace. */
-[data-theme="mission"] .pill,
-[data-theme="mission"] .row__count,
-[data-theme="mission"] .message__meta time,
-[data-theme="mission"] .header__subtitle,
-[data-theme="mission"] .sidebar__version,
-[data-theme="mission"] .kbd {
+[data-theme|="mission"] .pill,
+[data-theme|="mission"] .row__count,
+[data-theme|="mission"] .message__meta time,
+[data-theme|="mission"] .header__subtitle,
+[data-theme|="mission"] .sidebar__version,
+[data-theme|="mission"] .kbd {
   font-family: var(--font-mono);
 }
 
-[data-theme="mission"] .pill {
+[data-theme|="mission"] .pill {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-size: 10px;
 }
 
 /* The selected row carries a lit edge, like a channel that is live. */
-[data-theme="mission"] .row[aria-current="true"],
-[data-theme="mission"] .row[aria-selected="true"] {
-  box-shadow: inset 2px 0 0 var(--accent);
+[data-theme|="mission"] .row[aria-current="true"],
+[data-theme|="mission"] .row[aria-selected="true"] {
+  box-shadow: inset 2px 0 0 var(--accent-text);
 }
 
-[data-theme="mission"] .view__title {
+[data-theme|="mission"] .view__title {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 18px;
@@ -176,127 +176,129 @@
 
 /* ========================================================= Playground == */
 
-/* Thick ink outlines with a hard shadow on everything you press. */
-[data-theme="playground"] .primary-button,
-[data-theme="playground"] .ghost-button {
-  border: 2px solid #1c1a3f;
+/* Thick ink outlines with a hard shadow on everything you press, in the
+ * outline colour of the mode. */
+[data-theme|="playground"] .primary-button,
+[data-theme|="playground"] .ghost-button {
+  border: 2px solid var(--card-border-color);
   border-radius: var(--radius-pill);
-  box-shadow: 2px 2px 0 #1c1a3f;
+  box-shadow: 2px 2px 0 var(--card-border-color);
   font-weight: 700;
 }
 
-[data-theme="playground"] .primary-button:active:not(:disabled),
-[data-theme="playground"] .ghost-button:active:not(:disabled) {
+[data-theme|="playground"] .primary-button:active:not(:disabled),
+[data-theme|="playground"] .ghost-button:active:not(:disabled) {
   transform: translate(2px, 2px);
   box-shadow: none;
 }
 
-[data-theme="playground"] .composer__send {
-  border: 2px solid #1c1a3f;
+[data-theme|="playground"] .composer__send {
+  border: 2px solid var(--card-border-color);
   border-radius: var(--radius-pill);
 }
 
-[data-theme="playground"] .segmented {
-  border: 2px solid #1c1a3f;
-  background: #ffffff;
+[data-theme|="playground"] .segmented {
+  border: 2px solid var(--card-border-color);
+  background: var(--surface-raised);
 }
 
-[data-theme="playground"] .segmented__item[aria-pressed="true"],
-[data-theme="playground"] .segmented__item[aria-current="true"],
-[data-theme="playground"] .segmented__item[aria-checked="true"] {
+[data-theme|="playground"] .segmented__item[aria-pressed="true"],
+[data-theme|="playground"] .segmented__item[aria-current="true"],
+[data-theme|="playground"] .segmented__item[aria-checked="true"] {
   background: #ffc93c;
   color: #1c1a3f;
   box-shadow: none;
 }
 
-[data-theme="playground"] .popover__panel,
-[data-theme="playground"] .menu,
-[data-theme="playground"] .palette,
-[data-theme="playground"] .toast {
-  border: 2px solid #1c1a3f;
+[data-theme|="playground"] .popover__panel,
+[data-theme|="playground"] .menu,
+[data-theme|="playground"] .palette,
+[data-theme|="playground"] .toast {
+  border: 2px solid var(--card-border-color);
   backdrop-filter: none;
   background: var(--surface-overlay);
 }
 
 /* The sidebar's popovers sit on indigo; their ink outline is the sidebar's. */
-[data-theme="playground"] .sidebar .popover__panel,
-[data-theme="playground"] .sidebar .menu {
+[data-theme|="playground"] .sidebar .popover__panel,
+[data-theme|="playground"] .sidebar .menu {
   border-color: var(--sidebar-line-strong);
   box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
 }
 
-[data-theme="playground"] .tool-call {
-  box-shadow: 2px 2px 0 #1c1a3f;
+[data-theme|="playground"] .tool-call {
+  box-shadow: 2px 2px 0 var(--card-border-color);
 }
 
-[data-theme="playground"] .message[data-role="user"] .bubble {
-  border: 2px solid #1c1a3f;
-  box-shadow: 3px 3px 0 #1c1a3f;
+[data-theme|="playground"] .message[data-role="user"] .bubble {
+  border: 2px solid var(--card-border-color);
+  box-shadow: 3px 3px 0 var(--card-border-color);
 }
 
-[data-theme="playground"] .sidebar .row[aria-current="true"],
-[data-theme="playground"] .sidebar .row[aria-selected="true"] {
+[data-theme|="playground"] .sidebar .row[aria-current="true"],
+[data-theme|="playground"] .sidebar .row[aria-selected="true"] {
   box-shadow: inset 3px 0 0 #ffc93c;
 }
 
-[data-theme="playground"] .view__title {
+[data-theme|="playground"] .view__title {
   font-size: 28px;
 }
 
 /* ============================================================= Aurora == */
 
 /* A soft light: the main button glows from violet into cyan. */
-[data-theme="aurora"] .primary-button,
-[data-theme="aurora"] .composer__send {
+[data-theme|="aurora"] .primary-button,
+[data-theme|="aurora"] .composer__send {
   background: linear-gradient(135deg, #a497ff, #5ee7f5);
   border-color: transparent;
+  color: #0d0f24;
 }
 
-[data-theme="aurora"] .primary-button {
+[data-theme|="aurora"] .primary-button {
   box-shadow: 0 6px 18px rgba(125, 95, 255, 0.28);
 }
 
-[data-theme="aurora"] .composer__inner {
+[data-theme|="aurora"] .composer__inner {
   background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
   backdrop-filter: blur(18px);
-  box-shadow: 0 16px 40px rgba(4, 4, 20, 0.45), 0 0 0 1px rgba(164, 151, 255, 0.1);
+  box-shadow: var(--shadow-raised), 0 0 0 1px var(--card-border-color);
 }
 
-[data-theme="aurora"] .usage-bar__fill,
-[data-theme="aurora"] .usage-pill__fill,
-[data-theme="aurora"] .team-run__fill {
+[data-theme|="aurora"] .usage-bar__fill,
+[data-theme|="aurora"] .usage-pill__fill,
+[data-theme|="aurora"] .team-run__fill {
   background: linear-gradient(90deg, #a497ff, #5ee7f5);
 }
 
 /* ============================================================== Swiss == */
 
-/* Hard black rules where other themes use hairlines. */
-[data-theme="swiss"] .header {
-  border-bottom: 2px solid #0a0a0a;
+/* Hard rules in full ink where other themes use hairlines. */
+[data-theme|="swiss"] .header {
+  border-bottom: 2px solid var(--border-strong);
 }
 
-[data-theme="swiss"] .view__title {
+[data-theme|="swiss"] .view__title {
   font-size: 30px;
   line-height: 1.05;
 }
 
-[data-theme="swiss"] .row[aria-current="true"],
-[data-theme="swiss"] .row[aria-selected="true"] {
-  background: #0a0a0a;
-  color: #ffffff;
+[data-theme|="swiss"] .row[aria-current="true"],
+[data-theme|="swiss"] .row[aria-selected="true"] {
+  background: var(--text-primary);
+  color: var(--surface-base);
 }
 
-[data-theme="swiss"] .row[aria-current="true"] .row__meta,
-[data-theme="swiss"] .row[aria-selected="true"] .row__meta,
-[data-theme="swiss"] .row[aria-current="true"] .row__count,
-[data-theme="swiss"] .row[aria-selected="true"] .row__count {
-  color: #d6d6d6;
+[data-theme|="swiss"] .row[aria-current="true"] .row__meta,
+[data-theme|="swiss"] .row[aria-selected="true"] .row__meta,
+[data-theme|="swiss"] .row[aria-current="true"] .row__count,
+[data-theme|="swiss"] .row[aria-selected="true"] .row__count {
+  color: color-mix(in srgb, var(--surface-base) 80%, var(--text-primary));
 }
 
-[data-theme="swiss"] .primary-button {
+[data-theme|="swiss"] .primary-button {
   font-weight: 700;
 }
 
-[data-theme="swiss"] .md__heading {
+[data-theme|="swiss"] .md__heading {
   text-transform: none;
 }

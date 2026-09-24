@@ -2,7 +2,7 @@ import { type JSX, useEffect, useState } from "react";
 import { MessageSquare, TerminalSquare } from "lucide-react";
 import type { ChatMessage, ProviderSummary } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
-import { rememberTheme } from "./lib/themes.js";
+import { rememberAppearance } from "./lib/themes.js";
 import { invoke } from "./lib/client.js";
 import { attachEventStream } from "./lib/event-stream.js";
 import { useWorkbench } from "./store/workbench.js";
@@ -107,14 +107,15 @@ export function App(): JSX.Element {
     const apply = (): void => {
       document.documentElement.dataset["theme"] = resolveTheme(
         state.settings.theme,
+        state.settings.mode,
         media.matches,
       );
     };
     apply();
-    rememberTheme(state.settings.theme);
+    rememberAppearance(state.settings.theme, state.settings.mode);
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
-  }, [state.ready, state.settings.theme]);
+  }, [state.ready, state.settings.theme, state.settings.mode]);
 
   useEffect(() => {
     document.documentElement.dataset["density"] = state.settings.density;

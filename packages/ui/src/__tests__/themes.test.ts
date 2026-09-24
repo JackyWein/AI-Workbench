@@ -52,7 +52,12 @@ function applies(selector: string, theme: string): boolean {
   if (selector === ":root" || selector === "[data-theme]") {
     return true;
   }
-  return selector === `[data-theme="${theme}"]`;
+  if (selector === `[data-theme="${theme}"]`) {
+    return true;
+  }
+  // `|=` matches the value itself or the value followed by a hyphen.
+  const family = /^\[data-theme\|="([\w-]+)"\]$/.exec(selector)?.[1];
+  return family !== undefined && (theme === family || theme.startsWith(`${family}-`));
 }
 
 function tokensOf(theme: string): Map<string, string> {
@@ -119,11 +124,11 @@ function contrast(a: Rgba, b: Rgba): number {
   return (light + 0.05) / (dark + 0.05);
 }
 
-const themes = [
-  "dark",
-  "light",
-  ...new Set([...themesCss.matchAll(/\[data-theme="([\w-]+)"\]/g)].map((match) => match[1] ?? "")),
+/** Quiet's two modes, then every other theme in both of its modes. */
+const families = [
+  ...new Set([...themesCss.matchAll(/\[data-theme\|="([\w-]+)"\]/g)].map((match) => match[1] ?? "")),
 ];
+const themes = ["dark", "light", ...families.flatMap((family) => [`${family}-light`, `${family}-dark`])];
 
 /**
  * Text and the ground it sits on, with the least contrast allowed. Body text
@@ -166,8 +171,15 @@ const ansi = ["red", "green", "yellow", "blue", "magenta", "cyan"].flatMap((name
 ]);
 
 describe("themes", () => {
-  it("offers the house theme and the five others", () => {
-    expect(themes).toEqual(["dark", "light", "atelier", "mission", "playground", "aurora", "swiss"]);
+  it("offers the house theme and five others, each light and dark", () => {
+    expect(families).toEqual(["atelier", "mission", "playground", "aurora", "swiss"]);
+    for (const family of families) {
+      for (const mode of ["light", "dark"]) {
+        expect(themesCss, `${family} has its ${mode} mode`).toMatch(
+          new RegExp(`\\[data-theme\\|?="${family}(-${mode})?"\\][^{]*\\{[^}]*color-scheme: ${mode}`),
+        );
+      }
+    }
   });
 
   for (const theme of themes) {

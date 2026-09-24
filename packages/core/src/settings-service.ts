@@ -7,6 +7,7 @@ import {
   type AppSettings,
   type Logger,
   type UpdateSettingsInput,
+  upgradeStoredSettings,
 } from "@ai-workbench/shared";
 
 const SETTINGS_KEY = "app";
@@ -40,7 +41,7 @@ export class SettingsService {
       return defaultAppSettings;
     }
 
-    const parsed = appSettingsSchema.safeParse(row.value);
+    const parsed = appSettingsSchema.safeParse(upgradeStoredSettings(row.value));
     if (!parsed.success) {
       this.#logger.warn("Stored settings were invalid; using defaults");
       return defaultAppSettings;

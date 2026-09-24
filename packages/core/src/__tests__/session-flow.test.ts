@@ -402,12 +402,13 @@ describe("session vertical slice", () => {
   });
 
   it("persists settings across a restart", async () => {
-    await app.settings.update({ theme: "light", developerMode: true });
+    await app.settings.update({ theme: "atelier", mode: "dark", developerMode: true });
     await app.dispose();
     app = await bootApp(directory);
 
     const settings = await app.settings.get();
-    expect(settings.theme).toBe("light");
+    expect(settings.theme).toBe("atelier");
+    expect(settings.mode).toBe("dark");
     expect(settings.developerMode).toBe(true);
     expect(settings.density).toBe("comfortable");
   });

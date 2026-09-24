@@ -1,7 +1,12 @@
 /*
  * The themes besides Quiet (tokens.css). Each sets every colour, the fonts,
  * the shape and the island's own palette, so switching one repaints the
- * whole application, the terminal and the island together. Component-level
+ * whole application, the terminal and the island together.
+ *
+ * Every theme comes light and dark. The window carries "<theme>-light" or
+ * "<theme>-dark"; the first block of a theme (matched by `|=`, so for both)
+ * holds its type, shape, island and the colours of the mode it was drawn in
+ * first, and the block after it the colours of the other mode. Component-level
  * touches that a token cannot express live with the components
  * (apps/desktop/src/renderer/themes.css); nothing here names a component.
  *
@@ -11,7 +16,7 @@
 
 /* ---------------------------------------------------------------- Atelier --
  * Warm paper, serif headings, terracotta. Light, editorial, unhurried. */
-[data-theme="atelier"] {
+[data-theme|="atelier"] {
   color-scheme: light;
 
   --surface-base: #f6f1e8;
@@ -93,10 +98,57 @@
   --card-shadow: 0 1px 2px rgba(74, 52, 30, 0.06);
 }
 
+/* Atelier by night: espresso and lamplight, the same terracotta warmed up. */
+[data-theme="atelier-dark"] {
+  color-scheme: dark;
+
+  --surface-base: #1c1814;
+  --surface-raised: #231e19;
+  --surface-overlay: #2a241e;
+  --surface-sunken: #16130f;
+  --surface-message: #2d261f;
+  --surface-hover: rgba(255, 240, 220, 0.045);
+  --surface-active: rgba(255, 240, 220, 0.075);
+  --surface-selected: rgba(232, 160, 122, 0.14);
+
+  --text-primary: #f1e9dc;
+  --text-secondary: #c9bdab;
+  --text-muted: #998c7a;
+  --text-inverted: #1c1814;
+
+  --border-subtle: rgba(255, 240, 220, 0.09);
+  --border-strong: rgba(255, 240, 220, 0.18);
+  --border-focus: #e39a72;
+
+  --accent: #e39a72;
+  --accent-quiet: rgba(227, 154, 114, 0.16);
+  --success: #9ad3a6;
+  --warning: #e8b861;
+  --danger: #f08a7a;
+  --danger-quiet: rgba(240, 138, 122, 0.14);
+  --running: #7cc4d8;
+  --live: #7cc4d8;
+
+  --overlay-backdrop: rgba(10, 8, 6, 0.6);
+  --shadow-overlay: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 240, 220, 0.05);
+  --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 240, 220, 0.04);
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+  --code-surface: #14110d;
+  --code-text: #eadfcf;
+  --code-muted: #7a6e5f;
+
+  --scrollbar-thumb: rgba(255, 240, 220, 0.16);
+  --scrollbar-thumb-hover: rgba(255, 240, 220, 0.28);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23c9bdab' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
 /* -------------------------------------------------------- Mission Control --
  * Near-black on a faint grid, lime signals, monospace detail. Dense and
  * technical, for a wall of agents. */
-[data-theme="mission"] {
+[data-theme|="mission"] {
   color-scheme: dark;
 
   --surface-base: #0b0d0c;
@@ -186,16 +238,75 @@
 }
 
 /* Declared again next to the derived values so a preview recomputes them. */
-[data-theme="mission"] {
+[data-theme|="mission"] {
   --backdrop-image: linear-gradient(rgba(214, 255, 214, 0.028) 1px, transparent 1px),
     linear-gradient(90deg, rgba(214, 255, 214, 0.028) 1px, transparent 1px);
   --backdrop-size: 24px 24px;
 }
 
+/* Mission Control by day: a lab sheet with a pencil grid, the lime kept for
+ * what is lit, black terminals. */
+[data-theme="mission-light"] {
+  color-scheme: light;
+
+  --surface-base: #f3f5f0;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-sunken: #e8ece4;
+  --surface-message: #e5ebdc;
+  --surface-hover: rgba(20, 40, 20, 0.045);
+  --surface-active: rgba(20, 40, 20, 0.075);
+  --surface-selected: rgba(120, 170, 0, 0.14);
+
+  --text-primary: #111611;
+  --text-secondary: #3d483e;
+  --text-muted: #5b675d;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(20, 40, 20, 0.13);
+  --border-strong: rgba(20, 40, 20, 0.26);
+  --border-focus: #4a7300;
+
+  --accent: #c6f432;
+  --accent-quiet: rgba(120, 170, 0, 0.14);
+  --success: #2c7a31;
+  --warning: #955700;
+  --danger: #c22c21;
+  --danger-quiet: rgba(194, 44, 33, 0.1);
+  --running: #00709e;
+  --live: #00709e;
+
+  --overlay-backdrop: rgba(243, 245, 240, 0.62);
+  --shadow-overlay: 0 18px 48px rgba(10, 20, 10, 0.14), 0 0 0 1px rgba(10, 20, 10, 0.06);
+  --shadow-popover: 0 10px 30px rgba(10, 20, 10, 0.12), 0 0 0 1px rgba(10, 20, 10, 0.05);
+  --shadow-raised: 0 8px 24px rgba(10, 20, 10, 0.12);
+
+  --code-surface: #0b0d0c;
+  --code-text: #cfe3cf;
+  --code-muted: #4d5a50;
+  --code-label: #8f9c91;
+  --code-line: rgba(214, 255, 214, 0.1);
+  --terminal-text: #e7eee7;
+
+  --scrollbar-thumb: rgba(20, 40, 20, 0.2);
+  --scrollbar-thumb-hover: rgba(20, 40, 20, 0.34);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%233d483e' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --card-border-color: rgba(20, 40, 20, 0.14);
+  --backdrop-image: linear-gradient(rgba(20, 40, 20, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 40, 20, 0.05) 1px, transparent 1px);
+}
+
+/* Lime is a light, not an ink: on paper the words take a deep olive. */
+[data-theme="mission-light"] {
+  --accent-contrast: #0b0d0c;
+  --accent-text: #3f6600;
+}
+
 /* ------------------------------------------------------------- Playground --
  * Cream and indigo, thick ink outlines with hard shadows, bright colour.
  * Bold and friendly. */
-[data-theme="playground"] {
+[data-theme|="playground"] {
   color-scheme: light;
 
   --surface-base: #fff3d6;
@@ -284,7 +395,7 @@
   --button-border: #1c1a3f;
 }
 
-[data-theme="playground"] {
+[data-theme|="playground"] {
   --accent-contrast: #1c1a3f;
   --accent-text: #c2381a;
 
@@ -303,9 +414,61 @@
   --sidebar-accent: #ffc93c;
 }
 
+/* Playground after dark: night indigo, cream type, the same bright toys. */
+[data-theme="playground-dark"] {
+  color-scheme: dark;
+
+  --surface-base: #1a1838;
+  --surface-raised: #25224f;
+  --surface-overlay: #2b285c;
+  --surface-sunken: #15132e;
+  --surface-message: #4a2a44;
+  --surface-hover: rgba(255, 248, 236, 0.06);
+  --surface-active: rgba(255, 248, 236, 0.1);
+  --surface-selected: rgba(255, 201, 60, 0.18);
+
+  --text-primary: #fff8ec;
+  --text-secondary: #dcd8f7;
+  --text-muted: #aba7de;
+  --text-inverted: #1a1838;
+
+  --border-subtle: rgba(255, 248, 236, 0.16);
+  --border-strong: #0b0a1c;
+  --border-focus: #ffc93c;
+
+  --accent-quiet: rgba(255, 107, 74, 0.2);
+  --success: #6ee7b7;
+  --warning: #ffc93c;
+  --danger: #ff8a7a;
+  --danger-quiet: rgba(255, 138, 122, 0.16);
+  --running: #93a5ff;
+  --live: #93a5ff;
+
+  --overlay-backdrop: rgba(10, 9, 24, 0.6);
+  --shadow-overlay: 6px 6px 0 #0b0a1c;
+  --shadow-popover: 4px 4px 0 #0b0a1c;
+  --shadow-raised: 4px 4px 0 #0b0a1c;
+
+  --code-surface: #0f0e24;
+
+  --scrollbar-thumb: rgba(255, 248, 236, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 248, 236, 0.34);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23dcd8f7' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --card-border-color: #0b0a1c;
+  --card-shadow: 4px 4px 0 #0b0a1c;
+  --button-border: #0b0a1c;
+}
+
+[data-theme="playground-dark"] {
+  --accent-text: #ff9a80;
+  --sidebar-surface: #110f27;
+  --sidebar-overlay: #221f4d;
+}
+
 /* ----------------------------------------------------------------- Aurora --
  * Night blue lit by violet and cyan, soft glass, generous curves. */
-[data-theme="aurora"] {
+[data-theme|="aurora"] {
   color-scheme: dark;
 
   --surface-base: #0d0f24;
@@ -393,17 +556,75 @@
   --card-shadow: 0 12px 30px rgba(4, 4, 20, 0.28);
 }
 
-[data-theme="aurora"] {
+[data-theme|="aurora"] {
   --backdrop-image: radial-gradient(1000px 560px at 28% -8%, rgba(125, 95, 255, 0.22), transparent 64%),
     radial-gradient(900px 560px at 100% 100%, rgba(40, 200, 230, 0.13), transparent 60%);
   --backdrop-size: 100% 100%;
   --sidebar-surface: rgba(8, 9, 24, 0.72);
 }
 
+/* Aurora at dawn: lavender light, the glow turned down, night-blue code. */
+[data-theme="aurora-light"] {
+  color-scheme: light;
+
+  --surface-base: #f5f4ff;
+  --surface-raised: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-sunken: #ecebfb;
+  --surface-message: #e9e6ff;
+  --surface-hover: rgba(40, 30, 120, 0.045);
+  --surface-active: rgba(40, 30, 120, 0.075);
+  --surface-selected: rgba(95, 79, 224, 0.12);
+
+  --text-primary: #16143a;
+  --text-secondary: #45427a;
+  --text-muted: #646197;
+  --text-inverted: #ffffff;
+
+  --border-subtle: rgba(60, 50, 160, 0.13);
+  --border-strong: rgba(60, 50, 160, 0.26);
+  --border-focus: #5f4fe0;
+
+  --accent: #5f4fe0;
+  --accent-quiet: rgba(95, 79, 224, 0.12);
+  --success: #0c8250;
+  --warning: #945b00;
+  --danger: #c92a49;
+  --danger-quiet: rgba(201, 42, 73, 0.1);
+  --running: #067a8e;
+  --live: #067a8e;
+
+  --overlay-backdrop: rgba(245, 244, 255, 0.62);
+  --shadow-overlay: 0 24px 60px rgba(40, 30, 120, 0.18), 0 0 0 1px rgba(95, 79, 224, 0.1);
+  --shadow-popover: 0 14px 40px rgba(40, 30, 120, 0.14), 0 0 0 1px rgba(95, 79, 224, 0.08);
+  --shadow-raised: 0 10px 30px rgba(40, 30, 120, 0.14);
+
+  --code-surface: #151636;
+  --code-text: #d6d9ff;
+  --code-muted: #5b609a;
+  --code-label: #a3a8dc;
+  --code-line: rgba(200, 190, 255, 0.14);
+  --terminal-text: #eef0ff;
+
+  --scrollbar-thumb: rgba(40, 30, 120, 0.2);
+  --scrollbar-thumb-hover: rgba(40, 30, 120, 0.34);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%2345427a' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+
+  --card-border-color: rgba(60, 50, 160, 0.12);
+  --card-shadow: 0 10px 26px rgba(40, 30, 120, 0.08);
+}
+
+[data-theme="aurora-light"] {
+  --accent-contrast: #ffffff;
+  --backdrop-image: radial-gradient(1000px 560px at 28% -8%, rgba(125, 95, 255, 0.14), transparent 64%),
+    radial-gradient(900px 560px at 100% 100%, rgba(40, 200, 230, 0.12), transparent 60%);
+  --sidebar-surface: rgba(255, 255, 255, 0.55);
+}
+
 /* ------------------------------------------------------------------ Swiss --
  * Black on white, one red, a strict grid, square corners. Loud type, quiet
  * everything else. */
-[data-theme="swiss"] {
+[data-theme|="swiss"] {
   color-scheme: light;
 
   --surface-base: #ffffff;
@@ -486,6 +707,57 @@
   --card-border-color: #0a0a0a;
 }
 
-[data-theme="swiss"] {
+[data-theme|="swiss"] {
   --accent-text: #c80511;
+}
+
+/* Swiss inverted: white on black, the red kept, the grid in white hairlines. */
+[data-theme="swiss-dark"] {
+  color-scheme: dark;
+
+  --surface-base: #0a0a0a;
+  --surface-raised: #111111;
+  --surface-overlay: #161616;
+  --surface-sunken: #000000;
+  --surface-message: #1c1c1c;
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-active: rgba(255, 255, 255, 0.09);
+  --surface-selected: rgba(255, 255, 255, 0.1);
+
+  --text-primary: #ffffff;
+  --text-secondary: #c8c8c8;
+  --text-muted: #939393;
+  --text-inverted: #0a0a0a;
+
+  --border-subtle: rgba(255, 255, 255, 0.14);
+  --border-strong: #f2f2f2;
+  --border-focus: #ff3b3b;
+
+  --accent-quiet: rgba(255, 59, 59, 0.14);
+  --success: #4cd07d;
+  --warning: #ffc233;
+  --danger: #ff6b81;
+  --danger-quiet: rgba(255, 107, 129, 0.12);
+  --running: #5aa9ff;
+  --live: #5aa9ff;
+
+  --overlay-backdrop: rgba(0, 0, 0, 0.72);
+  --shadow-overlay: 0 0 0 1px #f2f2f2, 0 16px 40px rgba(0, 0, 0, 0.6);
+  --shadow-popover: 0 0 0 1px #f2f2f2, 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-raised: 0 0 0 1px #f2f2f2;
+
+  --code-surface: #111111;
+  --code-text: #f2f2f2;
+  --code-muted: #6f6f6f;
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.22);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
+  --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'><path d='M1 1l3.5 3.5L8 1' fill='none' stroke='%23f2f2f2' stroke-width='1.5' stroke-linecap='square'/></svg>");
+
+  --card-border-color: #f2f2f2;
+}
+
+[data-theme="swiss-dark"] {
+  --accent-contrast: #ffffff;
+  --accent-text: #ff5252;
 }

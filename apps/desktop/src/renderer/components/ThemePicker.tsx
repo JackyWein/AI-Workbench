@@ -1,20 +1,23 @@
 import { ChevronDown, Check } from "lucide-react";
 import { type JSX, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
-import type { Theme } from "@ai-workbench/shared";
-import { THEMES, themeEntry } from "../lib/themes.js";
+import type { ColorMode, Theme } from "@ai-workbench/shared";
+import { resolveTheme } from "@ai-workbench/ui";
+import { systemPrefersDark, THEMES, themeEntry } from "../lib/themes.js";
 
 interface ThemePickerProps {
   readonly value: Theme;
+  /** The mode in force, so the trigger shows the theme as it is drawn now. */
+  readonly mode: ColorMode;
   readonly onChange: (theme: Theme) => void;
 }
 
 /**
  * Chooses the theme from a list that shows each one: its name, a line on its
- * character and a small window drawn in the theme itself. A listbox, so it
+ * character and a small window drawn in the theme itself, light and dark. A listbox, so it
  * works from the keyboard like a select: arrows move, Enter or Space picks,
  * Escape closes, typing a letter jumps to a name.
  */
-export function ThemePicker({ value, onChange }: ThemePickerProps): JSX.Element {
+export function ThemePicker({ value, mode, onChange }: ThemePickerProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(() => Math.max(0, THEMES.findIndex((theme) => theme.id === value)));
   const rootRef = useRef<HTMLDivElement>(null);
@@ -119,7 +122,7 @@ export function ThemePicker({ value, onChange }: ThemePickerProps): JSX.Element 
           }
         }}
       >
-        <ThemeSwatch theme={value} />
+        <ThemeSwatch theme={value} mode={mode} />
         <span className="theme-picker__name">{current.name}</span>
         <ChevronDown size={14} strokeWidth={1.75} aria-hidden="true" className="theme-picker__chevron" />
       </button>
@@ -146,7 +149,7 @@ export function ThemePicker({ value, onChange }: ThemePickerProps): JSX.Element 
               onPointerEnter={() => setActive(index)}
               onClick={() => choose(index)}
             >
-              <ThemeSwatch theme={theme.id} />
+              <ThemeSwatch theme={theme.id} mode="both" />
               <span className="theme-picker__text">
                 <span className="theme-picker__option-name">{theme.name}</span>
                 <span className="theme-picker__description">{theme.description}</span>
@@ -166,27 +169,33 @@ export function ThemePicker({ value, onChange }: ThemePickerProps): JSX.Element 
  * A tiny window in a theme: its sidebar, a title in its display face, a line
  * of text, a message and its accent. Drawn by the theme's own stylesheet —
  * the element carries the theme — so it can never disagree with the real
- * thing. "system" shows Quiet's two modes, split.
+ * thing. "both" shows the light and the dark mode side by side, split.
  */
-export function ThemeSwatch({ theme }: { readonly theme: Theme }): JSX.Element {
-  if (theme === "system") {
+export function ThemeSwatch({
+  theme,
+  mode,
+}: {
+  readonly theme: Theme;
+  readonly mode: ColorMode | "both";
+}): JSX.Element {
+  if (mode === "both") {
     return (
       <span className="theme-swatch-pair" aria-hidden="true">
-        <SwatchWindow theme="dark" />
-        <SwatchWindow theme="light" />
+        <SwatchWindow drawn={resolveTheme(theme, "light", false)} />
+        <SwatchWindow drawn={resolveTheme(theme, "dark", true)} />
       </span>
     );
   }
   return (
     <span className="theme-swatch-pair" aria-hidden="true">
-      <SwatchWindow theme={theme} />
+      <SwatchWindow drawn={resolveTheme(theme, mode, systemPrefersDark())} />
     </span>
   );
 }
 
-function SwatchWindow({ theme }: { readonly theme: Exclude<Theme, "system"> }): JSX.Element {
+function SwatchWindow({ drawn }: { readonly drawn: string }): JSX.Element {
   return (
-    <span className="theme-swatch" data-theme={theme}>
+    <span className="theme-swatch" data-theme={drawn}>
       <span className="theme-swatch__side">
         <i />
         <i data-current="true" />

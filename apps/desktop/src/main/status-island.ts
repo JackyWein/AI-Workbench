@@ -9,7 +9,7 @@ import {
   type IslandPreferences,
   type IslandState,
   type Logger,
-  type Theme,
+  type Appearance,
 } from "@ai-workbench/shared";
 import {
   anchorResize,
@@ -86,7 +86,7 @@ export class StatusIslandWindow {
   #window: BrowserWindow | null = null;
   #preferences: IslandPreferences | null = null;
   #lastState: IslandState | null = null;
-  #theme: Theme = "dark";
+  #appearance: Appearance = { theme: "quiet", mode: "dark" };
   #drag: DragSession | null = null;
   #dragTimer: NodeJS.Timeout | null = null;
   #settling: Settling | null = null;
@@ -162,15 +162,15 @@ export class StatusIslandWindow {
     return this.visible;
   }
 
-  /** The app's theme; the island draws in the same one. */
-  setTheme(theme: Theme): void {
-    this.#theme = theme;
+  /** The app's theme and mode; the island draws in the same. */
+  setAppearance(appearance: Appearance): void {
+    this.#appearance = appearance;
     const window = this.#window;
     if (!window || window.isDestroyed()) {
       return;
     }
     try {
-      window.webContents.send(ISLAND_THEME_CHANNEL, theme);
+      window.webContents.send(ISLAND_THEME_CHANNEL, appearance);
     } catch (error) {
       this.#logger.warn("Could not push the theme to the island", {
         error: error instanceof Error ? error.message : String(error),
@@ -403,7 +403,7 @@ export class StatusIslandWindow {
 
     window.webContents.on("did-finish-load", () => {
       try {
-        window.webContents.send(ISLAND_THEME_CHANNEL, this.#theme);
+        window.webContents.send(ISLAND_THEME_CHANNEL, this.#appearance);
       } catch (error) {
         this.#logger.warn("Could not push the theme to the island after load", {
           error: error instanceof Error ? error.message : String(error),
