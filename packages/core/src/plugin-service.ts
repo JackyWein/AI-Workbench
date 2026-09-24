@@ -46,7 +46,15 @@ export class PluginService {
 
   async load(): Promise<PluginManifest[]> {
     for (const row of await this.#db.select().from(plugins)) {
-      this.#registry.upsert(toManifest(row));
+      try {
+        this.#registry.upsert(toManifest(row));
+      } catch (error) {
+        // As with skills: one unreadable row never stops the application.
+        this.#logger.warn("A stored plugin could not be read and was skipped", {
+          pluginId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     return this.#registry.list();
   }

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
-import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
+import { createDatabase, runMigrations, skills, type DatabaseHandle } from "@ai-workbench/database";
 import { MockProviderAdapter } from "@ai-workbench/provider-mock";
 import type { AIProviderAdapter } from "@ai-workbench/provider-base";
 import type { AppEvent, ChatMessage, ProviderEvent } from "@ai-workbench/shared";
@@ -9,6 +9,7 @@ import { EventBus } from "../event-bus.js";
 import { createLogger, createNullLogger } from "../logger.js";
 import { ProviderManager } from "../provider-manager.js";
 import { SessionManager } from "../session-manager.js";
+import { SkillService } from "../skill-service.js";
 import { WorkspaceManager } from "../workspace-manager.js";
 
 /**
@@ -212,5 +213,42 @@ describe("logging", () => {
     expect(contents).toContain("[redacted]");
 
     await removeTempDirectory(directory);
+  });
+});
+
+describe("stored data that no longer reads", () => {
+  let directory: string;
+  let database: DatabaseHandle;
+
+  beforeEach(async () => {
+    directory = await makeTempDirectory("ai-workbench-stored-");
+    database = createDatabase({ file: join(directory, "test.db") });
+    await runMigrations(database.client);
+  });
+
+  afterEach(async () => {
+    database.close();
+    await removeTempDirectory(directory);
+  });
+
+  it("starts with the skills that read and skips one that does not", async () => {
+    const now = new Date();
+    await database.db.insert(skills).values([
+      {
+        id: "code-review",
+        name: "Code review",
+        instructions: "Review.",
+        source: { kind: "authored" },
+        createdAt: now,
+        updatedAt: now,
+      },
+      // An id the current schema refuses, as a hand edit or an old version could leave.
+      { id: "Not_A_Valid_Id", name: "Broken", instructions: "x", createdAt: now, updatedAt: now },
+    ]);
+    const service = new SkillService({ db: database.db, logger: createNullLogger() });
+
+    const loaded = await service.load();
+
+    expect(loaded.map((skill) => skill.id)).toEqual(["code-review"]);
   });
 });

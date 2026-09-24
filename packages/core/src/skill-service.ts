@@ -28,10 +28,12 @@ export interface SkillServiceOptions {
  */
 export class SkillService {
   readonly #db: Database;
+  readonly #logger: Logger;
   readonly #manager: SkillManager;
 
   constructor(options: SkillServiceOptions) {
     this.#db = options.db;
+    this.#logger = options.logger.child("SKILL");
     this.#manager = new SkillManager({ logger: options.logger });
   }
 
@@ -39,7 +41,17 @@ export class SkillService {
   async load(): Promise<SkillManifest[]> {
     this.#manager.clear();
     for (const row of await this.#db.select().from(skills)) {
-      this.#manager.upsert(toManifest(row));
+      try {
+        this.#manager.upsert(toManifest(row));
+      } catch (error) {
+        // One stored skill that no longer reads (an older version's, a hand
+        // edit) must not keep the application from starting. It stays in the
+        // database, untouched, and is reported.
+        this.#logger.warn("A stored skill could not be read and was skipped", {
+          skillId: row.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
     return this.#manager.list();
   }
