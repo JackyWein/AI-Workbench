@@ -5,6 +5,7 @@ import type {
   TeamRun,
   TeamRunSnapshot,
   TeamTask,
+  TeamTurn,
 } from "@ai-workbench/shared";
 
 /**
@@ -19,6 +20,7 @@ export interface TeamRunStore {
   saveMessage(message: TeamMessage): Promise<void>;
   saveDecision(decision: TeamDecision): Promise<void>;
   saveArtifact(artifact: TeamArtifact): Promise<void>;
+  saveTurn(turn: TeamTurn): Promise<void>;
 }
 
 /** Test double; also what a run falls back to if persistence is unavailable. */
@@ -28,6 +30,7 @@ export class InMemoryTeamRunStore implements TeamRunStore {
   readonly #messages = new Map<string, TeamMessage>();
   readonly #decisions = new Map<string, TeamDecision>();
   readonly #artifacts = new Map<string, TeamArtifact>();
+  readonly #turns = new Map<string, TeamTurn>();
 
   async loadSnapshot(runId: string): Promise<TeamRunSnapshot | null> {
     const run = this.#runs.get(runId);
@@ -42,6 +45,7 @@ export class InMemoryTeamRunStore implements TeamRunStore {
       messages: forRun(this.#messages),
       decisions: forRun(this.#decisions),
       artifacts: forRun(this.#artifacts),
+      turns: forRun(this.#turns),
     };
   }
 
@@ -63,5 +67,9 @@ export class InMemoryTeamRunStore implements TeamRunStore {
 
   async saveArtifact(artifact: TeamArtifact): Promise<void> {
     this.#artifacts.set(artifact.id, artifact);
+  }
+
+  async saveTurn(turn: TeamTurn): Promise<void> {
+    this.#turns.set(turn.id, turn);
   }
 }

@@ -289,6 +289,15 @@ describe("team runs in the application", () => {
     const finished = await app.teams.getSnapshot(run.id);
     expect(finished.run.status).toBe("completed");
     expect(finished.tasks.every((task) => task.status === "completed")).toBe(true);
+
+    // What each member wrote survives the restart too, read back from the
+    // database rather than from a run in memory.
+    await app.dispose();
+    app = await bootApp(directory);
+    const stored = await app.teams.getSnapshot(run.id);
+    expect(stored.turns.length).toBeGreaterThanOrEqual(stored.tasks.length);
+    expect(stored.turns.every((turn) => turn.status !== "running" && turn.output.length > 0)).toBe(true);
+    expect(stored.turns.every((turn) => turn.startedAt instanceof Date)).toBe(true);
   });
 
   it("cancels a run on request and says so", async () => {

@@ -1949,6 +1949,28 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // The model picker at the foot of the window opens upward, stays inside
+  // the window and scrolls, with only the session's own tool opened.
+  await check(
+    "the model picker stays inside the window, scrolls, and opens only the session's tool",
+    `(async () => {
+       const pill = document.querySelector('.composer .popover > .pill');
+       if (!pill) return 'no model pill';
+       pill.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
+       const panel = document.querySelector('.popover__panel.picker');
+       if (!panel) return 'no picker';
+       const box = panel.getBoundingClientRect();
+       const inside = box.top >= 0 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth;
+       const scrolls = getComputedStyle(panel).overflowY === 'auto';
+       const open = panel.querySelectorAll('.picker__provider[data-open="true"]').length;
+       const above = panel.dataset.placement === 'above';
+       document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+       return (inside && scrolls && open <= 1 && above)
+         || JSON.stringify({ box: [box.top, box.bottom, box.left, box.right, innerWidth, innerHeight], scrolls, open, above });
+     })()`,
+  );
+
   // An optional screenshot makes the rendered result reviewable by a human
   // instead of only asserted by selectors. A screenshot failure never fails
   // the check itself — it is evidence, not the subject.

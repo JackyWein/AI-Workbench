@@ -231,6 +231,40 @@ export const teamArtifactSchema = z.object({
 });
 export type TeamArtifact = z.infer<typeof teamArtifactSchema>;
 
+/** Characters of a member's turn output that are kept. */
+export const TEAM_TURN_OUTPUT_LIMIT = 200_000;
+/** Steps of a member's turn that are kept. */
+export const TEAM_TURN_STEP_LIMIT = 400;
+
+/** One thing a member did during a turn, in its tool's own words. */
+export const teamTurnStepSchema = z.object({
+  at: z.date(),
+  detail: z.string().max(300),
+});
+export type TeamTurnStep = z.infer<typeof teamTurnStepSchema>;
+
+/**
+ * One turn of one member (spec §50): everything it wrote, in its own words,
+ * and every step its tool reported, from start to end. This is the member's
+ * own story — what the task graph and the mailbox only summarise.
+ */
+export const teamTurnSchema = z.object({
+  id: z.string().min(1),
+  runId: z.string().min(1),
+  agentId: z.string().min(1),
+  /** The task it worked on; null for a lead's planning turn. */
+  taskId: z.string().min(1).nullable(),
+  status: z.enum(["running", "completed", "failed"]),
+  /** What it wrote, as it wrote it; the start is trimmed past the limit. */
+  output: z.string().max(TEAM_TURN_OUTPUT_LIMIT + 200),
+  /** Its tool's steps, oldest first; the oldest go past the limit. */
+  steps: z.array(teamTurnStepSchema).max(TEAM_TURN_STEP_LIMIT),
+  error: z.string().max(2000).nullable(),
+  startedAt: z.date(),
+  finishedAt: z.date().nullable(),
+});
+export type TeamTurn = z.infer<typeof teamTurnSchema>;
+
 export const teamRunStatusSchema = z.enum([
   "pending",
   "running",
@@ -361,5 +395,7 @@ export const teamRunSnapshotSchema = z.object({
   messages: z.array(teamMessageSchema),
   decisions: z.array(teamDecisionSchema),
   artifacts: z.array(teamArtifactSchema),
+  /** Every member's turns, oldest first; runs from before 0.0.7 have none. */
+  turns: z.array(teamTurnSchema).default([]),
 });
 export type TeamRunSnapshot = z.infer<typeof teamRunSnapshotSchema>;

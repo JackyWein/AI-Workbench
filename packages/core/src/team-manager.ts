@@ -446,6 +446,7 @@ export class TeamManager {
       messages: [],
       decisions: [],
       artifacts: [],
+      turns: [],
     });
     return run;
   }

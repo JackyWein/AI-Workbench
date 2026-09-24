@@ -85,6 +85,7 @@ function bootService(): { service: TeamService; team: TeamDefinition; events: Te
       messages: [],
       decisions: [],
       artifacts: [],
+      turns: [],
     },
   });
   return { service, team, events };

@@ -526,6 +526,25 @@ export const teamDecisions = sqliteTable("team_decisions", {
   timestamp: integer("timestamp", { mode: "timestamp_ms" }).notNull(),
 });
 
+/** One turn of one member: what it wrote and every step its tool reported. */
+export const teamTurns = sqliteTable("team_turns", {
+  id: text("id").primaryKey(),
+  runId: text("run_id")
+    .notNull()
+    .references(() => teamRuns.id, { onDelete: "cascade" }),
+  agentId: text("agent_id").notNull(),
+  taskId: text("task_id"),
+  status: text("status").notNull(),
+  output: text("output").notNull().default(""),
+  steps: text("steps", { mode: "json" })
+    .$type<Array<{ at: number; detail: string }>>()
+    .notNull()
+    .default(sql`'[]'`),
+  error: text("error"),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+}, (table) => [index("team_turns_run_idx").on(table.runId)]);
+
 export const teamArtifacts = sqliteTable("team_artifacts", {
   id: text("id").primaryKey(),
   runId: text("run_id")
@@ -554,3 +573,4 @@ export type TeamTaskRow = typeof teamTasks.$inferSelect;
 export type TeamMessageRow = typeof teamMessages.$inferSelect;
 export type TeamDecisionRow = typeof teamDecisions.$inferSelect;
 export type TeamArtifactRow = typeof teamArtifacts.$inferSelect;
+export type TeamTurnRow = typeof teamTurns.$inferSelect;

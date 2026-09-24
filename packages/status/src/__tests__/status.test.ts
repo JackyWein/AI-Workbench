@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { AggregatedUsage, TeamRunSnapshot } from "@ai-workbench/shared";
 import { ISLAND_PRIORITY } from "@ai-workbench/shared";
 import { StatusAttentionService } from "../attention-service.js";
-import { teamProgressWidget } from "../widgets.js";
+import { activeAgentsWidget, teamProgressWidget } from "../widgets.js";
 
 const nullLogger = {
   debug: () => {},
@@ -66,6 +66,7 @@ function runWith(tasks: Array<{ status: string; title?: string; assignedTo?: str
       delegations: 0,
       result: null,
       artifacts: [],
+      turns: [],
       error: null,
       createdAt: NOW,
       startedAt: null,
@@ -74,6 +75,7 @@ function runWith(tasks: Array<{ status: string; title?: string; assignedTo?: str
     messages: [],
     decisions: [],
     artifacts: [],
+    turns: [],
   };
 }
 
@@ -603,5 +605,58 @@ describe("the app's own update", () => {
     );
     const off = boot({ enabledWidgets: ["activeAgents", "providerUsage"] }).update({ update, now: NOW });
     expect(off.entries.some((entry) => entry.widget === "appUpdate")).toBe(false);
+  });
+});
+
+describe("a team at work on the island", () => {
+  it("shows who works on what now, with the last step, not the opening goal", () => {
+    const snapshot = runWith([{ status: "running", title: "Build the landing page", assignedTo: "builder" }]);
+    const task = snapshot.tasks[0]!;
+    const sources = {
+      usage: null,
+      runs: [
+        {
+          ...snapshot,
+          turns: [
+            {
+              id: "turn_1",
+              runId: "run_1",
+              agentId: "builder",
+              taskId: task.id,
+              status: "running" as const,
+              output: "",
+              steps: [{ at: NOW, detail: "Write index.html — completed" }],
+              error: null,
+              startedAt: NOW,
+              finishedAt: null,
+            },
+          ],
+        },
+      ],
+      members: [{ agentId: "builder", name: "Builder", icon: "codex" }],
+      busySessions: [],
+      providers: [],
+      sessions: [],
+      attention: [],
+      questions: [],
+      errors: [],
+      brokenConnections: [],
+      completed: [],
+      update: null,
+      now: NOW,
+    };
+    const entry = teamProgressWidget.build(sources);
+    expect(entry?.title).toBe("Builder: Build the landing page · Write index.html — completed");
+    expect(entry?.icon).toBe("codex");
+    expect(entry?.agents).toEqual([
+      expect.objectContaining({
+        key: "turn:turn_1",
+        title: "Builder",
+        detail: "Build the landing page · Write index.html — completed",
+        icon: "codex",
+      }),
+    ]);
+    // The task line names the member, not its id.
+    expect(activeAgentsWidget.build(sources)?.title).toBe("Builder: Build the landing page");
   });
 });

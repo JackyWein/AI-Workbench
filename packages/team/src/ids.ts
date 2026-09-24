@@ -8,3 +8,4 @@ export const newTaskId = (): string => `task_${randomUUID()}`;
 export const newMessageId = (): string => `msg_${randomUUID()}`;
 export const newDecisionId = (): string => `dec_${randomUUID()}`;
 export const newArtifactId = (): string => `art_${randomUUID()}`;
+export const newTurnId = (): string => `turn_${randomUUID()}`;

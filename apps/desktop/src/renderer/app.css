@@ -664,6 +664,112 @@ span.pill {
   animation-name: popover-in-above;
 }
 
+/* ------------------------------------------------------ model picker -- */
+
+/* Compact: one tool open at a time by default, the filter always in reach. */
+.picker {
+  padding: 0 var(--space-2) var(--space-2);
+  max-width: calc(100vw - 24px);
+}
+
+.picker__search {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-3) var(--space-1) var(--space-2);
+  background: var(--surface-overlay);
+}
+
+.picker__group + .picker__group {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.picker__label {
+  margin: 4px 8px 4px;
+  font-family: var(--label-font);
+  font-size: 10.5px;
+  font-weight: var(--label-weight);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.picker__row,
+.picker__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: var(--radius-row);
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.picker__row:hover,
+.picker__head:hover {
+  background: var(--surface-hover);
+}
+
+.picker__row[aria-selected="true"] {
+  background: var(--surface-selected);
+}
+
+.picker__row svg {
+  flex: none;
+  color: var(--accent-text);
+}
+
+.picker__row--quiet {
+  color: var(--text-secondary);
+}
+
+.picker__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker__meta {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.picker__head {
+  font-weight: 500;
+}
+
+.picker__chevron {
+  flex: none;
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--easing-standard);
+}
+
+.picker__provider[data-open="true"] .picker__chevron {
+  transform: rotate(90deg);
+}
+
+.picker__models {
+  padding-left: 13px;
+}
+
+.picker__empty {
+  margin: 2px 8px 4px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
 /* Lined up with the trigger's left edge, growing rightward. */
 .popover__panel[data-align="start"] {
   left: 0;
@@ -4684,6 +4790,103 @@ button.sidebar__user[aria-current="true"] {
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
   padding-left: 22px;
+}
+
+/* One turn of one member: what it worked on, its steps, what it wrote. */
+.team-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+}
+
+.team-turn[data-status="running"] {
+  border-color: color-mix(in srgb, var(--running) 40%, var(--border-subtle));
+}
+
+.team-turn__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.team-turn__what {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.team-turn__meta {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.team-turn__steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.team-turn__steps li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.team-turn__steps li::before {
+  content: "›";
+  flex: none;
+  color: var(--text-muted);
+}
+
+.team-turn__steps time {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.team-turn__steps .team-turn__earlier {
+  color: var(--text-muted);
+}
+
+.team-turn[data-status="running"] .team-turn__steps li:last-child {
+  color: var(--text-primary);
+}
+
+.team-turn__details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.team-turn__details[open] summary {
+  margin-bottom: 4px;
+}
+
+.team-turn__quiet,
+.team-turn__actions {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.team-turn > .team-entry__body {
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .team-task > .team-entry__body {

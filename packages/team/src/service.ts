@@ -12,12 +12,15 @@ import type {
   TeamRunSnapshot,
   TeamRunStopReason,
   TeamTask,
+  TeamTurn,
 } from "@ai-workbench/shared";
+import { TEAM_TURN_OUTPUT_LIMIT, TEAM_TURN_STEP_LIMIT } from "@ai-workbench/shared";
 import {
   newArtifactId,
   newDecisionId,
   newMessageId,
   newTaskId,
+  newTurnId,
 } from "./ids.js";
 import {
   canCreateTask,
@@ -79,6 +82,9 @@ export class TeamService {
   #messages: TeamMessage[];
   #decisions: TeamDecision[];
   #artifacts: TeamArtifact[];
+  #turns: TeamTurn[];
+  /** When each running turn was last written to the store. */
+  readonly #turnSavedAt = new Map<string, number>();
   /** Which agents have held each task, for ping-pong protection (spec §51). */
   readonly #handlers = new Map<string, string[]>();
 
@@ -94,6 +100,7 @@ export class TeamService {
     this.#messages = [...options.snapshot.messages];
     this.#decisions = [...options.snapshot.decisions];
     this.#artifacts = [...options.snapshot.artifacts];
+    this.#turns = [...(options.snapshot.turns ?? [])];
 
     // A restored run must not forget who already held a task.
     for (const task of this.#tasks) {
@@ -118,6 +125,7 @@ export class TeamService {
       messages: [...this.#messages],
       decisions: [...this.#decisions],
       artifacts: [...this.#artifacts],
+      turns: [...this.#turns],
     };
   }
 
@@ -590,6 +598,105 @@ export class TeamService {
    */
   emitAgentProgress(agentId: string, detail: string): void {
     this.#emit({ type: "AGENT_PROGRESS", runId: this.#run.id, agentId, detail });
+  }
+
+  // --- a member's turns ----------------------------------------------------
+
+  /**
+   * A member begins a turn — on a task, or, for the lead, deciding what
+   * comes next. Everything it writes and every step its tool reports is
+   * kept with the turn, so a person can read what each member did.
+   */
+  async beginTurn(agentId: string, taskId: string | null): Promise<TeamTurn> {
+    const turn: TeamTurn = {
+      id: newTurnId(),
+      runId: this.#run.id,
+      agentId,
+      taskId,
+      status: "running",
+      output: "",
+      steps: [],
+      error: null,
+      startedAt: this.#now(),
+      finishedAt: null,
+    };
+    this.#turns.push(turn);
+    this.#turnSavedAt.set(turn.id, Date.now());
+    await this.#store.saveTurn(turn);
+    return turn;
+  }
+
+  /** What the member wrote, as it streams in. */
+  recordTurnOutput(turnId: string, text: string): void {
+    if (text === "") {
+      return;
+    }
+    this.#patchTurn(turnId, (turn) => {
+      const output = turn.output + text;
+      return {
+        output:
+          output.length > TEAM_TURN_OUTPUT_LIMIT
+            ? `… earlier output trimmed …\n${output.slice(output.length - TEAM_TURN_OUTPUT_LIMIT)}`
+            : output,
+      };
+    });
+  }
+
+  /** A step the member's tool reported; a repeat of the last one is not a new step. */
+  recordTurnStep(turnId: string, detail: string): void {
+    const text = detail.trim().slice(0, 300);
+    if (text === "") {
+      return;
+    }
+    this.#patchTurn(turnId, (turn) =>
+      turn.steps[turn.steps.length - 1]?.detail === text
+        ? null
+        : { steps: [...turn.steps, { at: this.#now(), detail: text }].slice(-TEAM_TURN_STEP_LIMIT) },
+    );
+  }
+
+  /** The turn ended: answered, or failed with the reason. */
+  async endTurn(turnId: string, outcome: { error?: string | undefined } = {}): Promise<void> {
+    const turn = this.#turns.find((entry) => entry.id === turnId);
+    if (!turn) {
+      return;
+    }
+    const ended: TeamTurn = {
+      ...turn,
+      status: outcome.error === undefined ? "completed" : "failed",
+      error: outcome.error === undefined ? null : outcome.error.slice(0, 2000),
+      finishedAt: this.#now(),
+    };
+    this.#turns = this.#turns.map((entry) => (entry.id === turnId ? ended : entry));
+    this.#turnSavedAt.delete(turnId);
+    await this.#store.saveTurn(ended);
+  }
+
+  /**
+   * Changes a running turn in memory at once — the run view reads it from
+   * here — and writes it to the store at most every two seconds.
+   */
+  #patchTurn(turnId: string, change: (turn: TeamTurn) => Partial<TeamTurn> | null): void {
+    const turn = this.#turns.find((entry) => entry.id === turnId);
+    if (!turn || turn.status !== "running") {
+      return;
+    }
+    const patch = change(turn);
+    if (!patch) {
+      return;
+    }
+    const updated = { ...turn, ...patch };
+    this.#turns = this.#turns.map((entry) => (entry.id === turnId ? updated : entry));
+    const savedAt = this.#turnSavedAt.get(turnId) ?? 0;
+    if (Date.now() - savedAt >= 2_000) {
+      this.#turnSavedAt.set(turnId, Date.now());
+      void this.#store.saveTurn(updated).catch((error: unknown) =>
+        this.#logger.warn("Could not keep a member's turn", {
+          turnId,
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }
   }
 
   /** Something a person has to look at before the run can go on (spec §50). */

@@ -11,6 +11,7 @@ import type {
   TeamRun,
   TeamRunSnapshot,
   TeamTask,
+  TeamTurn,
 } from "@ai-workbench/shared";
 import { Composer } from "./Composer.js";
 import { MessageBody } from "./MessageItem.js";
@@ -368,7 +369,8 @@ type FeedEntry =
   | { readonly kind: "message"; readonly id: string; readonly at: Date; readonly author: string; readonly message: TeamMessage }
   | { readonly kind: "task"; readonly id: string; readonly at: Date; readonly author: string; readonly task: TeamTask }
   | { readonly kind: "artifact"; readonly id: string; readonly at: Date; readonly author: string; readonly artifact: TeamArtifact }
-  | { readonly kind: "decision"; readonly id: string; readonly at: Date; readonly author: string; readonly decision: TeamDecision };
+  | { readonly kind: "decision"; readonly id: string; readonly at: Date; readonly author: string; readonly decision: TeamDecision }
+  | { readonly kind: "turn"; readonly id: string; readonly at: Date; readonly author: string; readonly turn: TeamTurn };
 
 /** Entries by one author this close together read as one turn. */
 const GROUP_MS = 5 * 60_000;
@@ -452,6 +454,7 @@ function TeamTimeline({
                     providers={providers}
                     team={team}
                     nameOf={nameOf}
+                    snapshot={snapshot}
                   />
                 );
               })
@@ -559,6 +562,7 @@ function FeedItem({
   providers,
   team,
   nameOf,
+  snapshot,
 }: {
   readonly entry: FeedEntry;
   readonly head: boolean;
@@ -567,6 +571,7 @@ function FeedItem({
   readonly providers: readonly ProviderSummary[];
   readonly team: TeamDefinition;
   readonly nameOf: (id: string) => string;
+  readonly snapshot: TeamRunSnapshot;
 }): JSX.Element {
   const time = entry.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return (
@@ -593,7 +598,7 @@ function FeedItem({
             <time>{time}</time>
           </div>
         ) : null}
-        <EntryBody entry={entry} team={team} nameOf={nameOf} />
+        <EntryBody entry={entry} team={team} nameOf={nameOf} snapshot={snapshot} />
       </div>
     </article>
   );
@@ -603,12 +608,16 @@ function EntryBody({
   entry,
   team,
   nameOf,
+  snapshot,
 }: {
   readonly entry: FeedEntry;
   readonly team: TeamDefinition;
   readonly nameOf: (id: string) => string;
+  readonly snapshot: TeamRunSnapshot;
 }): JSX.Element {
   switch (entry.kind) {
+    case "turn":
+      return <TurnBody turn={entry.turn} team={team} snapshot={snapshot} />;
     case "message": {
       const { message } = entry;
       return (
@@ -675,6 +684,103 @@ function EntryBody({
       );
     }
   }
+}
+
+/** Steps shown while a turn runs; the rest fold away. */
+const LIVE_STEPS = 5;
+
+/**
+ * One turn of one member, as it happened: what it worked on, every step its
+ * tool reported, and everything it wrote. While it runs it grows here; the
+ * team's own action blocks are left out of the text, since the tasks,
+ * messages and decisions they made have entries of their own.
+ */
+function TurnBody({
+  turn,
+  team,
+  snapshot,
+}: {
+  readonly turn: TeamTurn;
+  readonly team: TeamDefinition;
+  readonly snapshot: TeamRunSnapshot;
+}): JSX.Element {
+  const going = isGoing(snapshot.run);
+  const running = turn.status === "running" && going;
+  const now = useNow(running ? 1_000 : 600_000);
+  const task = turn.taskId ? snapshot.tasks.find((entry) => entry.id === turn.taskId) : undefined;
+  const { text, actions } = useMemo(() => withoutTeamBlocks(turn.output), [turn.output]);
+  const status = running
+    ? "running"
+    : turn.status === "running"
+      ? "interrupted"
+      : turn.status;
+  const what = task ? task.title : turn.agentId === team.leadAgentId ? "Planned the next steps" : "Took a turn";
+  const took = durationLabel(turn.startedAt, turn.finishedAt ?? new Date(now));
+  const shown = running ? turn.steps.slice(-LIVE_STEPS) : [];
+  return (
+    <div className="team-turn" data-status={status}>
+      <div className="team-turn__head">
+        <span className="team-turn__what">{task ? `Worked on “${what}”` : what}</span>
+        <span className="team-turn__meta">
+          {took}
+          {turn.steps.length > 0 ? ` · ${turn.steps.length} step${turn.steps.length === 1 ? "" : "s"}` : ""}
+        </span>
+        <span className="team-entry__tag" data-status={status}>
+          {status === "running"
+            ? "Working"
+            : status === "completed"
+              ? "Done"
+              : status === "interrupted"
+                ? "Interrupted"
+                : "Failed"}
+        </span>
+      </div>
+      {running ? (
+        <ol className="team-turn__steps" aria-label="Latest steps">
+          {turn.steps.length > shown.length ? (
+            <li className="team-turn__earlier">{turn.steps.length - shown.length} earlier</li>
+          ) : null}
+          {shown.map((step, index) => (
+            <li key={`${step.at.getTime()}:${index}`}>{step.detail}</li>
+          ))}
+        </ol>
+      ) : turn.steps.length > 0 ? (
+        <details className="team-turn__details">
+          <summary>Every step</summary>
+          <ol className="team-turn__steps">
+            {turn.steps.map((step, index) => (
+              <li key={`${step.at.getTime()}:${index}`}>
+                <time>{step.at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time>
+                {step.detail}
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
+      {text ? <Collapsible text={withNames(text, team)} /> : running ? null : (
+        <p className="team-turn__quiet">It wrote nothing beyond its team actions.</p>
+      )}
+      {actions > 0 ? (
+        <p className="team-turn__actions">
+          {actions} team action{actions === 1 ? "" : "s"} — shown as their own entries
+        </p>
+      ) : null}
+      {turn.error ? <p className="team-task__error">{withNames(turn.error, team)}</p> : null}
+    </div>
+  );
+}
+
+/** A member's words without its ```team action blocks, and how many there were. */
+function withoutTeamBlocks(output: string): { text: string; actions: number } {
+  let actions = 0;
+  const text = output
+    .replace(/```team[^\n]*\n[\s\S]*?(?:```|$)/g, () => {
+      actions += 1;
+      return "";
+    })
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { text, actions };
 }
 
 /** How the run ended, in its own words, once it has. */
@@ -746,6 +852,11 @@ function feedFor(snapshot: TeamRunSnapshot, member: string): FeedEntry[] {
   for (const decision of snapshot.decisions) {
     if (mine(decision.author)) {
       entries.push({ kind: "decision", id: `d:${decision.id}`, at: decision.timestamp, author: decision.author, decision });
+    }
+  }
+  for (const turn of snapshot.turns) {
+    if (mine(turn.agentId)) {
+      entries.push({ kind: "turn", id: `u:${turn.id}`, at: turn.startedAt, author: turn.agentId, turn });
     }
   }
   return entries.sort((a, b) => a.at.getTime() - b.at.getTime());

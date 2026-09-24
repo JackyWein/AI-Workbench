@@ -23,6 +23,12 @@ export interface IslandSources {
   readonly usage: AggregatedUsage | null;
   /** Runs the application is driving right now. */
   readonly runs: readonly TeamRunSnapshot[];
+  /**
+   * The members of those runs' teams, by agent id: the name the team gave
+   * each and the mark of the tool it runs on. An id alone means nothing to
+   * a person; without an entry the id is all there is.
+   */
+  readonly members?: ReadonlyArray<{ agentId: string; name: string; icon: string | null }>;
   /** Sessions that are mid-answer, with the state they reported. */
   readonly busySessions: ReadonlyArray<{
     sessionId: string;
@@ -328,6 +334,22 @@ export const completedWorkWidget: IslandWidget = {
   },
 };
 
+/** A member by its team's name for it, and its tool's mark. */
+function memberOf(sources: IslandSources, agentId: string): { name: string; icon: string | null } {
+  const member = sources.members?.find((entry) => entry.agentId === agentId);
+  return { name: member?.name ?? agentId, icon: member?.icon ?? null };
+}
+
+/**
+ * What a member is doing right now, from its running turn: the task it works
+ * on and the last step its tool reported — never the run's opening goal.
+ */
+function nowDoing(snapshot: TeamRunSnapshot, turn: TeamRunSnapshot["turns"][number]): string {
+  const task = turn.taskId ? snapshot.tasks.find((entry) => entry.id === turn.taskId) : undefined;
+  const step = turn.steps[turn.steps.length - 1]?.detail;
+  return [task?.title ?? "Planning the next steps", step].filter(Boolean).join(" · ");
+}
+
 export const teamProgressWidget: IslandWidget = {
   id: "teamProgress",
   displayName: "Team progress",
@@ -339,12 +361,18 @@ export const teamProgressWidget: IslandWidget = {
     }
     const total = snapshot.tasks.length;
     const completed = snapshot.tasks.filter((task) => task.status === "completed").length;
+    const turn = snapshot.turns.find((entry) => entry.status === "running");
 
     return {
       widget: "teamProgress",
       ...quietDefaults(),
       priority: ISLAND_PRIORITY.activeProgress,
-      title: snapshot.run.goal,
+      // What is happening now: who works on what. The goal only until a
+      // member has started.
+      title: turn
+        ? `${memberOf(sources, turn.agentId).name}: ${nowDoing(snapshot, turn)}`.slice(0, 200)
+        : snapshot.run.goal,
+      ...(turn ? { icon: memberOf(sources, turn.agentId).icon } : {}),
       // Counted, never estimated. With no tasks yet there is no percentage to
       // give, and saying so is the honest answer (spec §103).
       detail:
@@ -357,23 +385,43 @@ export const teamProgressWidget: IslandWidget = {
       action: { label: "Open", target: { view: "teams", runId: snapshot.run.id } },
       key: `run:${snapshot.run.id}`,
       at: sources.now,
-      // Each running team is one agent row: its goal and its counted tasks.
-      agents: running.slice(0, 24).map((entry): IslandAgentRow => {
-        const tasks = entry.tasks;
-        const done = tasks.filter((task) => task.status === "completed").length;
-        const blocked = tasks.filter((task) => task.status === "blocked").length;
-        return {
-          key: `run:${entry.run.id}`,
-          title: entry.run.goal.slice(0, 120),
-          detail: (tasks.length === 0
-            ? "Planning"
-            : `${done}/${plural(tasks.length, "task")}${blocked > 0 ? ` · ${blocked} blocked` : ""}`
-          ).slice(0, 160),
-          icon: null,
-          startedAt: entry.run.startedAt,
-          target: { view: "teams", runId: entry.run.id },
-        };
-      }),
+      // Every member at work is a row of its own, with what it is doing
+      // now; a running team with nobody mid-turn is one row with its goal
+      // and its counted tasks.
+      agents: running
+        .flatMap((entry): IslandAgentRow[] => {
+          const turns = entry.turns.filter((item) => item.status === "running");
+          if (turns.length > 0) {
+            return turns.map((item) => {
+              const member = memberOf(sources, item.agentId);
+              return {
+                key: `turn:${item.id}`,
+                title: member.name.slice(0, 120),
+                detail: nowDoing(entry, item).slice(0, 160),
+                icon: member.icon,
+                startedAt: item.startedAt,
+                target: { view: "teams", runId: entry.run.id },
+              };
+            });
+          }
+          const tasks = entry.tasks;
+          const done = tasks.filter((task) => task.status === "completed").length;
+          const blocked = tasks.filter((task) => task.status === "blocked").length;
+          return [
+            {
+              key: `run:${entry.run.id}`,
+              title: entry.run.goal.slice(0, 120),
+              detail: (tasks.length === 0
+                ? "Planning"
+                : `${done}/${plural(tasks.length, "task")}${blocked > 0 ? ` · ${blocked} blocked` : ""}`
+              ).slice(0, 160),
+              icon: null,
+              startedAt: entry.run.startedAt,
+              target: { view: "teams", runId: entry.run.id },
+            },
+          ];
+        })
+        .slice(0, 24),
     };
   },
 };
@@ -396,7 +444,9 @@ export const activeAgentsWidget: IslandWidget = {
     const first = working[0];
     const title =
       working.length + busy.length === 1
-        ? (first?.task.title ?? busy[0]?.name ?? "Working")
+        ? (first
+            ? `${memberOf(sources, first.task.assignedTo ?? "").name}: ${first.task.title}`
+            : (busy[0]?.name ?? "Working"))
         : `${plural(working.length + busy.length, "agent")} active`;
 
     // One row per session or terminal agent, so the island can list them
@@ -422,7 +472,7 @@ export const activeAgentsWidget: IslandWidget = {
       title,
       // A solo session has no task graph, so it gets its state, not a number.
       detail: first
-        ? `${first.task.assignedTo ?? "unassigned"} · ${first.task.status}`
+        ? `${first.task.assignedTo ? memberOf(sources, first.task.assignedTo).name : "unassigned"} · ${first.task.status}`
         : (lead?.detail ?? "working"),
       progress: null,
       action: first

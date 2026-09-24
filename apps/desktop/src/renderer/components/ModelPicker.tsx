@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronRight } from "lucide-react";
 import type { ModelInfo } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { isPickableProvider } from "../lib/provider-label.js";
@@ -42,6 +43,8 @@ export function ModelPicker(): JSX.Element {
 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  /** Providers opened in the list; the session's own opens with the list. */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   const rootRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -62,6 +65,7 @@ export function ModelPicker(): JSX.Element {
   useEffect(() => {
     if (open) {
       setQuery("");
+      setExpanded(new Set(session?.providerId ? [session.providerId] : []));
       void refreshTeams();
       inputRef.current?.focus();
     }
@@ -159,25 +163,27 @@ export function ModelPicker(): JSX.Element {
       </button>
       {open && session ? (
         <div
-          className="popover__panel popover__panel--scroll"
+          className="popover__panel popover__panel--scroll picker"
           data-placement={fit.placement}
           data-align={fit.align}
           role="listbox"
           aria-label="Models and teams"
-          style={{ minWidth: 300, maxHeight: fit.maxHeight }}
+          style={{ width: 320, maxHeight: fit.maxHeight }}
         >
-          <input
-            ref={inputRef}
-            className="text-input"
-            value={query}
-            placeholder="Filter models and teams"
-            aria-label="Filter models and teams"
-            spellCheck={false}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {visibleTeams.length > 0 ? (
-            <>
-              <p className="popover__title" style={{ marginTop: 12 }}>Teams</p>
+          <div className="picker__search">
+            <input
+              ref={inputRef}
+              className="text-input"
+              value={query}
+              placeholder="Filter models and teams"
+              aria-label="Filter models and teams"
+              spellCheck={false}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          {visibleTeams.length > 0 || sessionTeam ? (
+            <div className="picker__group">
+              <p className="picker__label">Teams</p>
               {visibleTeams.map((team) => {
                 const runs = teamRuns[team.id] ?? [];
                 const active = runs.filter((run) => run.status === "running" || run.status === "paused").length;
@@ -185,10 +191,9 @@ export function ModelPicker(): JSX.Element {
                   <button
                     key={team.id}
                     type="button"
-                    className="quiet-button"
+                    className="picker__row"
                     role="option"
-                    aria-selected={false}
-                    style={{ display: "flex", width: "100%", justifyContent: "space-between", gap: 8 }}
+                    aria-selected={team.id === sessionTeam?.id}
                     onClick={() => openTeam(team.id)}
                     title={
                       active > 0
@@ -196,96 +201,118 @@ export function ModelPicker(): JSX.Element {
                         : "Show this team in this session"
                     }
                   >
-                    <span>{team.name}</span>
-                    <span className="row__meta">
+                    <span className="picker__name">{team.name}</span>
+                    <span className="picker__meta">
                       {team.agents.length} agents{active > 0 ? ` · ${active} active` : ""}
                     </span>
+                    {team.id === sessionTeam?.id ? <Check size={13} aria-hidden="true" /> : null}
                   </button>
                 );
               })}
-            </>
-          ) : null}
-          {sessionTeam ? (
-            <button
-              type="button"
-              className="quiet-button"
-              style={{ display: "block", width: "100%", textAlign: "left" }}
-              onClick={() => {
-                setOpen(false);
-                void clearSessionTeam(session.id);
-              }}
-              title="Back to a normal single-provider session"
-            >
-              Leave {sessionTeam.name} · solo session
-            </button>
-          ) : null}
-          <p className="popover__title" style={{ marginTop: 12 }}>Models</p>
-          {visibleProviders.length === 0 ? (
-            <p className="popover__detail">No installed tool offers model choice yet.</p>
-          ) : (
-            visibleProviders.map(({ entry }) => {
-              const filteredModels = entry.models.filter(
-                (candidate) =>
-                  !needle ||
-                  entry.metadata.displayName.toLowerCase().includes(needle) ||
-                  `${candidate.displayName} ${candidate.id}`.toLowerCase().includes(needle),
-              );
-              const hasToolModels = entry.models.some((candidate) => candidate.source === "provider");
-              return (
-              <div key={entry.metadata.id} style={{ marginBottom: 4 }}>
-                <p className="row__meta" style={{ margin: "8px 0 2px" }}>
-                  {entry.metadata.displayName}
-                </p>
+              {sessionTeam ? (
                 <button
                   type="button"
-                  className="quiet-button"
-                  role="option"
-                  aria-selected={session.providerId === entry.metadata.id && !session.modelId}
-                  style={{ display: "block", width: "100%", textAlign: "left" }}
-                  onClick={() => pickModel(entry.metadata.id, null)}
+                  className="picker__row picker__row--quiet"
+                  onClick={() => {
+                    setOpen(false);
+                    void clearSessionTeam(session.id);
+                  }}
+                  title="Back to a normal single-provider session"
                 >
-                  Default model — the tool chooses
+                  <span className="picker__name">Leave {sessionTeam.name} — solo session</span>
                 </button>
-                {entry.models.length === 0 ? (
-                  <>
-                    <p className="popover__detail">No models reported yet.</p>
-                    <p className="popover__detail">
-                      {entry.metadata.displayName} lists no models itself — add yours under Providers.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    {filteredModels.map((candidate) => {
-                      const origin = modelOrigin(candidate);
-                      return (
-                        <button
-                          key={candidate.id}
-                          type="button"
-                          className="quiet-button"
-                          role="option"
-                          aria-selected={
-                            session.providerId === entry.metadata.id && session.modelId === candidate.id
+              ) : null}
+            </div>
+          ) : null}
+          <div className="picker__group">
+            <p className="picker__label">Models</p>
+            {visibleProviders.length === 0 ? (
+              <p className="picker__empty">
+                {needle ? "Nothing matches." : "No installed tool offers model choice yet."}
+              </p>
+            ) : (
+              visibleProviders.map(({ entry }) => {
+                const id = entry.metadata.id;
+                const filteredModels = entry.models.filter(
+                  (candidate) =>
+                    !needle ||
+                    entry.metadata.displayName.toLowerCase().includes(needle) ||
+                    `${candidate.displayName} ${candidate.id}`.toLowerCase().includes(needle),
+                );
+                // Filtering opens every tool with a match; otherwise only the
+                // ones opened by hand, and the session's own.
+                const isOpen = needle !== "" || expanded.has(id);
+                const current = session.providerId === id;
+                const currentModel = current
+                  ? (entry.models.find((candidate) => candidate.id === session.modelId)?.displayName ?? "Tool's default")
+                  : null;
+                return (
+                  <div key={id} className="picker__provider" data-open={isOpen}>
+                    <button
+                      type="button"
+                      className="picker__head"
+                      aria-expanded={isOpen}
+                      onClick={() =>
+                        setExpanded((previous) => {
+                          const next = new Set(previous);
+                          if (next.has(id)) {
+                            next.delete(id);
+                          } else {
+                            next.add(id);
                           }
-                          style={{ display: "flex", width: "100%", justifyContent: "space-between", gap: 8, textAlign: "left" }}
-                          onClick={() => pickModel(entry.metadata.id, candidate.id)}
-                          title={candidate.id}
+                          return next;
+                        })
+                      }
+                    >
+                      <ChevronRight className="picker__chevron" size={13} aria-hidden="true" />
+                      <span className="picker__name">{entry.metadata.displayName}</span>
+                      <span className="picker__meta">
+                        {currentModel ?? `${entry.models.length} model${entry.models.length === 1 ? "" : "s"}`}
+                      </span>
+                    </button>
+                    {isOpen ? (
+                      <div className="picker__models">
+                        <button
+                          type="button"
+                          className="picker__row"
+                          role="option"
+                          aria-selected={current && !session.modelId}
+                          onClick={() => pickModel(id, null)}
+                          title="Start without a model; the tool uses its own default"
                         >
-                          <span>{candidate.displayName}</span>
-                          {origin ? <span className="row__meta">{origin}</span> : null}
+                          <span className="picker__name">Tool's default</span>
+                          {current && !session.modelId ? <Check size={13} aria-hidden="true" /> : null}
                         </button>
-                      );
-                    })}
-                    {hasToolModels ? null : (
-                      <p className="popover__detail">
-                        {entry.metadata.displayName} lists no models itself — add yours under Providers.
-                      </p>
-                    )}
-                  </>
-                )}
-              </div>
-              );
-            })
-          )}
+                        {filteredModels.map((candidate) => {
+                          const origin = modelOrigin(candidate);
+                          const selected = current && session.modelId === candidate.id;
+                          return (
+                            <button
+                              key={candidate.id}
+                              type="button"
+                              className="picker__row"
+                              role="option"
+                              aria-selected={selected}
+                              onClick={() => pickModel(id, candidate.id)}
+                              title={origin ? `${candidate.id} — ${origin}` : candidate.id}
+                            >
+                              <span className="picker__name">{candidate.displayName}</span>
+                              {selected ? <Check size={13} aria-hidden="true" /> : null}
+                            </button>
+                          );
+                        })}
+                        {entry.models.length === 0 ? (
+                          <p className="picker__empty">
+                            {entry.metadata.displayName} lists no models — add yours under Providers.
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
       ) : null}
     </div>

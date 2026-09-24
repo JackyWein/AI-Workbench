@@ -302,11 +302,16 @@ export class TeamOrchestrator {
       inbox,
     });
 
+    // The turn is kept as it happens — what the member writes and every step
+    // its tool reports — so a person can read what each member did.
+    const turn = await this.#service.beginTurn(agent.id, task?.id ?? null);
     let answer: string;
     try {
-      answer = await this.#ask(agent, prompt);
+      answer = await this.#ask(agent, prompt, turn.id);
+      await this.#service.endTurn(turn.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      await this.#service.endTurn(turn.id, { error: message }).catch(() => undefined);
       this.#logger.error("Agent turn failed", { agentId: agent.id, error: message });
       this.#service.emitAgentFailed(agent.id, message);
       // A failed turn must be visible in the run, not silent: without this
@@ -471,7 +476,7 @@ export class TeamOrchestrator {
    * the silence budget) stops a provider that trickles one event per minute
    * from holding the run forever.
    */
-  async #ask(agent: AgentDefinition, prompt: string): Promise<string> {
+  async #ask(agent: AgentDefinition, prompt: string, turnId: string): Promise<string> {
     const session = await this.#sessionFor(agent);
     await this.#service.countAgentCall();
 
@@ -498,6 +503,11 @@ export class TeamOrchestrator {
     // and each event crosses to the window.
     const progress = (detail: string): void => {
       lastDetail = detail.length > 200 ? `${detail.slice(0, 199)}…` : detail;
+      // "writing" and "working" say only that it is busy; the text itself and
+      // the tool steps are the record.
+      if (detail !== "writing" && detail !== "working") {
+        this.#service.recordTurnStep(turnId, detail);
+      }
       const now = Date.now();
       if (lastDetail === lastSent.detail && now - lastSent.at < 1_000) {
         return;
@@ -541,10 +551,12 @@ export class TeamOrchestrator {
         restartSilence();
         if (event.type === "text_delta") {
           collected.push(event.text);
+          this.#service.recordTurnOutput(turnId, event.text);
           progress("writing");
         } else if (event.type === "message") {
           // A provider that answers in one piece rather than streaming.
           collected.push(event.text);
+          this.#service.recordTurnOutput(turnId, event.text);
           progress("writing");
         } else if (event.type === "tool_call") {
           progress(event.toolCall.summary ?? event.toolCall.name);

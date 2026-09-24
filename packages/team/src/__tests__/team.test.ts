@@ -90,6 +90,7 @@ function makeSnapshot(team: TeamDefinition, goal: string): TeamRunSnapshot {
     messages: [],
     decisions: [],
     artifacts: [],
+    turns: [],
   };
 }
 
@@ -300,6 +301,34 @@ describe("autonomous collaboration", () => {
     expect(types).toContain("DECISION_RECORDED");
     expect(types).toContain("TEAM_FINISHED");
     expect(service.listArtifacts().length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keeps every member's turn: what it wrote, on which task, and how it ended", async () => {
+    const { service } = boot(
+      [agent("lead", "Lead"), agent("worker-1", "Worker One"), agent("worker-2", "Worker Two")],
+      "Build a small feature",
+    );
+    const orchestrator = new TeamOrchestrator({
+      service,
+      runtime: { adapterFor: () => adapter },
+      logger: nullLogger,
+      turnTimeoutMs: 15_000,
+    });
+    await orchestrator.run();
+    await orchestrator.dispose();
+
+    const turns = service.snapshot().turns;
+    // The lead planned and closed; both workers took their tasks.
+    expect(new Set(turns.map((turn) => turn.agentId))).toEqual(new Set(["lead", "worker-1", "worker-2"]));
+    expect(turns.every((turn) => turn.status === "completed" && turn.finishedAt !== null)).toBe(true);
+    // Every turn kept the member's own words — the answer, action blocks and all.
+    expect(turns.every((turn) => turn.output.length > 0)).toBe(true);
+    for (const task of service.listTasks()) {
+      const worked = turns.find((turn) => turn.taskId === task.id);
+      expect(worked?.agentId).toBe(task.assignedTo);
+    }
+    // Lead turns belong to no task.
+    expect(turns.some((turn) => turn.agentId === "lead" && turn.taskId === null)).toBe(true);
   });
 
   it("runs independent tasks together, up to the run's limit", async () => {

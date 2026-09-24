@@ -6,11 +6,13 @@ import {
   teamMessages,
   teamRuns,
   teamTasks,
+  teamTurns,
   type TeamArtifactRow,
   type TeamDecisionRow,
   type TeamMessageRow,
   type TeamRunRow,
   type TeamTaskRow,
+  type TeamTurnRow,
 } from "@ai-workbench/database";
 import type {
   SharedTeamState,
@@ -21,6 +23,7 @@ import type {
   TeamRunConfig,
   TeamRunSnapshot,
   TeamTask,
+  TeamTurn,
 } from "@ai-workbench/shared";
 import {
   sharedTeamStateSchema,
@@ -54,11 +57,12 @@ export class SqlTeamRunStore implements TeamRunStore {
       return null;
     }
 
-    const [tasks, messages, decisions, artifacts] = await Promise.all([
+    const [tasks, messages, decisions, artifacts, turns] = await Promise.all([
       this.#db.select().from(teamTasks).where(eq(teamTasks.runId, runId)),
       this.#db.select().from(teamMessages).where(eq(teamMessages.runId, runId)),
       this.#db.select().from(teamDecisions).where(eq(teamDecisions.runId, runId)),
       this.#db.select().from(teamArtifacts).where(eq(teamArtifacts.runId, runId)),
+      this.#db.select().from(teamTurns).where(eq(teamTurns.runId, runId)),
     ]);
 
     return {
@@ -67,6 +71,7 @@ export class SqlTeamRunStore implements TeamRunStore {
       messages: messages.map(toMessage),
       decisions: decisions.map(toDecision),
       artifacts: artifacts.map(toArtifact),
+      turns: turns.map(toTurn).sort((a, b) => a.startedAt.getTime() - b.startedAt.getTime()),
     };
   }
 
@@ -174,6 +179,25 @@ export class SqlTeamRunStore implements TeamRunStore {
       .values(values)
       .onConflictDoUpdate({ target: teamArtifacts.id, set: values });
   }
+
+  async saveTurn(turn: TeamTurn): Promise<void> {
+    const values = {
+      id: turn.id,
+      runId: turn.runId,
+      agentId: turn.agentId,
+      taskId: turn.taskId,
+      status: turn.status,
+      output: turn.output,
+      steps: turn.steps.map((step) => ({ at: step.at.getTime(), detail: step.detail })),
+      error: turn.error,
+      startedAt: turn.startedAt,
+      finishedAt: turn.finishedAt,
+    };
+    await this.#db
+      .insert(teamTurns)
+      .values(values)
+      .onConflictDoUpdate({ target: teamTurns.id, set: values });
+  }
 }
 
 /**
@@ -264,5 +288,24 @@ export function toArtifact(row: TeamArtifactRow): TeamArtifact {
     taskId: row.taskId,
     metadata: row.metadata,
     timestamp: row.timestamp,
+  };
+}
+
+export function toTurn(row: TeamTurnRow): TeamTurn {
+  const steps = Array.isArray(row.steps) ? row.steps : [];
+  return {
+    id: row.id,
+    runId: row.runId,
+    agentId: row.agentId,
+    taskId: row.taskId,
+    // A turn that was running when the application stopped did not finish.
+    status: row.status === "completed" ? "completed" : row.status === "running" && row.finishedAt === null ? "running" : "failed",
+    output: row.output,
+    steps: steps
+      .filter((step) => typeof step?.detail === "string" && typeof step.at === "number")
+      .map((step) => ({ at: new Date(step.at), detail: step.detail.slice(0, 300) })),
+    error: row.error,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
   };
 }

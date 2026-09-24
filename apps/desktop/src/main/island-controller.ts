@@ -610,6 +610,11 @@ export class IslandController {
       usage: shownUsage,
       update: this.#updateSource(now),
       runs,
+      members: [...agentNames].map(([agentId, name]) => ({
+        agentId,
+        name,
+        icon: agentIcons.get(agentId) ?? null,
+      })),
       busySessions,
       providers,
       sessions: sessionRows,
