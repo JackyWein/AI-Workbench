@@ -1,4 +1,5 @@
 import { type JSX, useEffect, useState } from "react";
+import { FolderOpen, MessageSquare, TerminalSquare } from "lucide-react";
 import type { ChatMessage, ProviderSummary } from "@ai-workbench/shared";
 import { resolveTheme } from "@ai-workbench/ui";
 import { invoke } from "./lib/client.js";
@@ -184,7 +185,11 @@ export function App(): JSX.Element {
         state.workspaceMode === "terminals" &&
         !workspace ? (
           <div className="main__body">
-            <EmptyState title="No workspaces yet" />
+            <EmptyState
+              icon={<TerminalSquare size={20} strokeWidth={1.5} />}
+              title="Agents need a workspace"
+              description="Add a folder in the sidebar; the agents you start here work in it."
+            />
           </div>
         ) : null}
 
@@ -208,7 +213,11 @@ export function App(): JSX.Element {
             />
             <div className="main__body">
               {messages.length === 0 ? (
-                <EmptyState title="No messages yet" />
+                <EmptyState
+                  icon={<MessageSquare size={20} strokeWidth={1.5} />}
+                  title="Start the conversation"
+                  description="Write below. Attach files with +, or pick another model — or a team — in the box."
+                />
               ) : (
                 <ChatView
                   key={`${session.id}:${messages[0]?.id ?? "start"}`}
@@ -231,10 +240,18 @@ export function App(): JSX.Element {
         {state.view === "chat" && state.workspaceMode === "chat" && !session ? (
           <div className="main__body">
             <EmptyState
-              title={
+              icon={
+                state.workspaces.length === 0 ? (
+                  <FolderOpen size={20} strokeWidth={1.5} />
+                ) : (
+                  <MessageSquare size={20} strokeWidth={1.5} />
+                )
+              }
+              title={state.workspaces.length === 0 ? "Start with a folder" : "No session open"}
+              description={
                 state.workspaces.length === 0
-                  ? "No workspaces yet"
-                  : "No session selected"
+                  ? "A workspace is a folder your agents work in. Choose one, then start a session in it."
+                  : "A session is one conversation with one of your tools, or with a team."
               }
               action={
                 state.workspaces.length === 0
