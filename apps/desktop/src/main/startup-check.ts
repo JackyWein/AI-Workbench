@@ -1970,18 +1970,32 @@ export async function runStartupCheck(
                  buttons: [...document.querySelectorAll('.isl__actions button')]
                    .map(node => node.textContent?.trim()),
                  title: document.querySelector('.isl__attitle')?.textContent ?? '',
+                 // Light text on the island's dark card, whatever the system's
+                 // theme: this machine's is light, which once made it dark.
+                 titleReadable: (() => {
+                   const title = document.querySelector('.isl__attitle');
+                   const [r, g, b] = (title ? getComputedStyle(title).color.match(/\\d+/g) ?? [] : []).map(Number);
+                   return 0.299 * (r ?? 0) + 0.587 * (g ?? 0) + 0.114 * (b ?? 0) > 150;
+                 })(),
                };
              })()`,
           );
           seen = JSON.stringify({ icon: entry.icon, options: entry.options, face });
-          const shown = face as { face: string; mark: boolean; buttons: string[]; title: string };
+          const shown = face as {
+            face: string;
+            mark: boolean;
+            buttons: string[];
+            title: string;
+            titleReadable: boolean;
+          };
           if (
             entry.icon === agent.providerId &&
             shown.face === "approval" &&
             shown.mark &&
             shown.buttons.includes("Allow") &&
             shown.buttons.includes("Deny") &&
-            shown.title.includes(`wants to use ${agent.tool ?? "Bash"}`)
+            shown.title.includes(`wants to use ${agent.tool ?? "Bash"}`) &&
+            shown.titleReadable
           ) {
             return true;
           }

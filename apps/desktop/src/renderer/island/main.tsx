@@ -22,7 +22,7 @@ import {
   type IslandTarget,
   type IslandUsageRow,
 } from "@ai-workbench/shared";
-import { LOGOS, resolveTheme } from "@ai-workbench/ui";
+import { LOGOS } from "@ai-workbench/ui";
 import "./island.css";
 
 type HoverMode = "agents" | "usage";
@@ -190,14 +190,11 @@ function Island(): JSX.Element | null {
     return () => window.clearTimeout(timer);
   }, [docked]);
 
+  // The island is always dark, whatever the system or the app is set to: its
+  // surfaces are painted dark on purpose, and following a light system
+  // theme gave them dark text — titles nobody could read.
   useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = (): void => {
-      document.documentElement.dataset["theme"] = resolveTheme("system", media.matches);
-    };
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
+    document.documentElement.dataset["theme"] = "dark";
   }, []);
 
   // Every hook runs on every render, unconditionally: the null-guards below
