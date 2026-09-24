@@ -44,5 +44,10 @@ export const updateStateSchema = z.object({
   availableBuild: z.string().nullable().default(null),
   /** Whether updates download in the background and install on quit. */
   automatic: z.boolean().default(true),
+  /**
+   * The person answered "Later" to restarting for the downloaded update, so
+   * nothing asks again until the next one; it installs when the app quits.
+   */
+  deferred: z.boolean().default(false),
 });
 export type UpdateState = z.infer<typeof updateStateSchema>;

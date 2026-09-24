@@ -914,6 +914,31 @@ button {
   border-top: 1px solid var(--border-subtle);
 }
 
+/* The app's downloaded update, in whatever is open: a line and its answers. */
+.isl__update {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 8px;
+  padding: 9px 10px;
+  border-radius: calc(10px * var(--radius-scale));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.isl__update-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.isl__update-detail {
+  margin: 0 0 4px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 .isl__xstatvalue {
   margin-left: auto;
   color: var(--text-secondary);

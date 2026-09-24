@@ -7,6 +7,7 @@ import {
   type IslandWidgetId,
   type TerminalAttentionResponse,
   type Appearance,
+  type UpdateState,
 } from "@ai-workbench/shared";
 import { COMPLETED_WORK_WINDOW_MS, type IslandSources } from "@ai-workbench/status";
 import type { AppServices } from "./services.js";
@@ -28,6 +29,15 @@ export interface IslandControllerOptions {
   readonly devServerUrl?: string | undefined;
   readonly focusMainWindow: () => BrowserWindow | null;
   readonly quit: () => void;
+  /**
+   * The app's own updater: a downloaded update is offered on the island with
+   * "Later" and "Restart now". Absent in tests that have no updater.
+   */
+  readonly updates?: {
+    readonly state: () => UpdateState;
+    readonly install: () => Promise<{ installing: boolean }>;
+    readonly defer: () => { deferred: boolean };
+  };
   /**
    * Side-effect-free read of the main window for visibility/focus checks.
    * Unlike focusMainWindow, calling this never shows or focuses anything.
@@ -85,6 +95,8 @@ export class IslandController {
   #manualHidden = false;
   /** Serializes preference writes so concurrent callers cannot interleave. */
   #preferencesChain: Promise<void> = Promise.resolve();
+  /** When the downloaded update was first offered, so its clock holds still. */
+  #updateOffered: { key: string; at: Date } | null = null;
 
   constructor(options: IslandControllerOptions) {
     this.#options = options;
@@ -595,6 +607,7 @@ export class IslandController {
 
     return this.#services.attention.update({
       usage: shownUsage,
+      update: this.#updateSource(now),
       runs,
       busySessions,
       providers,
@@ -606,6 +619,41 @@ export class IslandController {
       brokenConnections,
       now,
     });
+  }
+
+  /**
+   * A downloaded update waiting for a restart, until the person answers it.
+   * Only a build that installs its own updates is asked; the others get a
+   * download link in Settings instead.
+   */
+  #updateSource(now: Date): IslandSources["update"] {
+    const update = this.#options.updates?.state();
+    if (
+      !update ||
+      update.status !== "downloaded" ||
+      !update.installsItself ||
+      update.deferred ||
+      !update.availableVersion
+    ) {
+      this.#updateOffered = null;
+      return null;
+    }
+    const key = `update:${update.availableVersion}:${update.availableBuild ?? ""}`;
+    if (this.#updateOffered?.key !== key) {
+      this.#updateOffered = { key, at: now };
+    }
+    const build =
+      update.availableVersion === update.currentVersion && update.availableBuild
+        ? ` (build ${update.availableBuild})`
+        : "";
+    return {
+      key,
+      title: "Update ready — restart to install",
+      detail: update.automatic
+        ? `AI Workbench ${update.availableVersion}${build} is downloaded. Later installs it when you quit.`
+        : `AI Workbench ${update.availableVersion}${build} is downloaded.`,
+      at: this.#updateOffered.at,
+    };
   }
 
   /** A tool that is not installed gets no usage row, not even "unavailable". */
@@ -728,6 +776,9 @@ export class IslandController {
    * it takes the answer; its own prompt in its terminal stays usable.
    */
   async respond(key: string, option: string): Promise<{ answered: boolean; reason: string | null }> {
+    if (key.startsWith("update:")) {
+      return this.#answerUpdate(option);
+    }
     const target = this.#respondTargets.get(key);
     if (!target) {
       return { answered: false, reason: "It is no longer waiting" };
@@ -751,6 +802,27 @@ export class IslandController {
       answered,
       reason: answered ? null : "It is no longer waiting; answer it in its terminal",
     };
+  }
+
+  /**
+   * "Restart now" installs the downloaded update without its setup wizard and
+   * starts the app again; "Later" leaves it for when the app quits.
+   */
+  async #answerUpdate(option: string): Promise<{ answered: boolean; reason: string | null }> {
+    const updates = this.#options.updates;
+    if (!updates || !this.#updateSource(new Date())) {
+      return { answered: false, reason: "There is no update waiting" };
+    }
+    if (option === "restart") {
+      const { installing } = await updates.install();
+      return { answered: installing, reason: installing ? null : "The update could not be installed" };
+    }
+    if (option === "later") {
+      const { deferred } = updates.defer();
+      await this.refresh().catch(() => undefined);
+      return { answered: deferred, reason: deferred ? null : "There is no update waiting" };
+    }
+    return { answered: false, reason: "That is not an answer to an update" };
   }
 
   /** Forgets a dragged spot and edge-dock, back to the default corner. */

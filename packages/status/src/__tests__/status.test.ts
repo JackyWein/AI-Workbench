@@ -402,6 +402,7 @@ describe("honest progress", () => {
       errors: [],
       brokenConnections: [],
       completed: [],
+      update: null,
       now: NOW,
     });
 
@@ -421,6 +422,7 @@ describe("honest progress", () => {
       errors: [],
       brokenConnections: [],
       completed: [],
+      update: null,
       now: NOW,
     });
 
@@ -558,5 +560,48 @@ describe("finished work that is not a team run", () => {
       icon: "claude-code",
       action: { label: "Open", target: { view: "chat", workspaceId: "ws", tileId: "t1" } },
     });
+  });
+});
+
+describe("the app's own update", () => {
+  const update = {
+    key: "update:0.0.7:abc1234",
+    title: "Update ready — restart to install",
+    detail: "AI Workbench 0.0.7 is downloaded",
+    at: NOW,
+  };
+
+  it("asks Later or Restart now once it is downloaded, and takes the island for it", () => {
+    const state = boot().update({ update, now: NOW });
+    expect(state.expanded).toBe(true);
+    expect(state.current).toMatchObject({
+      widget: "appUpdate",
+      priority: ISLAND_PRIORITY.updateReady,
+      title: "Update ready — restart to install",
+      options: [
+        { id: "later", label: "Later" },
+        { id: "restart", label: "Restart now" },
+      ],
+      action: { label: "Settings", target: { view: "settings" } },
+    });
+  });
+
+  it("waits behind an agent that waits on the person", () => {
+    const state = boot().update({
+      update,
+      attention: [{ key: "tile:t1:req-1", title: "Codex wants to use Bash", detail: "", at: NOW }],
+      now: NOW,
+    });
+    expect(state.entries.map((entry) => entry.widget).slice(0, 2)).toEqual(["needsAttention", "appUpdate"]);
+  });
+
+  it("is gone once answered, and follows the Needs attention switch", () => {
+    const service = boot();
+    service.update({ update, now: NOW });
+    expect(service.update({ update: null, now: NOW }).entries.some((entry) => entry.widget === "appUpdate")).toBe(
+      false,
+    );
+    const off = boot({ enabledWidgets: ["activeAgents", "providerUsage"] }).update({ update, now: NOW });
+    expect(off.entries.some((entry) => entry.widget === "appUpdate")).toBe(false);
   });
 });

@@ -87,8 +87,9 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("team.event"), event: teamEventSchema }),
 
   // Update progress reaches the UI on the same channel as everything else.
-  // Downloads and installs only ever start from an explicit user action; the
-  // main process never fetches or applies an update on its own.
+  // With automatic updates off, downloads and installs only start from an
+  // explicit user action; on, a download runs in the background and the
+  // restart is still the person's to choose ("Restart now" or "Later").
   z.object({ type: z.literal("update.checking") }),
   z.object({
     type: z.literal("update.available"),
@@ -105,6 +106,8 @@ export const appEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("update.downloaded"), version: z.string() }),
   z.object({ type: z.literal("update.not-available"), version: z.string() }),
   z.object({ type: z.literal("update.error"), message: z.string() }),
+  /** "Later" was chosen for the downloaded update, in the window or the island. */
+  z.object({ type: z.literal("update.deferred"), version: z.string() }),
 ]);
 export type AppEvent = z.infer<typeof appEventSchema>;
 export type AppEventType = AppEvent["type"];

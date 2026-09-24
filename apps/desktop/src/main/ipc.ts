@@ -18,6 +18,7 @@ import { toProviderConfigOverrides, type AppServices } from "./services.js";
 import type { IslandController } from "./island-controller.js";
 import {
   checkForUpdates,
+  deferInstall,
   downloadUpdate,
   getUpdateState,
   installUpdate,
@@ -590,6 +591,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     "update.check": () => checkForUpdates(),
     "update.download": () => downloadUpdate(),
     "update.install": () => installUpdate(),
+    "update.defer": () => deferInstall(),
     "update.getStatus": () => getUpdateState(),
     "update.openReleasePage": () => openReleasePage(),
   };

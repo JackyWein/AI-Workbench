@@ -38,9 +38,11 @@ export async function runStartupCheck(
     workspaceDirectory: string;
     mode: StartupCheckMode;
     island: IslandController;
+    /** Leaves the updater as a finished download would, or at rest (null). */
+    simulateDownload: (build: { version: string; commit: string } | null) => void;
   },
 ): Promise<StartupCheckResult> {
-  const { workspaceDirectory, mode, island } = options;
+  const { workspaceDirectory, mode, island, simulateDownload } = options;
   const repository = await seedWorkspace(workspaceDirectory);
   const rendererErrors: string[] = [];
   window.webContents.on("console-message", (event) => {
@@ -1854,6 +1856,80 @@ export async function runStartupCheck(
        return ok ? true : JSON.stringify({ build: status.currentBuild, autoUpdate: settings.autoUpdate });
      })()`,
   );
+
+  // A downloaded update asks once, in the window and on the island, and an
+  // answer in one place is the answer in both. "Restart now" is not pressed:
+  // this build is not installed, so there is nothing to install over.
+  await checkMain("a downloaded update asks Later or Restart now in the window and on the island", async () => {
+    const waitFor = async (script: string, ms = 5_000): Promise<boolean> => {
+      const until = Date.now() + ms;
+      while (Date.now() < until) {
+        if ((await window.webContents.executeJavaScript(script)) === true) {
+          return true;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return false;
+    };
+    const prompt = `(() => {
+      const card = document.querySelector('.update-prompt');
+      const labels = [...(card?.querySelectorAll('button') ?? [])].map(b => b.textContent.trim());
+      return Boolean(card) && labels.join('|') === 'Later|Restart now' && card.textContent.includes('9.9.9');
+    })()`;
+    const gone = `!document.querySelector('.update-prompt')`;
+    const offered = (): string | null => {
+      const entry = island.state.entries.find((candidate) => candidate.widget === "appUpdate");
+      return entry && entry.options.map((option) => option.id).join("|") === "later|restart" ? entry.key : null;
+    };
+    try {
+      simulateDownload({ version: "9.9.9", commit: "abc1234def5678abc1234def5678abc1234def56" });
+      await island.refresh();
+      const inWindow = await waitFor(prompt);
+      const onIsland = offered() !== null;
+      // Evidence for a person, when screenshots are asked for: the card in
+      // the window and the island's own question.
+      const shots = process.env["AI_WORKBENCH_CHECK_SCREENSHOT"];
+      if (shots) {
+        await mkdir(dirname(shots), { recursive: true });
+        await writeFile(shots.replace(/\.png$/, "-update.png"), (await window.webContents.capturePage()).toPNG());
+        window.blur();
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const target = islandWindow();
+        const image = target?.isVisible()
+          ? await Promise.race([
+              target.webContents.capturePage(),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+            ])
+          : null;
+        if (image) {
+          await writeFile(shots.replace(/\.png$/, "-update-island.png"), image.toPNG());
+        }
+        window.focus();
+      }
+      // Later in the window: the island stops asking too.
+      await window.webContents.executeJavaScript(
+        `[...document.querySelectorAll('.update-prompt button')].find(b => b.textContent.trim() === 'Later')?.click()`,
+      );
+      const laterInWindow = await waitFor(gone);
+      await island.refresh();
+      const islandFollows = offered() === null;
+      // The next download asks again; Later on the island closes the window's card.
+      simulateDownload({ version: "9.9.9", commit: "fedcba9876543210fedcba9876543210fedcba98" });
+      await island.refresh();
+      const askedAgain = (await waitFor(prompt)) && offered() !== null;
+      const key = offered();
+      const answered = key ? (await island.respond(key, "later")).answered : false;
+      const windowFollows = await waitFor(gone);
+      const result = { inWindow, onIsland, laterInWindow, islandFollows, askedAgain, answered, windowFollows };
+      if (!Object.values(result).every(Boolean)) {
+        throw new Error(JSON.stringify(result));
+      }
+      return true;
+    } finally {
+      simulateDownload(null);
+      await island.refresh();
+    }
+  });
 
   await check(
     "the app's own mark is its logo",

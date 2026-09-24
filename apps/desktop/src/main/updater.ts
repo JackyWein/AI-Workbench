@@ -13,6 +13,8 @@ export interface UpdaterDeps {
   readonly automatic: boolean;
   /** A Mac build signed with a Developer ID, which may install its updates. */
   readonly signedMac?: boolean;
+  /** Loads the electron-updater module; tests hand in a stand-in. */
+  readonly loadModule?: () => Promise<unknown>;
 }
 
 /**
@@ -27,7 +29,11 @@ interface AutoUpdaterLike {
   autoInstallOnAppQuit: boolean;
   checkForUpdates(): Promise<unknown>;
   downloadUpdate(): Promise<unknown>;
-  quitAndInstall(): void;
+  /**
+   * Quits and runs the installer: silently (no setup wizard) and starting
+   * the app again when it is done, when both flags are set.
+   */
+  quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
   on(event: string, listener: (...args: Array<unknown>) => void): unknown;
   /**
    * electron-updater's own gate between "checked" and "available". It says no
@@ -52,6 +58,7 @@ let state: UpdateState = {
   currentBuild: null,
   availableBuild: null,
   automatic: true,
+  deferred: false,
 };
 
 /** A commit as people read it: its first seven characters. */
@@ -158,6 +165,7 @@ export function initUpdater(next: UpdaterDeps): void {
     currentBuild: shortCommit(next.currentCommit),
     availableBuild: null,
     automatic: next.automatic,
+    deferred: false,
   };
   setupPromise = null;
   if (app.isPackaged) {
@@ -349,9 +357,11 @@ export async function downloadUpdate(): Promise<{ started: boolean }> {
 }
 
 /**
- * Installs the downloaded update and restarts, from "Restart to update".
- * With automatic updates on, an update not installed this way installs when
- * the app quits. Never rejects.
+ * Installs the downloaded update and starts the app again, from "Restart
+ * now" in the window or on the island: the installer runs without its
+ * wizard, and the new version opens by itself when it has finished. With
+ * automatic updates on, an update not installed this way installs when the
+ * app quits. Never rejects.
  */
 export async function installUpdate(): Promise<{ installing: boolean }> {
   const current = deps;
@@ -371,7 +381,10 @@ export async function installUpdate(): Promise<{ installing: boolean }> {
     return { installing: false };
   }
   try {
-    updater.quitAndInstall();
+    current.logger.info("Installing the downloaded update and restarting", {
+      version: state.availableVersion,
+    });
+    updater.quitAndInstall(true, true);
     return { installing: true };
   } catch (error) {
     const message = describeError(error);
@@ -380,6 +393,44 @@ export async function installUpdate(): Promise<{ installing: boolean }> {
     publish({ type: "update.error", message });
     return { installing: false };
   }
+}
+
+/**
+ * "Later" on the restart prompt: nothing asks again for this update. With
+ * automatic updates on it installs when the app quits; either way "Restart
+ * to update" stays in Settings and the sidebar.
+ */
+export function deferInstall(): { deferred: boolean } {
+  if (state.status !== "downloaded" || state.availableVersion === null) {
+    return { deferred: false };
+  }
+  setState({ deferred: true });
+  publish({ type: "update.deferred", version: state.availableVersion });
+  return { deferred: true };
+}
+
+/**
+ * The startup check's stand-in for a finished download: the same state and
+ * event a real one leaves, so the restart question can be seen and answered
+ * in the running app; null puts the updater back at rest. Nothing is
+ * downloaded, and an unpackaged build installs nothing.
+ */
+export function simulateDownloadForCheck(build: { version: string; commit: string } | null): void {
+  if (!build) {
+    setState({ status: "idle", availableVersion: null, availableBuild: null, deferred: false, progress: null });
+    publish({ type: "update.not-available", version: state.currentVersion });
+    return;
+  }
+  setState({
+    status: "downloaded",
+    availableVersion: build.version,
+    availableBuild: shortCommit(build.commit),
+    installsItself: true,
+    deferred: false,
+    progress: 100,
+    error: null,
+  });
+  publish({ type: "update.downloaded", version: build.version });
 }
 
 function setState(patch: Partial<UpdateState>): void {
@@ -420,7 +471,7 @@ async function setup(): Promise<AutoUpdaterLike | null> {
     return null;
   }
   try {
-    const updater = await loadAutoUpdater();
+    const updater = await loadAutoUpdater(current.loadModule);
     if (!updater) {
       return null;
     }
@@ -487,12 +538,12 @@ export function resolveAutoUpdater(mod: unknown): AutoUpdaterLike | null {
   return null;
 }
 
-async function loadAutoUpdater(): Promise<AutoUpdaterLike | null> {
+async function loadAutoUpdater(load?: () => Promise<unknown>): Promise<AutoUpdaterLike | null> {
   try {
     // A variable specifier on purpose (see the interface above): this stays a
     // runtime-only dependency and never breaks typecheck while uninstalled.
     const specifier = "electron-updater";
-    const mod: unknown = await import(/* @vite-ignore */ specifier);
+    const mod: unknown = await (load ? load() : import(/* @vite-ignore */ specifier));
     return resolveAutoUpdater(mod);
   } catch {
     return null;
@@ -594,6 +645,8 @@ function attachListeners(updater: AutoUpdaterLike, current: UpdaterDeps): void {
         availableVersion: version,
         progress: 100,
         error: null,
+        // A new download is asked about afresh, whatever the last one got.
+        deferred: false,
       });
       publish({ type: "update.downloaded", version });
     });

@@ -53,6 +53,7 @@ const DEFAULT_STATUS: UpdateState = {
   currentBuild: null,
   availableBuild: null,
   automatic: true,
+  deferred: false,
 };
 
 /**

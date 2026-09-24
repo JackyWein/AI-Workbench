@@ -99,6 +99,16 @@ export interface IslandSources {
   }>;
   /** Connections the application knows are down. */
   readonly brokenConnections: ReadonlyArray<{ key: string; title: string; detail: string }>;
+  /**
+   * A downloaded update of the app waiting for a restart, until the person
+   * answers it; null when there is none or they chose "Later".
+   */
+  readonly update: {
+    key: string;
+    title: string;
+    detail: string;
+    at: Date;
+  } | null;
   /** Work that finished recently, newest first. */
   readonly completed: ReadonlyArray<{
     key: string;
@@ -502,6 +512,39 @@ export const providerUsageWidget: IslandWidget = {
   },
 };
 
+/**
+ * The app's own update, downloaded and waiting for a restart: "Later" or
+ * "Restart now", answered on the island. It belongs to the "Needs attention"
+ * preference — it is one more thing that waits on the person — and yields to
+ * an agent that waits on them.
+ */
+export const appUpdateWidget: IslandWidget = {
+  id: "appUpdate",
+  displayName: "Update ready",
+  toggle: "needsAttention",
+  build(sources) {
+    const update = sources.update;
+    if (!update) {
+      return null;
+    }
+    return {
+      widget: "appUpdate",
+      ...quietDefaults(),
+      options: [
+        { id: "later", label: "Later" },
+        { id: "restart", label: "Restart now" },
+      ],
+      priority: ISLAND_PRIORITY.updateReady,
+      title: update.title,
+      detail: update.detail,
+      progress: null,
+      action: { label: "Settings", target: { view: "settings" } },
+      key: update.key,
+      at: update.at,
+    };
+  },
+};
+
 export const idleWidget: IslandWidget = {
   id: "idle",
   displayName: "Idle",
@@ -526,6 +569,7 @@ export const builtInWidgets: IslandWidget[] = [
   agentQuestionWidget,
   errorsWidget,
   connectionHealthWidget,
+  appUpdateWidget,
   completedWorkWidget,
   teamProgressWidget,
   activeAgentsWidget,

@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { app, BrowserWindow, net, shell } from "electron";
 import { createServices, type AppServices } from "./services.js";
 import { BUILD_COMMIT, SIGNED_MAC } from "./build-info.js";
-import { checkForUpdates, getUpdateState, initUpdater } from "./updater.js";
+import {
+  checkForUpdates,
+  deferInstall,
+  getUpdateState,
+  initUpdater,
+  installUpdate,
+  simulateDownloadForCheck,
+} from "./updater.js";
 import { registerIpcHandlers, removeIpcHandlers } from "./ipc.js";
 import { IslandController } from "./island-controller.js";
 import { approveSignInPage, runStartupCheck } from "./startup-check.js";
@@ -113,6 +120,11 @@ async function bootstrap(): Promise<void> {
       quitting = true;
       app.quit();
     },
+    updates: {
+      state: getUpdateState,
+      install: installUpdate,
+      defer: deferInstall,
+    },
   });
 
   registerIpcHandlers({
@@ -157,6 +169,7 @@ async function bootstrap(): Promise<void> {
       workspaceDirectory,
       mode: process.env["AI_WORKBENCH_CHECK_MODE"] === "resume" ? "resume" : "create",
       island,
+      simulateDownload: simulateDownloadForCheck,
     });
     await shutdown();
     app.exit(result.healthy ? 0 : 1);

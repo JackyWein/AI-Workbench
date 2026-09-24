@@ -635,8 +635,9 @@ export const ipcContract = {
 
   /**
    * Updates over GitHub Releases. Checking only asks which version is
-   * current; downloading and installing each wait for their own explicit user
-   * action, so there is no silent fetch and no silent install.
+   * current. With automatic updates off, downloading waits for an explicit
+   * action; either way the restart that installs is the person's choice:
+   * `update.install` now, or `update.defer` for when the app quits.
    */
   "update.check": {
     input: z.void(),
@@ -649,6 +650,10 @@ export const ipcContract = {
   "update.install": {
     input: z.void(),
     output: z.object({ installing: z.boolean() }),
+  },
+  "update.defer": {
+    input: z.void(),
+    output: z.object({ deferred: z.boolean() }),
   },
   "update.getStatus": { input: z.void(), output: updateStateSchema },
   /** Opens the available version's release page in the browser. */

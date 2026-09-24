@@ -453,9 +453,9 @@ function Island(): JSX.Element | null {
       case "done":
         return <DoneSheet derived={derived} bridge={bridge} now={now} />;
       case "idle":
-        return <IdleSheet derived={derived} sessions={state.sessions} now={now} />;
+        return <IdleSheet derived={derived} sessions={state.sessions} bridge={bridge} now={now} />;
       case "none":
-        return <NoneSheet derived={derived} sessions={state.sessions} now={now} />;
+        return <NoneSheet derived={derived} sessions={state.sessions} bridge={bridge} now={now} />;
     }
   };
 
@@ -508,12 +508,12 @@ function Island(): JSX.Element | null {
       }
       case "working":
         return hoverMode === "agents" ? (
-          <AgentsCard agents={derived.agents} bridge={bridge} now={now} />
+          <AgentsCard agents={derived.agents} update={derived.update} bridge={bridge} now={now} />
         ) : (
-          <UsageCard derived={derived} now={now} />
+          <UsageCard derived={derived} bridge={bridge} now={now} />
         );
       default:
-        return <UsageCard derived={derived} now={now} />;
+        return <UsageCard derived={derived} bridge={bridge} now={now} />;
     }
   })();
 
@@ -671,6 +671,8 @@ interface Derived {
   readonly usageRows: IslandUsageRow[];
   readonly usageAt: Date | null;
   readonly recent: number;
+  /** The app's downloaded update, waiting for "Later" or "Restart now". */
+  readonly update: IslandEntry | null;
 }
 
 function deriveFace(state: IslandState): Derived {
@@ -679,6 +681,7 @@ function deriveFace(state: IslandState): Derived {
   const teams = state.entries.filter((entry) => entry.widget === "teamProgress");
   const active = state.entries.filter((entry) => entry.widget === "activeAgents");
   const done = state.entries.filter((entry) => entry.widget === "completedWork");
+  const update = state.entries.find((entry) => entry.widget === "appUpdate") ?? null;
   // Tools first, teams after: the lead is the agent a person watches.
   const agents = [...active, ...teams].flatMap((entry) => entry.agents);
   // An entry that came without rows still gets one, so nothing at work is
@@ -710,6 +713,7 @@ function deriveFace(state: IslandState): Derived {
     usageRows,
     usageAt,
     recent: state.sessions.recent,
+    update,
   };
 
   if (approvals.length > 0) {
@@ -977,6 +981,7 @@ function WorkingSheet({
         <AgentRow key={row.key} row={row} bridge={bridge} now={now} className="isl__xrow" />
       ))}
       <AskBox agents={derived.agents} bridge={bridge} />
+      <UpdateStrip entry={derived.update} bridge={bridge} />
       <div className="isl__xuse">
         <p className="isl__xl">Usage</p>
         <UsageRows rows={derived.usageRows} />
@@ -1002,6 +1007,7 @@ function DoneSheet({
         <span className="isl__live">DONE</span>
         <span>{done.length === 1 ? "Finished" : `${done.length} finished`}</span>
       </div>
+      <UpdateStrip entry={derived.update} bridge={bridge} />
       {done.length > 0 ? (
         done.map((entry) => (
           <AgentRow
@@ -1032,10 +1038,12 @@ function DoneSheet({
 function IdleSheet({
   derived,
   sessions,
+  bridge,
   now,
 }: {
   readonly derived: Derived;
   readonly sessions: IslandSessionSummary;
+  readonly bridge: IslandBridge;
   readonly now: number;
 }): JSX.Element {
   return (
@@ -1044,6 +1052,7 @@ function IdleSheet({
         <span>Idle</span>
         <span className="isl__el">{plural(sessions.recent, "session")}</span>
       </div>
+      <UpdateStrip entry={derived.update} bridge={bridge} />
       {sessions.longestIdle ? (
         <div className="isl__xstat">
           <span>Longest idle</span>
@@ -1061,10 +1070,12 @@ function IdleSheet({
 function NoneSheet({
   derived,
   sessions,
+  bridge,
   now,
 }: {
   readonly derived: Derived;
   readonly sessions: IslandSessionSummary;
+  readonly bridge: IslandBridge;
   readonly now: number;
 }): JSX.Element {
   return (
@@ -1072,6 +1083,7 @@ function NoneSheet({
       <div className="isl__xh">
         <span>Nothing running</span>
       </div>
+      <UpdateStrip entry={derived.update} bridge={bridge} />
       {sessions.last ? (
         <div className="isl__xstat">
           <span>Last session</span>
@@ -1246,10 +1258,12 @@ function UsageRows({ rows: all }: { readonly rows: readonly IslandUsageRow[] }):
 /** The free circle's agents card: name, what it reported, its clock. */
 function AgentsCard({
   agents,
+  update,
   bridge,
   now,
 }: {
   readonly agents: readonly IslandAgentRow[];
+  readonly update: IslandEntry | null;
   readonly bridge: IslandBridge;
   readonly now: number;
 }): JSX.Element {
@@ -1258,13 +1272,23 @@ function AgentsCard({
       {agents.map((row) => (
         <AgentRow key={row.key} row={row} bridge={bridge} now={now} className="isl__arow" />
       ))}
+      <UpdateStrip entry={update} bridge={bridge} />
     </div>
   );
 }
 
-function UsageCard({ derived, now }: { readonly derived: Derived; readonly now: number }): JSX.Element {
+function UsageCard({
+  derived,
+  bridge,
+  now,
+}: {
+  readonly derived: Derived;
+  readonly bridge: IslandBridge;
+  readonly now: number;
+}): JSX.Element {
   return (
     <div className="isl__card">
+      <UpdateStrip entry={derived.update} bridge={bridge} />
       <div className="isl__uh">
         <span className="isl__uhtitle">Usage</span>
         {derived.usageAt ? (
@@ -1305,6 +1329,59 @@ function answer(bridge: IslandBridge, entry: IslandEntry, option: string): void 
   }, fallback);
 }
 
+/**
+ * An entry's answers, given right here, e.g. Deny and Allow, or Later and
+ * Restart now: the last option is the one the request is about, so it gets
+ * the colour.
+ */
+function OptionButtons({
+  entry,
+  bridge,
+}: {
+  readonly entry: IslandEntry;
+  readonly bridge: IslandBridge;
+}): JSX.Element {
+  return (
+    <div className="isl__actions">
+      {entry.options.map((option, index) => (
+        <button
+          key={option.id}
+          type="button"
+          className={
+            index === entry.options.length - 1 ? "isl__btn isl__btn--amber" : "isl__btn isl__btn--quiet"
+          }
+          onClick={() => answer(bridge, entry, option.id)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The app's downloaded update, in whatever the island has open: one line
+ * and its two answers, until one of them is given.
+ */
+function UpdateStrip({
+  entry,
+  bridge,
+}: {
+  readonly entry: IslandEntry | null;
+  readonly bridge: IslandBridge;
+}): JSX.Element | null {
+  if (!entry) {
+    return null;
+  }
+  return (
+    <div className="isl__update" role="group" aria-label={entry.title}>
+      <p className="isl__update-title">{entry.title}</p>
+      {entry.detail ? <p className="isl__update-detail">{entry.detail}</p> : null}
+      <OptionButtons entry={entry} bridge={bridge} />
+    </div>
+  );
+}
+
 function ApprovalActions({
   entry,
   bridge,
@@ -1313,24 +1390,7 @@ function ApprovalActions({
   readonly bridge: IslandBridge;
 }): JSX.Element | null {
   if (entry.options.length > 0) {
-    // Answered right here, e.g. Deny and Allow: the last option is the one
-    // the request is about, so it gets the colour.
-    return (
-      <div className="isl__actions">
-        {entry.options.map((option, index) => (
-          <button
-            key={option.id}
-            type="button"
-            className={
-              index === entry.options.length - 1 ? "isl__btn isl__btn--amber" : "isl__btn isl__btn--quiet"
-            }
-            onClick={() => answer(bridge, entry, option.id)}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    );
+    return <OptionButtons entry={entry} bridge={bridge} />;
   }
   const target = entry.action?.target;
   if (!target) {
@@ -1522,7 +1582,9 @@ function GenericCard({
         <span className="isl__el">{clock(entry.at, now)}</span>
       </div>
       {entry.detail ? <p className="isl__ad">{entry.detail}</p> : null}
-      {action ? (
+      {entry.options.length > 0 ? (
+        <OptionButtons entry={entry} bridge={bridge} />
+      ) : action ? (
         <div className="isl__actions">
           <button
             type="button"

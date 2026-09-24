@@ -22,6 +22,7 @@ const ISLAND_WIDGET_LABELS: Record<IslandWidgetId, string> = {
   completedWork: "Completed work",
   errors: "Errors",
   connectionHealth: "Connection health",
+  appUpdate: "Update ready",
   idle: "Idle",
 };
 

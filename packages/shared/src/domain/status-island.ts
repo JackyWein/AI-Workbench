@@ -17,6 +17,7 @@ export const islandWidgetIdSchema = z.enum([
   "completedWork",
   "errors",
   "connectionHealth",
+  "appUpdate",
   "idle",
 ]);
 export type IslandWidgetId = z.infer<typeof islandWidgetIdSchema>;
@@ -221,6 +222,7 @@ export const ISLAND_PRIORITY = {
   permissionRequired: 90,
   agentBlocked: 80,
   connectionFailure: 70,
+  updateReady: 65,
   workCompleted: 60,
   taskCompleted: 50,
   activeProgress: 40,

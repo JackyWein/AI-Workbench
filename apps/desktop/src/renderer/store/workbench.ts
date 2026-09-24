@@ -1614,6 +1614,7 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       case "update.checking":
       case "update.available":
       case "update.downloaded":
+      case "update.deferred":
       case "update.not-available":
       case "update.error":
         void get().refreshUpdate();

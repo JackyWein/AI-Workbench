@@ -290,6 +290,7 @@ function emptySources(now: Date): IslandSources {
     errors: [],
     brokenConnections: [],
     completed: [],
+    update: null,
     now,
   };
 }

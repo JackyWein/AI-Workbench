@@ -9,6 +9,7 @@ import { useWorkbench } from "./store/workbench.js";
 import { AgentsView } from "./components/AgentsView.js";
 import { ChatView } from "./components/ChatView.js";
 import { CommandPalette } from "./components/CommandPalette.js";
+import { UpdatePrompt } from "./components/UpdatePrompt.js";
 import { Composer } from "./components/Composer.js";
 import { ContextPanel } from "./components/ContextPanel.js";
 import { AppLogo } from "./components/AppLogo.js";
@@ -336,6 +337,7 @@ export function App(): JSX.Element {
       )}
 
       <CommandPalette />
+      <UpdatePrompt />
 
       {state.error ? (
         <div className="toast" role="status">
