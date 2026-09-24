@@ -1,39 +1,23 @@
-AI Workbench 0.0.5
+AI Workbench 0.0.6
 
-Connectors: sign in once, every agent can use it
-- The Connectors screen is a catalog of services — mail, issues, docs and more. Pick one, sign in in your browser, and every chat session and terminal agent can use it, or only the workspaces you choose. Your own MCP servers are added the same way.
-- Sign-in tokens stay in the system's credential store; the tools reach a service through a local gateway and never see them.
-- Claude Code, Codex, Gemini CLI and OpenCode get the connectors you switched on, in chats, terminal tiles and team runs.
-- Gmail and other Google services need your own Google OAuth client (Google does not let apps register one on the fly).
+Themes: make it look the way you like
+- Settings → Appearance has a theme picker that shows each theme as a small window drawn in it. Eight to choose from: Quiet (dark, light, or following your system), Atelier (warm paper, serif headings, terracotta), Mission Control (near-black on a grid, lime, monospace), Playground (cream and indigo, thick ink outlines), Aurora (night blue with violet and cyan light) and Swiss (black on white, one red, square).
+- A theme changes the whole app: colours, typefaces, corners, outlines, the terminals' colours and type, code blocks and the status island. The island keeps a dark body in every theme so it stays readable over any desktop.
+- The typefaces ship with the app; nothing is downloaded.
+- Every theme is also in the command palette: type "theme".
+- Every theme is tested for readable contrast in the window, the sidebar, code blocks, the terminal and the island.
 
-Skills: write, draft or bring them
-- Write a skill yourself, have one of your tools draft it from a sentence, or import the skills you already made for Claude Code, Codex, Gemini CLI or OpenCode, a Markdown file or a whole folder.
+The logo, everywhere
+- The start screen shows the app's own logo drawing itself in instead of a letter in a box, and the logo also appears in the sidebar, on the welcome screen and on the island when nothing runs. It takes on the colours of the theme you picked.
 
-Teams in a session
-- Pick a team in the model menu of any session; it works in that session's workspace, can be edited, paused, resumed and stopped.
-- The team view is new: the goal with a progress bar, the members with their state (pick one to follow only its work), a timeline that reads like a conversation, and the plan with every task beside it.
-
-Attach files, images and screenshots
-- The + in the message box (or drag and drop) sends files and images with a message, to every tool that can take them.
-
-The status island
-- Shows from the first start, says what each agent is doing and when it is done, and clicking an entry opens that tile or session.
-
-SSH
-- Private keys work: OpenSSH, PEM and PKCS#8 keys, with a passphrase, pasted or picked as a file, and the system's SSH agent. A key that cannot be used says why.
-
-Updates
-- The sidebar says when an update is out; a running app checks every six hours. Builds that cannot replace themselves (Windows portable, unsigned Mac, Linux .tar.gz) open the release page instead of hanging on "Checking…".
+Answers read better
+- Answers show the Markdown the tools write: headings, lists, task lists, quotes, tables, links and code.
 
 Fixed
-- Providers froze when a tool had a second account.
-- Tools started by the app wrote into the folder the app was started from instead of the workspace. OpenCode 2 works.
-- Removing a workspace now stops the agents and team runs still working in it and removes their files.
-- A connector could name a sign-in address that was not a web page; only web pages are opened now.
-- The session shell's "Latest output" button stopped working after switching sessions.
-
-Design
-- Every screen shares one layout with its actions beside the title; the conversation is a little larger and says which tool and model answered; team cards and empty screens are clearer.
+- A team session opened after a restart now opens as its team, not as an empty chat.
+- The island's titles were dark on its dark card when the system used a light theme.
+- The app no longer fails to start when a stored skill or plugin can no longer be read; that entry is skipped and logged.
+- In the light theme, the language label and Copy button of code blocks were hard to read.
 
 Known limits
 - Real Codex, OpenCode and Gemini CLI account limits are still untested. Antigravity is not verified.
