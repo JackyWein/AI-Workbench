@@ -106,37 +106,19 @@ session.
 ## How it works
 
 ```mermaid
-flowchart LR
-  subgraph UI["Window and status island"]
-    direction TB
-    chat["Chats"]
-    tiles["Agent tiles"]
-    team["Team view"]
+flowchart TB
+  ui["<b>Window and status island</b><br/>chats · agent tiles · team view"]
+  core["<b>AI Workbench core</b><br/>sessions · teams · terminals · skills · connectors"]
+  ui -- "typed, validated IPC" --> core
+
+  subgraph tools["Your tools, with your accounts"]
+    direction LR
+    claude["Claude Code"] ~~~ codex["Codex"] ~~~ gemini["Gemini CLI"] ~~~ opencode["OpenCode"] ~~~ compatible["OpenAI-compatible"]
   end
 
-  subgraph core["AI Workbench core (provider-neutral)"]
-    direction TB
-    sessions["Sessions"]
-    orchestrator["Team orchestrator"]
-    terminals["Terminals"]
-    skills["Skills"]
-    gateway["Connectors and MCP gateway"]
-  end
-
-  subgraph tools["Your tools, your accounts"]
-    direction TB
-    claude["Claude Code"]
-    codex["Codex"]
-    gemini["Gemini CLI"]
-    opencode["OpenCode"]
-    compatible["OpenAI-compatible servers"]
-  end
-
-  UI -- "typed, validated IPC" --> core
   core -- "provider adapters" --> tools
-  gateway --> services["MCP services: Gmail, GitHub, Linear, ..."]
-  core --> storage[("SQLite on your computer")]
-  core --> keychain[("System keychain")]
+  core -- "MCP gateway" --> services["Connected services<br/>Gmail · GitHub · Linear · …"]
+  core --> storage[("SQLite and keychain<br/>on your computer")]
 ```
 
 - **Your tools stay in charge.** Each tool is reached through an adapter that starts the real
