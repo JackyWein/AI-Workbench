@@ -19,6 +19,11 @@ export interface CliInvocation {
   readonly args: string[];
   readonly cwd?: string | undefined;
   readonly stdin?: string | undefined;
+  /**
+   * For `exec`, how long the command may take in all. For `start` — a turn
+   * that streams — how long it may stay silent: a tool that keeps reporting
+   * is working, however long that takes.
+   */
   readonly timeoutMs?: number | undefined;
   /**
    * Variables for this run only, merged over the transport's own — how a turn
@@ -112,8 +117,8 @@ export class CliTransport {
       ...(invocation.timeoutMs === undefined
         ? this.#options.defaultTimeoutMs === undefined
           ? {}
-          : { timeoutMs: this.#options.defaultTimeoutMs }
-        : { timeoutMs: invocation.timeoutMs }),
+          : { idleTimeoutMs: this.#options.defaultTimeoutMs }
+        : { idleTimeoutMs: invocation.timeoutMs }),
       logger: this.#logger,
     });
   }

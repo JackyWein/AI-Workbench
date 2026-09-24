@@ -26,6 +26,7 @@ import {
   agentDefinitionSchema,
   createTeamInputSchema,
   teamSettingsSchema,
+  upgradeRunLimits,
   updateTeamInputSchema,
 } from "@ai-workbench/shared";
 import {
@@ -429,7 +430,7 @@ export class TeamManager {
         currentPlan: null,
         importantContext: [],
       },
-      limits: team.settings.limits,
+      limits: upgradeRunLimits(team.settings.limits),
       agentCalls: 0,
       failures: 0,
       messageCount: 0,

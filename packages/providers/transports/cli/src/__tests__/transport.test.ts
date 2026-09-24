@@ -165,6 +165,31 @@ describe("startCli", () => {
     expect(exit.timedOut).toBe(true);
   });
 
+  it("keeps a turn that goes on reporting, however long it takes", async () => {
+    // Twelve lines, 60 ms apart: over 600 ms in all, never 200 ms quiet.
+    const run = startCli({
+      executablePath: process.execPath,
+      args: [streamCli, "--lines", "12", "--delay", "60"],
+      idleTimeoutMs: 200,
+      killGraceMs: 200,
+    });
+    const lines = await collect(run.lines);
+    const exit = await run.completion;
+    expect(exit.timedOut).toBe(false);
+    expect(lines).toHaveLength(12);
+  });
+
+  it("stops a turn that has gone quiet", async () => {
+    const run = startCli({
+      executablePath: process.execPath,
+      args: [streamCli, "--hang"],
+      idleTimeoutMs: 150,
+      killGraceMs: 200,
+    });
+    const exit = await run.completion;
+    expect(exit.timedOut).toBe(true);
+  });
+
   it("reports a missing executable instead of hanging", async () => {
     const run = startCli({
       executablePath: join(fixtures, "does-not-exist"),

@@ -33,7 +33,7 @@ export const teamRunConfigSchema = z.object({
   maxAgentCalls: z.number().int().positive().max(1000).default(30),
   maxTasks: z.number().int().positive().max(1000).default(50),
   maxTaskDepth: z.number().int().positive().max(64).default(8),
-  maxRuntimeMinutes: z.number().int().positive().max(1440).default(60),
+  maxRuntimeMinutes: z.number().int().positive().max(1440).default(240),
   maxFailures: z.number().int().positive().max(1000).default(10),
   maxConcurrentAgents: z.number().int().positive().max(16).default(3),
   maxMessages: z.number().int().positive().max(10_000).default(200),
@@ -42,12 +42,27 @@ export const teamRunConfigSchema = z.object({
    * How long one agent turn may go without producing anything, in seconds.
    * A turn that streams text or runs tools resets it (see the orchestrator),
    * so this is the silence budget, not the time budget of the work. The
-   * default matches the command line adapters' own process timeout: a slower
+   * default matches the command line adapters' own silence limit: a slower
    * model is a reason to wait, not to be cut off.
    */
-  agentTurnSilenceSeconds: z.number().int().positive().max(3600).default(600),
+  agentTurnSilenceSeconds: z.number().int().positive().max(3600).default(900),
 });
 export type TeamRunConfig = z.infer<typeof teamRunConfigSchema>;
+
+/**
+ * Limits a team saved before 0.0.7 carry the defaults of that time — an hour
+ * per run and ten quiet minutes per turn — which nobody chose: the
+ * application never asked. They cut real work short (a builder writing a
+ * site takes longer), so a new run gets today's defaults in their place.
+ * Any other value was set on purpose and stays.
+ */
+export function upgradeRunLimits(limits: TeamRunConfig): TeamRunConfig {
+  return {
+    ...limits,
+    maxRuntimeMinutes: limits.maxRuntimeMinutes === 60 ? 240 : limits.maxRuntimeMinutes,
+    agentTurnSilenceSeconds: limits.agentTurnSilenceSeconds === 600 ? 900 : limits.agentTurnSilenceSeconds,
+  };
+}
 
 export const teamSettingsSchema = z.object({
   limits: teamRunConfigSchema.default({}),

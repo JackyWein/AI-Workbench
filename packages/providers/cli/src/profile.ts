@@ -275,7 +275,13 @@ export const cliProviderProfileSchema = z.object({
    * so the host removes them from its own environment once at startup.
    */
   hostEnvUnset: z.array(z.string().min(1)).default([]),
-  timeoutMs: z.number().int().positive().default(600_000),
+  /**
+   * How long a turn may stay silent before it is stopped — nothing on stdout
+   * or stderr for this long. A turn that keeps reporting runs as long as its
+   * work takes; one-off commands (a version, a model list) have their own
+   * short limits.
+   */
+  timeoutMs: z.number().int().positive().default(900_000),
   /** Extra classification for exit failures: regex source -> error kind. */
   errorPatterns: z
     .array(

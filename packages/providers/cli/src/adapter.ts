@@ -41,6 +41,12 @@ import { classifyError, parseWithRules } from "./parse.js";
 import { readPath, type CliAuth, type CliProviderProfile } from "./profile.js";
 import { UsageStore, parseOpencodeStatsUsage } from "./usage.js";
 
+/**
+ * How long a turn's output may go without anything to report before the
+ * adapter says, once, that the tool is still working.
+ */
+const KEEPALIVE_MS = 15_000;
+
 /** One account of a tool that keeps several side by side. */
 export interface CliAccount {
   /** Stable id; the provider entry becomes `<profile id>@<account id>`. */
@@ -465,10 +471,20 @@ export class CliProviderAdapter implements AIProviderAdapter {
     const parseState: CliParseState = { values: new Map() };
     let sawError = false;
     let producedText = false;
+    let lastEventAt = Date.now();
 
     try {
       for await (const line of run.lines) {
-        for (const event of this.#parseLine(line, parseState)) {
+        const events = this.#parseLine(line, parseState);
+        if (events.length === 0 && Date.now() - lastEventAt >= KEEPALIVE_MS) {
+          // The tool keeps writing, only nothing a person reads yet (a large
+          // file being generated, say): whoever follows the turn learns it
+          // is still at work rather than gone quiet.
+          lastEventAt = Date.now();
+          yield { type: "status", status: "working" };
+        }
+        for (const event of events) {
+          lastEventAt = Date.now();
           if (event.type === "error") {
             sawError = true;
           }

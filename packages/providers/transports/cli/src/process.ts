@@ -16,7 +16,14 @@ export interface CliSpawnOptions {
   readonly stdin?: string;
   /** Keeps stdin open for `write`, for a conversation over stdio. */
   readonly keepStdinOpen?: boolean;
+  /** Ends the process after this long, however busy it is. */
   readonly timeoutMs?: number;
+  /**
+   * Ends the process after this long without a byte on stdout or stderr. A
+   * tool that keeps reporting keeps its turn — a long build is work, not a
+   * hang — and only one that has gone quiet is stopped.
+   */
+  readonly idleTimeoutMs?: number;
   /** Grace period between SIGTERM and SIGKILL. */
   readonly killGraceMs?: number;
   readonly logger?: Logger;
@@ -124,8 +131,26 @@ export function startCli(options: CliSpawnOptions): CliRun {
     timeoutTimer.unref?.();
   }
 
+  let idleTimer: NodeJS.Timeout | null = null;
+  const idleMs = options.idleTimeoutMs;
+  const stillAlive = (): void => {
+    if (idleMs === undefined || idleMs <= 0) {
+      return;
+    }
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+    }
+    idleTimer = setTimeout(() => {
+      timedOut = true;
+      terminate();
+    }, idleMs);
+    idleTimer.unref?.();
+  };
+  stillAlive();
+
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
+    stillAlive();
     for (const line of assembler.push(chunk)) {
       queue.push(line);
     }
@@ -133,6 +158,7 @@ export function startCli(options: CliSpawnOptions): CliRun {
 
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
+    stillAlive();
     stderrChunks.push(chunk);
     // stderr is kept for error messages only; it never becomes model output.
     if (stderrChunks.length > 500) {
@@ -153,6 +179,9 @@ export function startCli(options: CliSpawnOptions): CliRun {
       }
       if (timeoutTimer) {
         clearTimeout(timeoutTimer);
+      }
+      if (idleTimer) {
+        clearTimeout(idleTimer);
       }
       for (const line of assembler.flush()) {
         queue.push(line);
