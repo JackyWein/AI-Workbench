@@ -5132,6 +5132,15 @@ button.sidebar__user[aria-current="true"] {
   color: var(--accent-text);
 }
 
+.diff-preview__line[data-kind="file"] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.diff-preview__line[data-kind="file"]:not(:first-child) {
+  margin-top: var(--space-2);
+}
+
 .team-decision {
   display: flex;
   flex-direction: column;

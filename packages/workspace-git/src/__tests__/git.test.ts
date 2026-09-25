@@ -131,4 +131,50 @@ describe("GitService against a real repository", () => {
     });
     expect(dirty.changes.some((change) => change.kind === "untracked")).toBe(true);
   });
+
+  it("records what changed between two moments without touching the person's index", async () => {
+    await git(directory, "init", "--initial-branch", "main");
+    await git(directory, "config", "user.email", "test@example.com");
+    await git(directory, "config", "user.name", "Test");
+    await writeFile(join(directory, ".gitignore"), "build/\n");
+    await writeFile(join(directory, "README.md"), "hello\n");
+    await git(directory, "add", ".");
+    await git(directory, "commit", "-m", "first");
+    // Something the person already had going, and staged.
+    await writeFile(join(directory, "notes.md"), "mine\n");
+    await git(directory, "add", "notes.md");
+    const before = await service.status(directory);
+
+    const start = await service.snapshot(directory);
+    expect(start).toMatch(/^[0-9a-f]{40,64}$/);
+
+    // What a member does during its turn: an edit, a new file, a build output.
+    await writeFile(join(directory, "README.md"), "hello again\n");
+    await mkdir(join(directory, "src"), { recursive: true });
+    await writeFile(join(directory, "src/new.ts"), "export const x = 1;\n");
+    await mkdir(join(directory, "build"), { recursive: true });
+    await writeFile(join(directory, "build/out.js"), "ignored\n");
+    const end = await service.snapshot(directory);
+
+    const change = await service.compare(directory, start ?? "", end ?? "");
+    expect(change.files.sort()).toEqual(["README.md", "src/new.ts"]);
+    expect(change.diff).toContain("+hello again");
+    expect(change.diff).toContain("+export const x = 1;");
+    // The person's own staged work is not part of the turn...
+    expect(change.diff).not.toContain("mine");
+    // ...and their index is exactly as it was: nothing added, nothing lost.
+    const after = await service.status(directory);
+    expect(after.changes.filter((entry) => entry.staged)).toEqual(
+      before.changes.filter((entry) => entry.staged),
+    );
+    // The new file is still just untracked (git lists its new folder).
+    expect(after.changes.some((entry) => entry.path.startsWith("src") && entry.kind === "untracked")).toBe(true);
+
+    // Nothing changed, nothing to show.
+    expect((await service.compare(directory, end ?? "", end ?? "")).files).toEqual([]);
+  });
+
+  it("records nothing in a folder that is not a repository", async () => {
+    expect(await service.snapshot(directory)).toBeNull();
+  });
 });

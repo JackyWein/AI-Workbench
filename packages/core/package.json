@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@ai-workbench/test-support": "workspace:*",
-    "@ai-workbench/provider-mock": "workspace:*"
+    "@ai-workbench/provider-mock": "workspace:*",
+    "@ai-workbench/workspace-git": "workspace:*"
   }
 }

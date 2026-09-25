@@ -44,6 +44,7 @@ import {
   type AgentRuntime,
   type TeamMcpScope,
   type TeamMcpStdio,
+  type TurnWatcher,
 } from "@ai-workbench/team";
 import type {
   AgentMessage,
@@ -138,6 +139,12 @@ export interface TeamManagerOptions {
   /** The built-in server that serves skills on demand, when there is one. */
   readonly skillsServerId?: string;
   /**
+   * Records the run's folder before and after each member's turn, so the run
+   * shows the code a turn changed as a diff. Without it, only what members
+   * publish themselves is shown.
+   */
+  readonly folderHistory?: FolderHistory;
+  /**
    * Where each run keeps copies of the files sent in it, mirroring solo
    * sessions. Without one, files go to the tool from where picked.
    */
@@ -155,6 +162,56 @@ export interface TeamManagerOptions {
    * environment already names the run and agent it will serve.
    */
   readonly teamMcp?: TeamMcpStdio;
+}
+
+/** Snapshots of a folder and what changed between two of them (git). */
+export interface FolderHistory {
+  snapshot(folder: string): Promise<string | null>;
+  compare(
+    folder: string,
+    before: string,
+    after: string,
+  ): Promise<{ readonly files: readonly string[]; readonly diff: string; readonly truncated: boolean }>;
+}
+
+/**
+ * What a turn changed in the folder, from the folder itself: a snapshot as
+ * the turn starts and one when it ends. A folder that is no git repository
+ * cannot be watched this way, and then nothing is claimed.
+ */
+function folderWatcher(history: FolderHistory, folder: string): TurnWatcher {
+  return {
+    async begin() {
+      const before = await history.snapshot(folder);
+      if (!before) {
+        return null;
+      }
+      return async ({ concurrent }) => {
+        const after = await history.snapshot(folder);
+        if (!after) {
+          return null;
+        }
+        const change = await history.compare(folder, before, after);
+        if (change.files.length === 0 || change.diff.trim().length === 0) {
+          return null;
+        }
+        const single = change.files.length === 1 ? (change.files[0] ?? null) : null;
+        return {
+          name: single ?? `${change.files.length} files changed`,
+          path: single,
+          content: change.truncated ? `${change.diff}\n… the rest of this diff is not shown` : change.diff,
+          metadata: {
+            source: "folder",
+            files: [...change.files],
+            concurrent,
+            reason: concurrent
+              ? "What changed in the folder during this turn. Other members were working at the same time, so some of it may be theirs."
+              : "What changed in the folder during this turn.",
+          },
+        };
+      };
+    },
+  };
 }
 
 interface ActiveRun {
@@ -181,6 +238,7 @@ export class TeamManager {
   readonly #recordMemory: TeamManagerOptions["recordMemory"];
   readonly #skills: SkillService | undefined;
   readonly #skillsServerId: string | undefined;
+  readonly #folderHistory: FolderHistory | undefined;
   readonly #active = new Map<string, ActiveRun>();
 
   constructor(options: TeamManagerOptions) {
@@ -192,6 +250,7 @@ export class TeamManager {
     this.#mcp = options.mcp;
     this.#skills = options.skills;
     this.#skillsServerId = options.skillsServerId;
+    this.#folderHistory = options.folderHistory;
     this.#teamMcp = options.teamMcp;
     this.#attachmentsDirectory = options.attachmentsDirectory;
     this.#recordMemory = options.recordMemory;
@@ -978,6 +1037,7 @@ export class TeamManager {
       service,
       runtime,
       logger: this.#logger,
+      ...(this.#folderHistory ? { turnWatcher: folderWatcher(this.#folderHistory, folder) } : {}),
     });
 
     const finished = orchestrator

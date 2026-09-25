@@ -1,7 +1,7 @@
 import type { TeamArtifact } from "@ai-workbench/shared";
 
 export type ArtifactViewKind = "diff" | "code" | "other";
-export type DiffLineKind = "add" | "del" | "hunk" | "ctx";
+export type DiffLineKind = "add" | "del" | "hunk" | "file" | "ctx";
 
 /** Lines shown before the viewer folds the rest behind "Show all". */
 export const ARTIFACT_PREVIEW_LINES = 120;
@@ -81,6 +81,10 @@ function looksLikeDiff(content: string | null): boolean {
 export function diffLineKind(line: string): DiffLineKind {
   if (line.startsWith("@@")) {
     return "hunk";
+  }
+  // Where one file's changes begin, so a diff of several files reads as such.
+  if (line.startsWith("diff --git ")) {
+    return "file";
   }
   if (line.startsWith("+") && !line.startsWith("+++")) {
     return "add";

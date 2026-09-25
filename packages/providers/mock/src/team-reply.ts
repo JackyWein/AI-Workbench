@@ -95,6 +95,27 @@ function block(...actions: unknown[]): string {
  */
 const FAIL_MARKER = /\[fail:\s*([^\]]+)\]/;
 const ASK_MARKER = /\[ask:\s*([^\]]+)\]/;
+/** `[write: path]`: a member with a task writes that file, the way a real tool edits the project. */
+const WRITE_MARKER = /\[write:\s*([^\]]+)\]/;
+
+/**
+ * The file a member with a task writes for this prompt, relative to its
+ * folder, with what it writes; null when the goal carries no write marker.
+ */
+export function teamWriteFor(prompt: string): { path: string; content: string } | null {
+  const parsed = readTeamPrompt(prompt);
+  if (!parsed.taskId) {
+    return null;
+  }
+  const path = WRITE_MARKER.exec(parsed.goal)?.[1]?.trim();
+  if (!path) {
+    return null;
+  }
+  return {
+    path,
+    content: `// Written by ${parsed.agentId} for "${parsed.taskTitle || parsed.taskId}".\nexport const done = true;\n`,
+  };
+}
 
 /** The answer a cooperative team member would give for this prompt. */
 export function buildTeamReply(prompt: string): string {

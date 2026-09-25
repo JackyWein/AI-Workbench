@@ -25,8 +25,8 @@ Weighted contribution = weight x completion.
 
 **G7 — UX, security, reliability and performance.** As of 2026-09-25
 (release 0.0.7) `bun run verify` passes end to end: lockfile, lint,
-typecheck, 1024 tests, the build, the bundled memory server and both
-startup phases (224 checks, none failing). What remains in G6 is the tray,
+typecheck, 1027 tests, the build, the bundled memory server and both
+startup phases (228 checks, none failing). What remains in G6 is the tray,
 multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
 real providers collaborating. Antigravity (`agy`) could not be installed or
 read about here and stays unverified. No criterion was ticked for the 0.0.5
@@ -88,6 +88,13 @@ Verified here by tests and the startup check:
   instructions in front of the first message, or every message when they
   cannot resume (adapter test). Not verified here: the real Gemini CLI,
   OpenCode and Antigravity reading them.
+- A member's turn shows the code it changed as a diff in the team timeline,
+  read from the folder by git snapshots on a throwaway index: in a git
+  folder a stand-in member writes a file and the session renders its added
+  lines, and the person's index is untouched afterwards (startup checks,
+  both phases; screenshot taken); the snapshots leave staged work and the
+  index as they were and skip ignored files (git tests); the diff is
+  published in the member's name for its task (core test with real git).
 Not verified: the real Antigravity, and real Codex, OpenCode and Gemini
 CLI accounts on the person's Windows machine; a real update installed from
 one published release to the next; a real multi-hour team run. The crash

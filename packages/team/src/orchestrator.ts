@@ -30,6 +30,31 @@ export interface TeamOrchestratorOptions {
    * the 10-minute default.
    */
   readonly turnTimeoutMs?: number;
+  /**
+   * Watches the run's folder around each member's turn, so what a turn
+   * changed is shown as it is — whatever the member itself reports.
+   */
+  readonly turnWatcher?: TurnWatcher;
+}
+
+/** What a member's turn changed in the run's folder, as the application saw it. */
+export interface TurnChange {
+  readonly name: string;
+  /** The one file changed, when it is one. */
+  readonly path: string | null;
+  /** A unified diff. */
+  readonly content: string;
+  readonly metadata: Readonly<Record<string, unknown>>;
+}
+
+/** Looks at the run's folder as a turn starts and again once it is over. */
+export interface TurnWatcher {
+  /**
+   * Called as a turn starts. What it returns is called once the turn is
+   * over, told whether other members were working at the same time; null
+   * when the folder cannot be watched.
+   */
+  begin(): Promise<((context: { readonly concurrent: boolean }) => Promise<TurnChange | null>) | null>;
 }
 
 /** How often a working turn says so while it works. */
@@ -40,6 +65,15 @@ interface AgentSession {
   readonly handle: ProviderSessionHandle;
   /** The effort the session was created with; a change recreates the session. */
   readonly reasoningEffort: string;
+}
+
+/** A turn whose folder is being watched. */
+interface WatchedTurn {
+  readonly end: (context: { readonly concurrent: boolean }) => Promise<TurnChange | null>;
+  /** Which turn of the run this is. */
+  readonly serial: number;
+  /** Whether another member was already at work when it began. */
+  readonly othersAtStart: boolean;
 }
 
 /** Effort a member's definition carries, or "" for the tool's default. */
@@ -80,12 +114,16 @@ export class TeamOrchestrator {
    * own history, the cancel handle and the session id would race.
    */
   readonly #busyAgents = new Set<string>();
+  readonly #turnWatcher: TurnWatcher | undefined;
+  /** Turns begun so far; tells a turn whether another began while it ran. */
+  #turnsBegun = 0;
 
   constructor(options: TeamOrchestratorOptions) {
     this.#service = options.service;
     this.#runtime = options.runtime;
     this.#logger = options.logger.child("TEAM");
     this.#turnTimeoutMs = options.turnTimeoutMs;
+    this.#turnWatcher = options.turnWatcher;
   }
 
   /**
@@ -467,6 +505,61 @@ export class TeamOrchestrator {
     }
   }
 
+  /** Starts watching the folder for one turn; null when it cannot be watched. */
+  async #watchTurn(agent: AgentDefinition): Promise<WatchedTurn | null> {
+    const serial = ++this.#turnsBegun;
+    const othersAtStart = [...this.#busyAgents].some((id) => id !== agent.id);
+    if (!this.#turnWatcher) {
+      return null;
+    }
+    try {
+      const end = await this.#turnWatcher.begin();
+      return end ? { end, serial, othersAtStart } : null;
+    } catch (error) {
+      this.#logger.warn("The folder could not be watched for this turn", {
+        agentId: agent.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Publishes what the turn changed in the folder as a diff in the run, in
+   * the member's name. Other members working at the same time is said, since
+   * their changes land in the same folder. Never fails the turn.
+   */
+  async #recordChanges(
+    agent: AgentDefinition,
+    task: TeamTask | null,
+    watching: WatchedTurn | null,
+  ): Promise<void> {
+    if (!watching) {
+      return;
+    }
+    try {
+      const concurrent = watching.othersAtStart || this.#turnsBegun > watching.serial;
+      const change = await watching.end({ concurrent });
+      if (!change || change.content.trim().length === 0) {
+        return;
+      }
+      await this.#service.publishArtifact({
+        name: change.name,
+        type: "diff",
+        createdBy: agent.id,
+        path: change.path,
+        content: change.content,
+        taskId: task?.id ?? null,
+        metadata: { ...change.metadata },
+      });
+    } catch (error) {
+      this.#logger.warn("A turn's changes could not be recorded", {
+        agentId: agent.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   async #runTurn(agent: AgentDefinition, task: TeamTask | null): Promise<void> {
     if (agent.id === this.#leadId()) {
       this.#leadInterrupt = false;
@@ -487,13 +580,17 @@ export class TeamOrchestrator {
     // The turn is kept as it happens — what the member writes and every step
     // its tool reports — so a person can read what each member did.
     const turn = await this.#service.beginTurn(agent.id, task?.id ?? null);
+    const watching = await this.#watchTurn(agent);
     let answer: string;
     try {
       answer = await this.#ask(agent, prompt, turn.id, attachments);
       await this.#service.endTurn(turn.id);
+      await this.#recordChanges(agent, task, watching);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await this.#service.endTurn(turn.id, { error: message }).catch(() => undefined);
+      // A turn that failed may still have changed files.
+      await this.#recordChanges(agent, task, watching);
       this.#logger.error("Agent turn failed", { agentId: agent.id, error: message });
       this.#service.emitAgentFailed(agent.id, message);
       // A failed turn must be visible in the run, not silent: without this

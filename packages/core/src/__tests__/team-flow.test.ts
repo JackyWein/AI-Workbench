@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
@@ -12,6 +12,8 @@ import { ProviderManager } from "../provider-manager.js";
 import { TeamManager } from "../team-manager.js";
 import { SqlTeamRunStore } from "../team-store.js";
 import { WorkspaceManager } from "../workspace-manager.js";
+import { GitService } from "@ai-workbench/workspace-git";
+import { execCli } from "@ai-workbench/transport-cli";
 
 /** The mock provider, noting the folder every agent session was opened in. */
 class FolderRecordingMock extends MockProviderAdapter {
@@ -35,7 +37,7 @@ interface TestApp {
   dispose(): Promise<void>;
 }
 
-async function bootApp(directory: string): Promise<TestApp> {
+async function bootApp(directory: string, options: { withGit?: boolean } = {}): Promise<TestApp> {
   const logger = createNullLogger();
   const database = createDatabase({ file: join(directory, "test.db") });
   await runMigrations(database.client);
@@ -65,6 +67,7 @@ async function bootApp(directory: string): Promise<TestApp> {
     recordMemory: async (note) => {
       memoryNotes.push({ ...note });
     },
+    ...(options.withGit ? { folderHistory: new GitService({ logger }) } : {}),
   });
 
   return {
@@ -374,6 +377,43 @@ describe("team runs in the application", () => {
     await expect(
       app.teams.continueRun({ runId: older.id, goal: "Too late", sessionId: "session_a" }),
     ).rejects.toThrow(/another session/);
+  });
+
+  it("shows the code a member's turn changed as a diff, read from the folder", async () => {
+    await app.dispose();
+    app = await bootApp(directory, { withGit: true });
+    const git = async (...args: string[]): Promise<void> => {
+      const { exit } = await execCli({ executablePath: "git", args, cwd: directory });
+      if (exit.code !== 0) {
+        throw new Error(`git ${args.join(" ")} failed: ${exit.stderr}`);
+      }
+    };
+    await git("init", "--initial-branch", "main");
+    await git("config", "user.email", "test@example.com");
+    await git("config", "user.name", "Test");
+    await writeFile(join(directory, ".gitignore"), "*.db*\nproviders/\n");
+    await git("add", ".");
+    await git("commit", "-m", "start");
+
+    const { teamId } = await makeTeam();
+    // The stand-in members write this file, the way a real tool edits the project.
+    const run = await app.teams.startRun({ teamId, goal: "Add the feature [write: src/feature.ts]" });
+    await settle(app, run.id);
+
+    const snapshot = await app.teams.getSnapshot(run.id);
+    expect(snapshot.run.status).toBe("completed");
+    const diffs = snapshot.artifacts.filter((artifact) => artifact.type === "diff");
+    expect(diffs.length).toBeGreaterThan(0);
+    const first = diffs[0];
+    expect(first?.path).toBe("src/feature.ts");
+    expect(first?.content).toContain("+export const done = true;");
+    expect(first?.metadata["source"]).toBe("folder");
+    // In the member's name, for its task.
+    const team = await app.teams.require(teamId);
+    expect(team.agents.some((agent) => agent.id === first?.createdBy && agent.id !== team.leadAgentId)).toBe(true);
+    expect(first?.taskId).not.toBeNull();
+    // Turns that changed nothing show nothing.
+    expect(diffs.every((artifact) => (artifact.content ?? "").includes("src/feature.ts"))).toBe(true);
   });
 
   it("refuses a new goal while the run is still going", async () => {

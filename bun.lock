@@ -92,6 +92,7 @@
       "devDependencies": {
         "@ai-workbench/provider-mock": "workspace:*",
         "@ai-workbench/test-support": "workspace:*",
+        "@ai-workbench/workspace-git": "workspace:*",
       },
     },
     "packages/credentials": {

@@ -1460,6 +1460,114 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
     40_000,
   );
 
+  // What a member's turn changed shows in the session as a diff, read from
+  // the folder itself — here a git folder where the stand-in member writes a
+  // file — and the person's own git index is left exactly as it was.
+  const diffSpace = join(workspaceDirectory, "diff-space");
+  await mkdir(diffSpace, { recursive: true });
+  const gitIn = async (...args: string[]): Promise<string> => {
+    const { stdout, exit } = await execCli({ executablePath: "git", args, cwd: diffSpace });
+    if (exit.code !== 0) {
+      throw new Error(`git ${args.join(" ")}: ${exit.stderr}`);
+    }
+    return stdout;
+  };
+  // A repository of its own, even inside another one.
+  const gitReady = await readFile(join(diffSpace, ".git", "HEAD"), "utf8")
+    .then(() => true)
+    .catch(async () => {
+      await gitIn("init", "--initial-branch", "main");
+      await gitIn("config", "user.email", "check@example.com");
+      await gitIn("config", "user.name", "Check");
+      await writeFile(join(diffSpace, "README.md"), "diff space\n");
+      await gitIn("add", ".");
+      await gitIn("commit", "-m", "start");
+      return true;
+    })
+    .catch(() => false);
+  if (gitReady) {
+    const feature = `src/feature-${Date.now()}.ts`;
+    await check(
+      "a member's code changes show in the session as a diff",
+      `(async () => {
+         const api = window.workbench;
+         const folder = ${JSON.stringify(diffSpace)};
+         const workspace = (await api.invoke('workspace.list', undefined)).find(entry => entry.path === folder)
+           ?? await api.invoke('workspace.create', { name: 'Diff space', path: folder });
+         // A new session each time, so the goal starts a run of its own.
+         const session = await api.invoke('session.create', {
+           workspaceId: workspace.id, name: 'Diff session', type: 'solo', providerId: 'mock',
+         });
+         const rows = () => [...document.querySelectorAll('.sidebar__scroll .row')];
+         try {
+           await new Promise(resolve => setTimeout(resolve, 300));
+           rows().find(node => node.textContent?.includes('Diff space'))?.click();
+           await new Promise(resolve => setTimeout(resolve, 600));
+           rows().find(node => node.querySelector('.row__text')?.textContent === 'Diff session')?.click();
+           await new Promise(resolve => setTimeout(resolve, 400));
+           if (!document.querySelector('.team-intro, .team-run')) {
+             document.querySelector('.composer .popover > .pill')?.click();
+             await new Promise(resolve => setTimeout(resolve, 400));
+             [...document.querySelectorAll('.popover__panel [role="option"]')]
+               .find(node => node.textContent?.includes('Check team'))?.click();
+             if (!(await ${waitFor("document.querySelector('.team-intro, .team-run')", 4000)})) return 'no team view';
+           }
+           const goal = 'Add the feature [write: ${feature}]';
+           const box = document.querySelector('.composer__input');
+           Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, goal);
+           box.dispatchEvent(new Event('input', { bubbles: true }));
+           box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+           const team = (await api.invoke('team.list', {})).find(entry => entry.name === 'Check team');
+           let run = null;
+           const deadline = Date.now() + 25000;
+           while (Date.now() < deadline) {
+             await new Promise(resolve => setTimeout(resolve, 300));
+             run = (await api.invoke('team.listRuns', { teamId: team.id })).find(entry => entry.goal === goal) ?? null;
+             if (run && run.status !== 'running' && run.status !== 'pending') break;
+           }
+           if (!run) return 'no run for the goal';
+           if (run.status !== 'completed') return 'the run ended ' + run.status;
+           const shown = await ${waitFor(`[...document.querySelectorAll('.team-file[data-artifact-kind="diff"]')].some(node => node.textContent?.includes('${feature}') && [...node.querySelectorAll('.diff-preview__line[data-kind="add"]')].some(line => line.textContent?.includes('export const done = true;')))`, 8000)};
+           if (!shown) {
+             const snapshot = await api.invoke('team.getRun', { runId: run.id });
+             return 'no diff shown; artifacts: ' + snapshot.artifacts.map(item => item.type + ':' + (item.path ?? item.name)).join(', ');
+           }
+           document.querySelector('.team-file[data-artifact-kind="diff"]')?.scrollIntoView({ block: 'center' });
+           return true;
+         } finally {
+           window.__checkDiffSessionId = session.id;
+         }
+       })()`,
+      40_000,
+    );
+    // Evidence for a person, when screenshots are asked for: the diff as the
+    // session shows it.
+    const diffShot = process.env["AI_WORKBENCH_CHECK_SCREENSHOT"];
+    if (diffShot) {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      await writeFile(diffShot.replace(/\.png$/, "-team-diff.png"), (await window.webContents.capturePage()).toPNG()).catch(
+        () => undefined,
+      );
+    }
+    await window.webContents.executeJavaScript(`(async () => {
+      const id = window.__checkDiffSessionId;
+      if (id) await window.workbench.invoke('session.delete', { id }).catch(() => {});
+      [...document.querySelectorAll('.sidebar__scroll .row')]
+        .find(node => node.textContent?.includes('Check workspace'))?.click();
+      await new Promise(resolve => setTimeout(resolve, 600));
+    })()`);
+    // The member's file is there as the person would find it: new and not
+    // staged — the application's snapshots never touched the index.
+    const porcelain = await gitIn("status", "--porcelain", "--untracked-files=all").catch(() => "");
+    const staged = porcelain.split("\n").filter((line) => line.length > 1 && line[0] !== " " && line[0] !== "?");
+    outcomes.push({
+      name: "watching a turn leaves the person's git index untouched",
+      passed: porcelain.includes(`?? ${feature}`) && staged.length === 0,
+      detail: porcelain.trim() || "clean",
+    });
+  }
+
   // A team made in the editor from a template: its members arrive with the
   // template's roles and each with instructions of its own, the lead first.
   await check(

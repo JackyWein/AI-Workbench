@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve, sep } from "node:path";
 import type {
   AuthStatus,
   InstallationStatus,
@@ -17,7 +19,7 @@ import {
   type ProviderSessionInfo,
 } from "@ai-workbench/provider-base";
 import { buildMockReply, chunkText } from "./reply.js";
-import { buildTeamReply, looksLikeTeamPrompt } from "./team-reply.js";
+import { buildTeamReply, looksLikeTeamPrompt, teamWriteFor } from "./team-reply.js";
 
 export interface MockProviderOptions {
   /** Delay between streamed chunks. Tests set 0. */
@@ -38,6 +40,8 @@ interface MockSessionState {
   /** What the application composed for this turn, kept so /context can show it. */
   systemInstructions: string;
   toolNames: string[];
+  /** Where the session works; a team member's files are written here. */
+  workingDirectory: string;
   abort: AbortController | null;
 }
 
@@ -178,6 +182,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
       const given = describeGiven(config);
       existing.systemInstructions = given.systemInstructions;
       existing.toolNames = given.toolNames;
+      existing.workingDirectory = given.workingDirectory;
       return { providerSessionId, resumable: true, modelId };
     }
     // A restarted app resumes a session this process has never seen; the mock
@@ -254,6 +259,17 @@ export class MockProviderAdapter implements AIProviderAdapter {
             output: { bytesRead: 2048 },
           },
         };
+      }
+
+      // A team member asked to write a file does, inside its own folder only.
+      const write = looksLikeTeamPrompt(prompt) ? teamWriteFor(prompt) : null;
+      if (write && state.workingDirectory) {
+        const root = resolve(state.workingDirectory);
+        const target = resolve(root, write.path);
+        if (target.startsWith(`${root}${sep}`)) {
+          await mkdir(dirname(target), { recursive: true });
+          await writeFile(target, write.content, "utf8");
+        }
       }
 
       if (modelId === "mock-reasoning") {
@@ -412,10 +428,12 @@ function abortError(): Error {
 function describeGiven(config: ProviderSessionConfig): {
   systemInstructions: string;
   toolNames: string[];
+  workingDirectory: string;
 } {
   return {
     systemInstructions: config.systemInstructions ?? "",
     toolNames: (config.toolAccess?.hostTools ?? []).map((tool) => tool.name),
+    workingDirectory: config.workingDirectory,
   };
 }
 

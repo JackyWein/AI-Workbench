@@ -437,6 +437,7 @@ async function createServicesInner(
     });
   }
 
+  const git = new GitService({ logger });
   const teams = new TeamManager({
     db: database.db,
     events,
@@ -446,6 +447,8 @@ async function createServicesInner(
     // Members get their skills the way a solo session does.
     skills,
     skillsServerId: SKILLS_SERVER_ID,
+    // Each member's turn shows the code it changed, read from the folder.
+    folderHistory: git,
     attachmentsDirectory: join(options.userDataPath, "attachments"),
     // A finished goal lands in the shared vault when one is set up, so the
     // next session or team finds it with memory_search.
@@ -486,8 +489,6 @@ async function createServicesInner(
   };
   const usage = new UsageService({ providers, events, logger });
   usageRef = usage;
-
-  const git = new GitService({ logger });
 
   // Terminal output is pushed rather than polled, so listeners register here
   // and the IPC layer forwards to whichever windows exist.

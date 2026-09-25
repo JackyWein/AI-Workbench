@@ -44,6 +44,7 @@ describe("diffLineKind", () => {
     expect(diffLineKind("+added")).toBe("add");
     expect(diffLineKind("-removed")).toBe("del");
     expect(diffLineKind("+++ b/file")).toBe("ctx");
+    expect(diffLineKind("diff --git a/src/a.ts b/src/a.ts")).toBe("file");
     expect(diffLineKind("--- a/file")).toBe("ctx");
     expect(diffLineKind(" context")).toBe("ctx");
   });

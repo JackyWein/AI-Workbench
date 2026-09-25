@@ -5,6 +5,7 @@ Teams in every workspace, and every session starts fresh
 - A new session starts its team without context: it shows none of another session's runs, and its first goal starts a run of its own — with its own tasks, messages and provider sessions. Before, a new session picked up the team's last run in the workspace and its next goal continued it.
 - Within one session a finished run keeps its timeline: the next goal continues it, and the previous outcome stays readable.
 - A team given a folder of its own says so next to the path ("team folder") — the one case where it does not work in the session's workspace.
+- The team timeline shows the code each member's turn changed, as a diff: the app reads it from the folder itself (git), whatever the member's tool reports. When other members worked at the same time, it says that some of the change may be theirs. Your git index, branches and stash are never touched; a folder that is no git repository shows no diff.
 
 Crashes are caught and recovered
 - A failure in the app is logged and reported instead of taking it down; a window whose view crashed reloads, one broken view no longer blanks the whole window, and a crash report is kept.
