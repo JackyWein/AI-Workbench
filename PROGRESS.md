@@ -386,6 +386,89 @@ run.
   an authorization header, error mapping, timeouts and secret redaction are
   tested. A streamed turn through it is not, so the criterion stays open.
 
+## Future features — F1 to F13 (from FutureFeatures.md)
+
+The features asked for on 2026-09-25, cut into goals that are done only when
+every criterion below is verified the way it says. They are not part of the
+weighted spec goals above. What cannot be verified here (a real account, a
+real GitHub App, a microphone) says so and stays unticked. Release 0.0.9
+follows when all goals are done.
+
+### F1 — Model choice when AI drafts something (FutureFeatures 8)
+- [ ] Draft with AI (skills) offers the tool and its models, and the effort where the model has levels, through one shared picker
+- [ ] The draft runs on the chosen model (startup check: the chosen mock model answers)
+- [ ] The last choice is remembered per purpose (startup check)
+
+### F2 — MCP servers from connected apps, secrets kept safe (FutureFeatures 4)
+- [ ] A secret variable of an imported server is kept in the credential store; the database holds a reference and the window never receives the value (startup check)
+- [ ] The server still starts with the real value (startup check: the test server sees it)
+- [ ] A tool handed that server gets the value only when it is launched (unit test)
+- [ ] Import reads OpenCode, Antigravity, Cursor, VS Code and Windsurf configurations (unit tests per format)
+- [ ] Import offers a scope — everywhere or this workspace (startup check)
+- [ ] A server that changed at its source shows "Update" and can be updated (unit test, startup check)
+
+### F3 — Accounts for every tool, and their limits (FutureFeatures 3)
+- [ ] Gemini CLI and OpenCode can hold several accounts, each run with its own home, the mechanism checked against the tool itself (profile tests, tool check here)
+- [ ] Antigravity accounts follow the same pattern, marked unverified until run against the tool
+- [ ] The Usage screen shows one row per account with every reported window, where it came from and how old it is, and "not reported by this tool" otherwise (startup check)
+- [ ] The model menu lists a tool's accounts with their tightest window (startup check)
+
+### F4 — Switch account at a limit and keep the chat (FutureFeatures 1)
+- [ ] A setting decides what happens at a limit: switch, ask or stop (startup check)
+- [ ] A turn that ends at a limit continues on the next account in the same chat (startup check with two stand-in accounts)
+- [ ] The next account receives the earlier conversation (startup check: it reports what it was given)
+- [ ] The chat marks the switch with both accounts and the reason (startup check)
+- [ ] An account at its limit is never switched into; the last one stops and says when a window resets (unit tests)
+- [ ] Claude Code's conversation file is carried into the new account's home (adapter test)
+
+### F5 — Source control and GitHub (FutureFeatures 2 and F)
+- [ ] Source control: stage and unstage files, commit, pull, push, create a branch (startup check against a local remote)
+- [ ] The session's model can suggest the commit message (startup check)
+- [ ] Credentials come from the credential store through an askpass helper and never appear in .git/config or a remote URL (git test)
+- [ ] GitHub sign-in by device flow and by token; only a reference reaches the window (tests against a stand-in GitHub)
+- [ ] A pull request can be opened (test against a stand-in GitHub API)
+- [ ] A commit holding a likely secret is stopped with the finding (unit test, startup check)
+
+### F6 — Team templates drafted by AI (FutureFeatures 7)
+- [ ] Own templates are stored, listed next to the built-in ones, and can be deleted (startup check)
+- [ ] Draft a team, with tool and model choice, returns a checked template for review; nothing is stored before Save (startup check)
+- [ ] A saved template fills the team editor (startup check)
+- [ ] Templates export and import as JSON (unit test)
+
+### F7 — Scheduled tasks (FutureFeatures 5 and D)
+- [ ] Schedules are stored with a cron expression and time zone; the next run is right across daylight-saving changes and after missed runs (unit tests)
+- [ ] A due schedule runs its prompt on time in its session or team (startup check)
+- [ ] Every run is recorded with its outcome, and a budget stops a run (unit tests, startup check)
+- [ ] An agent can propose a schedule through the application's MCP server, and nothing is created until the person confirms (startup check)
+- [ ] The Schedules screen lists schedules with next run and last result, runs one now, and switches one off (startup check)
+
+### F8 — Voice input (FutureFeatures 6)
+- [ ] The microphone is allowed for the main window only, audio only (unit test of the permission handler)
+- [ ] A composer button and a push-to-talk key record, and the transcript lands in the composer, never sent by itself (startup check with a fake microphone)
+- [ ] Transcription runs locally on the device (test with a recorded sample, when the model can be fetched here)
+
+### F9 — Undo a turn, and diffs for solo sessions (FutureFeatures A and C)
+- [ ] A solo answer shows the code its turn changed (startup check)
+- [ ] Undo this turn restores exactly the files the turn changed, and refuses when one changed since (git tests, startup check)
+
+### F10 — Shared memory upgrades (FutureFeatures I, H and F)
+- [ ] Notes can be updated and appended to, refused when changed since they were read (tests)
+- [ ] Saving suggests links to related notes (tests)
+- [ ] Search is ranked through an index rebuilt from the files (tests)
+- [ ] A note holding a likely secret is refused (test)
+- [ ] Notes can belong to one workspace and are only found there (tests)
+- [ ] Use in my tools registers the memory in Claude Code, Codex and Gemini CLI through their own commands, only the application's marked entry (tests with stand-in tools)
+
+### F11 — Usage forecast (FutureFeatures E)
+- [ ] The Usage screen and the island say when a window will run out at the current pace, only with enough reported data (unit tests, startup check)
+
+### F12 — Continue a session in another tool (FutureFeatures G)
+- [ ] Continue in … starts a session on another tool with the conversation handed over; the original stays as it was (startup check)
+
+### F13 — A git worktree per team member (FutureFeatures B)
+- [ ] With separate worktrees each member works on a run branch of its own, and the lead merges finished work; a conflict becomes a task (core test with git)
+- [ ] Each diff is then exactly the member's own (core test)
+
 ## G0 — Repository / Foundation — 5%
 
 - [x] pnpm workspace configured — met by a bun workspace since 2026-09-23, by

@@ -15,7 +15,8 @@ Each entry has:
 
 Sizes are rough: S is about a day, M a few days, L a week or more.
 
-A suggested order is at the end.
+A suggested order is at the end. The work is cut into goals F1 to F13 with
+checkable criteria in `PROGRESS.md`.
 
 ---
 
