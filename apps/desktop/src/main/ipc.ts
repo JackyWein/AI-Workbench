@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
@@ -9,7 +9,9 @@ import {
   APP_EVENT_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
   MAX_ATTACHMENT_BYTES,
+  exportTeamTemplates,
   ipcContract,
+  parseTeamTemplateImport,
   type IpcChannel,
   type IpcHandlerInput,
   type DiscoveredSkill,
@@ -21,6 +23,7 @@ import {
   discoverToolMcpServers,
   importedFrom,
   draftSkill,
+  draftTeamTemplate,
   inspectAttachments,
   removeWorkspace,
   toSaveInput,
@@ -489,6 +492,54 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
         ...(input.body ? { body: input.body } : {}),
         ...(input.base ? { base: input.base } : {}),
       }),
+
+    "teamTemplate.list": () => services.teamTemplates.list(),
+    "teamTemplate.save": (input) =>
+      services.teamTemplates.save({ ...input.template, ...(input.id ? { id: input.id } : {}) }),
+    "teamTemplate.delete": async (input) => ({ deleted: await services.teamTemplates.delete(input.id) }),
+    "teamTemplate.draft": (input) =>
+      draftTeamTemplate(services.providers, input, join(options.userDataPath, "team-template-drafts")),
+    "teamTemplate.export": async (input) => {
+      const all = await services.teamTemplates.list();
+      const chosen = input.ids ? all.filter((template) => input.ids?.includes(template.id)) : all;
+      if (chosen.length === 0) {
+        return { saved: false, count: 0 };
+      }
+      const window = findMainWindow();
+      const dialogOptions = {
+        title: "Export team templates",
+        defaultPath: "team-templates.json",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      };
+      const target = await (window ? dialog.showSaveDialog(window, dialogOptions) : dialog.showSaveDialog(dialogOptions));
+      if (target.canceled || !target.filePath) {
+        return { saved: false, count: 0 };
+      }
+      await writeFile(target.filePath, exportTeamTemplates(chosen), "utf8");
+      return { saved: true, count: chosen.length };
+    },
+    "teamTemplate.import": async () => {
+      const window = findMainWindow();
+      const dialogOptions = {
+        title: "Import team templates",
+        properties: ["openFile"] as "openFile"[],
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      };
+      const picked = await (window ? dialog.showOpenDialog(window, dialogOptions) : dialog.showOpenDialog(dialogOptions));
+      const file = picked.filePaths[0];
+      if (picked.canceled || !file) {
+        return { imported: 0, errors: [] };
+      }
+      const { size } = await stat(file);
+      if (size > 2 * 1024 * 1024) {
+        return { imported: 0, errors: ["The file is larger than a template file can be."] };
+      }
+      const { templates, errors } = parseTeamTemplateImport(await readFile(file, "utf8"));
+      for (const template of templates) {
+        await services.teamTemplates.save(template);
+      }
+      return { imported: templates.length, errors };
+    },
 
     "github.status": () => services.github.status(),
     "github.signInWithToken": (input) => services.github.signInWithToken(input.token),

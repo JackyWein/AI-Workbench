@@ -14,6 +14,8 @@ export * from "./github-service.js";
 export * from "./commit-message.js";
 export * from "./one-turn.js";
 export * from "./session-manager.js";
+export * from "./team-template-drafter.js";
+export * from "./team-template-service.js";
 export * from "./source-control.js";
 export * from "./skill-service.js";
 export * from "./team-manager.js";

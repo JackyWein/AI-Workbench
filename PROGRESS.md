@@ -433,10 +433,10 @@ Also: a window can never attach a stored secret to a server by its reference —
 - Not yet: git in a workspace on another machine; pull with rebase as a setting; the pull request's checks in the panel
 
 ### F6 — Team templates drafted by AI (FutureFeatures 7)
-- [ ] Own templates are stored, listed next to the built-in ones, and can be deleted (startup check)
-- [ ] Draft a team, with tool and model choice, returns a checked template for review; nothing is stored before Save (startup check)
-- [ ] A saved template fills the team editor (startup check)
-- [ ] Templates export and import as JSON (unit test)
+- [x] Own templates are stored, listed next to the built-in ones, and can be deleted (startup check) — "Your templates" under the built-in ones in the new-team editor; "Save as template" keeps the editor's members, with their tool, model and effort as suggestions; the trash control removes one from the list and from storage
+- [x] Draft a team, with tool and model choice, returns a checked template for review; nothing is stored before Save (startup check) — "Draft with AI" uses the same tool/model/effort picker as skills; the answer is read as JSON and checked against the template schema (a draft that does not hold up is refused with the reason, core test); the check sees the preview and an empty store before Save
+- [x] A saved template fills the team editor (startup check) — saving a draft fills the editor at once, and picking a saved template later does the same; a suggested tool is only taken where it can be picked now
+- [x] Templates export and import as JSON (unit test) — a file with its own format marker, content only; an import takes one template, a list or an export, and names each one that fails and why instead of taking it half
 
 ### F7 — Scheduled tasks (FutureFeatures 5 and D)
 - [ ] Schedules are stored with a cron expression and time zone; the next run is right across daylight-saving changes and after missed runs (unit tests)

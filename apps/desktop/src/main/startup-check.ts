@@ -1862,6 +1862,76 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
      })()`,
   );
 
+  // Team templates of the person's own (F6): drafted by the chosen tool and
+  // model, shown for review, stored only on Save, filling the editor, and
+  // removed again; the editor's own members can be kept as one too.
+  await check(
+    "a team template is drafted for review, saved, fills the editor and is removed again",
+    `(async () => {
+       const api = window.workbench;
+       const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+       const type = (element, value) => {
+         const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value').set;
+         setter.call(element, value);
+         element.dispatchEvent(new Event('input', { bubbles: true }));
+       };
+       const own = async () => (await api.invoke('teamTemplate.list', undefined));
+       for (const left of await own()) await api.invoke('teamTemplate.delete', { id: left.id });
+       [...document.querySelectorAll('.sidebar__foot .row')].find(node => node.textContent?.includes('Teams'))?.click();
+       await sleep(500);
+       [...document.querySelectorAll('button')].find(node => node.textContent?.trim().endsWith('New team'))?.click();
+       await sleep(400);
+       try {
+         [...document.querySelectorAll('.own-templates__head button')].find(node => node.textContent?.includes('Draft with AI'))?.click();
+         await sleep(200);
+         const drafter = document.querySelector('.template-drafter');
+         if (!drafter) return 'no drafter';
+         [...drafter.querySelectorAll('.tool-chip')].find(node => node.textContent?.includes('Mock'))?.click();
+         await sleep(100);
+         const model = drafter.querySelector('select[aria-label="Model"]');
+         if (!model) return 'no model choice';
+         model.value = 'mock-fast';
+         model.dispatchEvent(new Event('change', { bubbles: true }));
+         type(drafter.querySelector('textarea'), 'builds and tests small games');
+         await sleep(100);
+         [...drafter.querySelectorAll('button')].find(node => node.textContent === 'Draft')?.click();
+         const previewed = await ${waitFor("document.querySelectorAll('.template-preview__members li').length === 4", 8000)};
+         if (!previewed) return 'no draft to review: ' + drafter.textContent;
+         const preview = document.querySelector('.template-preview')?.textContent ?? '';
+         if (!preview.includes('Lead · leads') || !preview.includes('Tester') || !preview.includes('mock-fast')) return 'the draft reads wrong: ' + preview;
+         if ((await own()).length !== 0) return 'the draft was stored before Save';
+         [...document.querySelectorAll('.template-preview button')].find(node => node.textContent === 'Save template')?.click();
+         const stored = await ${waitFor("[...document.querySelectorAll('.own-template .team-template__name')].some(node => node.textContent === 'Drafted: builds and tests small games')", 5000)};
+         if (!stored) return 'the saved template is not listed';
+         const kept = await own();
+         if (kept.length !== 1 || kept[0].members.length !== 4) return 'not stored as drafted';
+         // It fills the editor: four members, its name, the lead first.
+         const filled = await ${waitFor("document.querySelectorAll('.member-card').length === 4 && document.querySelector('.team-editor__name')?.value === 'Drafted: builds and tests small games'", 3000)};
+         if (!filled) return 'the editor was not filled: ' + document.querySelectorAll('.member-card').length;
+         // A built-in template's members, kept as a template of one's own.
+         [...document.querySelectorAll('.team-template')].find(node => node.textContent?.includes('Bug fixing'))?.click();
+         await sleep(200);
+         [...document.querySelectorAll('.team-editor__actions button')].find(node => node.textContent === 'Save as template')?.click();
+         const saved = await ${waitFor("[...document.querySelectorAll('.own-template .team-template__name')].some(node => node.textContent === 'Bug fixing')", 5000)};
+         if (!saved) return 'the editor could not be kept as a template';
+         [...document.querySelectorAll('.own-template')].find(node => node.textContent?.includes('Drafted: builds'))?.querySelector('.team-template')?.click();
+         const again = await ${waitFor("document.querySelectorAll('.member-card').length === 4", 3000)};
+         if (!again) return 'picking the saved template did not fill the editor';
+         // Removed from the list and from storage.
+         for (const node of [...document.querySelectorAll('.own-template__remove')]) {
+           node.click();
+           await sleep(300);
+         }
+         const gone = await ${waitFor("document.querySelectorAll('.own-template').length === 0", 4000)};
+         return (gone && (await own()).length === 0) || 'the templates were not removed';
+       } finally {
+         [...document.querySelectorAll('.team-editor__actions button')].find(node => node.textContent?.trim() === 'Cancel')?.click();
+         for (const left of await own()) await api.invoke('teamTemplate.delete', { id: left.id });
+       }
+     })()`,
+    40_000,
+  );
+
   // --- status island: widgets, priority, deep links ---------------------------
 
   await check(

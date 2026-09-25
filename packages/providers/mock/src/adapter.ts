@@ -320,7 +320,9 @@ export class MockProviderAdapter implements AIProviderAdapter {
           ? `Given so far:\n\n${state.prompts.join("\n\n---\n\n")}`
           : asked.startsWith("Write a git commit message")
             ? commitMessageFor(asked)
-            : // A team prompt gets a team answer, so Team Mode can be exercised
+            : asked.startsWith("Design a team template")
+              ? teamTemplateFor(asked)
+              : // A team prompt gets a team answer, so Team Mode can be exercised
           // end to end without spending an account (spec §20).
           looksLikeTeamPrompt(prompt)
           ? buildTeamReply(prompt)
@@ -431,6 +433,28 @@ function withoutHandover(prompt: string): string {
 function commitMessageFor(prompt: string): string {
   const file = /^\+\+\+ b\/(.+)$/m.exec(prompt)?.[1]?.trim() ?? "the files";
   return `Update ${file}\n\nSuggested by the simulated provider from the staged diff.`;
+}
+
+/**
+ * A team template as JSON, shaped by what the person asked for: a lead, a
+ * builder and a reviewer, and a tester when testing is mentioned.
+ */
+function teamTemplateFor(prompt: string): string {
+  const request = /What the team should be:\n([^\n]*)/.exec(prompt)?.[1]?.trim() ?? "a team";
+  const members = [
+    { name: "Lead", role: "plans the work and hands it out", instructions: "Split the goal into small tasks and give each to the member whose role fits." },
+    { name: "Builder", role: "implements the tasks", instructions: "Read the code first, make the smallest change that solves the task, and run it." },
+    ...(/test/i.test(request)
+      ? [{ name: "Tester", role: "tests what was built", instructions: "Write and run tests for every change and report what failed." }]
+      : []),
+    { name: "Reviewer", role: "reviews every change", instructions: "Read each change for bugs and unclear code, and send back what must change." },
+  ];
+  return JSON.stringify({
+    name: `Drafted: ${request}`.slice(0, 80),
+    summary: `A team for ${request}`.slice(0, 300),
+    leadIndex: 0,
+    members,
+  });
 }
 
 /** The entries a prompt tells to hit their limit, from "/limit@<entry id>". */

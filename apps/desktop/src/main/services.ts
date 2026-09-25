@@ -14,6 +14,7 @@ import {
   SettingsService,
   SkillService,
   SourceControlService,
+  TeamTemplateService,
   TeamManager,
   ConnectionService,
   SqlCredentialStorage,
@@ -88,6 +89,7 @@ export interface AppServices {
   readonly git: GitService;
   readonly github: GitHubService;
   readonly sourceControl: SourceControlService;
+  readonly teamTemplates: TeamTemplateService;
   readonly terminals: TerminalManager;
   /** Providers' own interactive interfaces running in terminals. */
   readonly agentTerminals: AgentTerminalService;
@@ -592,6 +594,7 @@ async function createServicesInner(
     git,
     github,
     sourceControl,
+    teamTemplates: new TeamTemplateService({ db: database.db }),
     terminals,
     agentTerminals,
     onTerminalEvent: (listener) => {

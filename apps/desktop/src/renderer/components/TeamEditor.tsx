@@ -20,7 +20,15 @@ import {
   User,
   type LucideIcon,
 } from "lucide-react";
-import { agentInstructions, agentReasoningEffort, type ProviderSummary, type TeamDefinition } from "@ai-workbench/shared";
+import {
+  agentInstructions,
+  agentReasoningEffort,
+  type ProviderSummary,
+  type TeamDefinition,
+  type TeamTemplate,
+  type TeamTemplateMember,
+} from "@ai-workbench/shared";
+import { describeError, invoke } from "../lib/client.js";
 import { useWorkbench } from "../store/workbench.js";
 import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
 import { effortLabel, reasoningEffortsFor } from "../lib/reasoning-effort.js";
@@ -34,6 +42,7 @@ import {
 } from "../lib/team-roles.js";
 import { Switch } from "./Controls.js";
 import { Logo } from "./Logo.js";
+import { OwnTeamTemplates } from "./TeamTemplates.js";
 
 const ICONS: Record<RoleIcon, LucideIcon> = {
   compass: Compass,
@@ -134,6 +143,27 @@ export function TeamEditor({
   const [outside, setOutside] = useState(team?.settings.allowOutsideWorkspace ?? false);
   const [saving, setSaving] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [ownTemplates, setOwnTemplates] = useState<TeamTemplate[]>([]);
+  const [templateNote, setTemplateNote] = useState<string | null>(null);
+
+  const loadOwnTemplates = async (): Promise<TeamTemplate[]> => {
+    try {
+      const listed = await invoke("teamTemplate.list", undefined);
+      setOwnTemplates(listed);
+      return listed;
+    } catch (error) {
+      setTemplateNote(describeError(error));
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    if (!team) {
+      void loadOwnTemplates();
+    }
+    // Loaded once when a new team is started.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Providers load after the editor opens; members without a tool get the
   // first one that can be picked instead of staying empty.
@@ -181,8 +211,53 @@ export function TeamEditor({
     const fresh = templateMembers(chosen.members, nextKey, firstProviderId);
     setMembers(fresh);
     setLeadKey(fresh[0]?.key ?? 1);
-    if (name.trim() === "" || TEAM_TEMPLATES.some((entry) => entry.name === name)) {
+    // A name that came from a template follows the template; one the person
+    // typed stays.
+    if (
+      name.trim() === "" ||
+      TEAM_TEMPLATES.some((entry) => entry.name === name) ||
+      ownTemplates.some((entry) => entry.name === name)
+    ) {
       setName(chosen.name);
+    }
+  };
+
+  /** Fills the editor from one of the person's own templates. */
+  const applyOwnTemplate = (chosen: TeamTemplate): void => {
+    setTemplate(chosen.id);
+    const fresh = chosen.members.map((member) => memberFromTemplate(member, nextKey(), pickable, firstProviderId));
+    setMembers(fresh);
+    setLeadKey(fresh[chosen.leadIndex]?.key ?? fresh[0]?.key ?? 1);
+    setName(chosen.name);
+  };
+
+  /** Keeps the members as they are now as a template of the person's own. */
+  const saveAsTemplate = async (): Promise<void> => {
+    const roster = members.filter((member) => member.name.trim().length > 0);
+    if (roster.length === 0) {
+      return;
+    }
+    try {
+      const saved = await invoke("teamTemplate.save", {
+        template: {
+          name: name.trim() || "My team",
+          summary: "",
+          leadIndex: Math.max(0, roster.findIndex((member) => member.key === leadKey)),
+          members: roster.map((member) => ({
+            name: member.name.trim(),
+            role: member.role.trim(),
+            instructions: member.instructions.trim(),
+            ...(member.providerId ? { providerId: member.providerId } : {}),
+            ...(member.modelId ? { modelId: member.modelId } : {}),
+            ...(member.effort ? { reasoningEffort: member.effort } : {}),
+          })),
+        },
+      });
+      await loadOwnTemplates();
+      setTemplate(saved.id);
+      setTemplateNote(`Saved as the template "${saved.name}".`);
+    } catch (error) {
+      setTemplateNote(describeError(error));
     }
   };
 
@@ -316,6 +391,25 @@ export function TeamEditor({
         </div>
       )}
 
+      {team ? null : (
+        <OwnTeamTemplates
+          templates={ownTemplates}
+          selected={template}
+          onApply={applyOwnTemplate}
+          onChanged={(saved) => {
+            void loadOwnTemplates();
+            if (saved) {
+              applyOwnTemplate(saved);
+            }
+          }}
+        />
+      )}
+      {templateNote ? (
+        <p className="field__description" role="status">
+          {templateNote}
+        </p>
+      ) : null}
+
       {firstProviderId.length === 0 ? (
         <p className="field__description" role="note">
           No tool can take a member right now — install one or switch one on under Providers.
@@ -412,6 +506,11 @@ export function TeamEditor({
         <button type="button" className="quiet-button" onClick={onDone}>
           Cancel
         </button>
+        {team ? null : (
+          <button type="button" className="quiet-button" onClick={() => void saveAsTemplate()}>
+            Save as template
+          </button>
+        )}
         <button
           type="button"
           className="primary-button"
@@ -423,6 +522,35 @@ export function TeamEditor({
       </div>
     </div>
   );
+}
+
+/**
+ * A member from a template of the person's own. The tool, model and effort it
+ * suggests are taken only where they can be picked now; otherwise the member
+ * starts on the first tool that can.
+ */
+function memberFromTemplate(
+  member: TeamTemplateMember,
+  key: number,
+  pickable: readonly ProviderSummary[],
+  fallbackProviderId: string,
+): MemberDraft {
+  const provider = member.providerId ? pickable.find((entry) => entry.metadata.id === member.providerId) : undefined;
+  const modelId = provider && member.modelId && provider.models.some((model) => model.id === member.modelId) ? member.modelId : "";
+  const effort =
+    provider && member.reasoningEffort && reasoningEffortsFor(provider, modelId || null).includes(member.reasoningEffort)
+      ? member.reasoningEffort
+      : "";
+  return {
+    key,
+    name: member.name,
+    role: member.role,
+    instructions: member.instructions,
+    providerId: provider?.metadata.id ?? fallbackProviderId,
+    modelId,
+    effort,
+    settings: {},
+  };
 }
 
 function templateMembers(ids: readonly string[], nextKey: () => number, providerId: string): MemberDraft[] {

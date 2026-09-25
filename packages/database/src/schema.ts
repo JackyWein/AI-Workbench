@@ -403,6 +403,18 @@ export type CredentialRow = typeof credentials.$inferSelect;
  * restart restores the task graph, the mail, the decisions and the artifacts
  * rather than starting over.
  */
+/** Team templates the person keeps, next to the built-in ones. */
+export const teamTemplates = sqliteTable("team_templates", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  summary: text("summary").notNull().default(""),
+  members: text("members", { mode: "json" }).$type<unknown[]>().notNull().default(sql`'[]'`),
+  leadIndex: integer("lead_index").notNull().default(0),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+export type TeamTemplateRow = typeof teamTemplates.$inferSelect;
+
 export const teams = sqliteTable("teams", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id")

@@ -79,6 +79,11 @@ import {
 } from "../domain/team.js";
 import { updateStateSchema } from "../domain/updater.js";
 import { commitResultSchema, gitHubStatusSchema } from "../domain/source-control.js";
+import {
+  teamTemplateContentSchema,
+  teamTemplateDraftSchema,
+  teamTemplateSchema,
+} from "../domain/team-template.js";
 
 /**
  * The single source of truth for privileged main-process operations (spec §105).
@@ -511,6 +516,36 @@ export const ipcContract = {
     }),
   },
   /** Has one of the person's tools draft a skill; nothing is saved. */
+  /** Team templates of the person's own, next to the built-in ones. */
+  "teamTemplate.list": { input: z.void(), output: z.array(teamTemplateSchema) },
+  "teamTemplate.save": {
+    input: z.object({ id: z.string().min(1).optional(), template: teamTemplateContentSchema }),
+    output: teamTemplateSchema,
+  },
+  "teamTemplate.delete": {
+    input: z.object({ id: z.string().min(1) }),
+    output: z.object({ deleted: z.boolean() }),
+  },
+  /** A template drafted by the chosen tool and model; nothing is stored. */
+  "teamTemplate.draft": {
+    input: z.object({
+      providerId: z.string().min(1),
+      modelId: z.string().min(1).optional(),
+      reasoningEffort: z.string().trim().min(1).max(40).optional(),
+      request: z.string().trim().min(3).max(4000),
+    }),
+    output: teamTemplateDraftSchema,
+  },
+  /** Writes the person's templates to a JSON file they choose. */
+  "teamTemplate.export": {
+    input: z.object({ ids: z.array(z.string().min(1)).max(200).optional() }),
+    output: z.object({ saved: z.boolean(), count: z.number().int() }),
+  },
+  /** Reads templates from a JSON file they choose; the ones that fail are named. */
+  "teamTemplate.import": {
+    input: z.void(),
+    output: z.object({ imported: z.number().int(), errors: z.array(z.string()) }),
+  },
   "skill.draft": {
     input: z.object({
       providerId: z.string().min(1),

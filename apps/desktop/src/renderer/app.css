@@ -7021,3 +7021,81 @@ button.sidebar__user[aria-current="true"] {
   letter-spacing: 0.12em;
   color: var(--text-primary);
 }
+
+/* Team templates of the person's own, and drafting one with AI. */
+.own-templates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.own-templates__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.own-templates__head .field__description {
+  margin-right: auto;
+}
+
+.own-template {
+  position: relative;
+  display: flex;
+}
+
+.own-template .team-template {
+  flex: 1;
+  padding-right: var(--space-7);
+}
+
+.own-template__remove {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  opacity: 0.55;
+}
+
+.own-template__remove:hover,
+.own-template__remove:focus-visible {
+  opacity: 1;
+}
+
+.template-drafter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.template-drafter__request {
+  width: 100%;
+  resize: vertical;
+}
+
+.template-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.template-preview__name {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+}
+
+.template-preview__members {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.template-preview__member {
+  color: var(--text-primary);
+}
