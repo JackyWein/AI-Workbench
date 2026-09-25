@@ -134,6 +134,8 @@ export class TerminalManager {
       },
     });
 
+    guardWindowsKill(pty);
+
     const info: TerminalInfo = {
       id,
       sessionId: options.sessionId,
@@ -357,6 +359,34 @@ export class TerminalManager {
     }
     return state;
   }
+}
+
+/** How long node-pty waits for its console helper before it gives up. */
+const CONSOLE_LIST_TIMEOUT_MS = 5_000;
+
+/**
+ * Closing a terminal on Windows, node-pty asks a helper process for every
+ * process attached to the terminal's console and ends them. When the helper
+ * cannot attach — the program in the terminal has just ended by itself — it
+ * fails, and node-pty ends the terminal's original process id after five
+ * seconds anyway. By then Windows may have handed that id to an unrelated
+ * process, which is what dies. A helper that timed out is taken to mean
+ * what it does mean: nothing is left to end.
+ */
+export function guardWindowsKill(pty: IPty, platform: NodeJS.Platform = process.platform): void {
+  if (platform !== "win32") {
+    return;
+  }
+  const agent = (pty as unknown as { _agent?: { _getConsoleProcessList?: () => Promise<number[]> } })._agent;
+  const original = agent?._getConsoleProcessList;
+  if (!agent || typeof original !== "function") {
+    return;
+  }
+  agent._getConsoleProcessList = async (): Promise<number[]> => {
+    const started = Date.now();
+    const list = await original.call(agent);
+    return Date.now() - started >= CONSOLE_LIST_TIMEOUT_MS - 100 ? [] : list;
+  };
 }
 
 /**

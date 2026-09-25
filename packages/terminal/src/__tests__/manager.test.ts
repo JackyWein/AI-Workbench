@@ -4,6 +4,7 @@ import {
   TerminalLimitError,
   TerminalManager,
   lastTitle,
+  guardWindowsKill,
   saysSomething,
   TerminalNotFoundError,
 } from "../manager.js";
@@ -275,5 +276,35 @@ describe("what a terminal's program says about itself", () => {
     expect(saysSomething("\\\\server\\share\\tool")).toBe(false);
     expect(saysSomething("agy.exe")).toBe(false);
     expect(saysSomething("✳ Fix the checkout rounding")).toBe(true);
+  });
+
+  it("never lets node-pty end a process id that may belong to someone else by now", async () => {
+    vi.useFakeTimers();
+    try {
+      // What node-pty does when its console helper fails: after five
+      // seconds it hands back the terminal's first process id to be ended.
+      const agent = {
+        _getConsoleProcessList: () =>
+          new Promise<number[]>((resolve) => setTimeout(() => resolve([4242]), 5_000)),
+      };
+      const pty = { _agent: agent } as unknown as Parameters<typeof guardWindowsKill>[0];
+      guardWindowsKill(pty, "win32");
+      const failed = agent._getConsoleProcessList();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await failed).toEqual([]);
+
+      // A helper that answered keeps its answer.
+      const quick = { _getConsoleProcessList: () => Promise.resolve([7, 8]) };
+      guardWindowsKill({ _agent: quick } as unknown as Parameters<typeof guardWindowsKill>[0], "win32");
+      expect(await quick._getConsoleProcessList()).toEqual([7, 8]);
+
+      // Elsewhere nothing is touched.
+      const other = { _getConsoleProcessList: () => Promise.resolve([1]) };
+      const before = other._getConsoleProcessList;
+      guardWindowsKill({ _agent: other } as unknown as Parameters<typeof guardWindowsKill>[0], "linux");
+      expect(other._getConsoleProcessList).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
