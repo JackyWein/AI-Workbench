@@ -174,6 +174,39 @@ export function tightestLimit(
 }
 
 /**
+ * Every account the Usage screen lists: installed and switched on, whether or
+ * not its tool reports usage — one that does not is shown as such rather
+ * than left out. The simulated provider only appears in developer mode.
+ */
+export function usageAccounts(
+  providers: readonly ProviderSummary[],
+  developerMode: boolean,
+): Array<{ readonly provider: ProviderSummary; readonly reports: boolean }> {
+  return providers
+    .filter(
+      (provider) =>
+        provider.enabled &&
+        provider.installation.state === "installed" &&
+        (developerMode || provider.metadata.transportTypes.some((type) => type !== "in-process")),
+    )
+    .map((provider) => ({ provider, reports: provider.capabilities.supported.includes("usage") }));
+}
+
+/** Where a snapshot's numbers came from, in words. */
+export function usageSourceLabel(source: ProviderUsageSnapshot["source"]): string {
+  switch (source) {
+    case "provider":
+      return "Reported by the tool";
+    case "cli":
+      return "Read from the tool's command";
+    case "api":
+      return "From the provider's service";
+    case "estimated":
+      return "Estimated";
+  }
+}
+
+/**
  * Providers whose usage is worth showing: installed, visible, and able to
  * report usage. The simulated provider only appears in developer mode.
  */

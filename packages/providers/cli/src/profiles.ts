@@ -226,6 +226,16 @@ export const geminiProfile: CliProviderProfileInput = {
     "mcp",
   ],
   // Servers reach it through a settings layer of its own (Gemini package).
+  // Checked against Gemini CLI 0.61 on 2026-09-25: GEMINI_CLI_HOME is the
+  // folder it keeps .gemini in — settings and sign-in — and two such folders
+  // gave two separate settings files (`gemini mcp list`).
+  accounts: {
+    homeVariable: "GEMINI_CLI_HOME",
+    defaultHome: "~",
+    detect: [],
+    markers: [".gemini/oauth_creds.json", ".gemini/google_accounts.json"],
+    loginArgs: [],
+  },
   mcp: { via: "extension" },
   // The tool has no command that lists models, but it names its own aliases
   // and resolves them to whatever models are current (GEMINI_MODEL_ALIAS_* in
@@ -305,6 +315,16 @@ export const opencodeProfile: CliProviderProfileInput = {
     probeArgs: ["auth", "list"],
     authenticatedPattern: "stored",
     loginHint: "Run `opencode auth login` once in a terminal.",
+  },
+  // Checked against OpenCode 1.18.32 on 2026-09-25: its sign-ins live in
+  // auth.json under XDG_DATA_HOME, and two data folders listed two separate
+  // sets of credentials (`opencode auth list`). Settings stay shared.
+  accounts: {
+    homeVariable: "XDG_DATA_HOME",
+    defaultHome: "~/.local/share",
+    detect: [],
+    markers: ["opencode/auth.json"],
+    loginArgs: ["auth", "login"],
   },
   capabilities: [
     "chat",

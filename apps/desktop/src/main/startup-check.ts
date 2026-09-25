@@ -651,6 +651,69 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // Gemini CLI and OpenCode keep accounts side by side too, each its own
+  // entry; the model menu names each account with its tightest reported
+  // window, and the Usage screen says where each number came from.
+  await check(
+    "Gemini CLI and OpenCode hold further accounts; the menu and Usage show each with its limits",
+    `(async () => {
+       const api = window.workbench;
+       const added = [];
+       let flipped = false;
+       const open = async (name) => {
+         [...document.querySelectorAll('.sidebar__foot .row')].find(row => row.textContent?.includes(name))?.click();
+         await new Promise(resolve => setTimeout(resolve, 300));
+       };
+       try {
+         for (const family of ['gemini', 'opencode']) {
+           added.push(await api.invoke('account.add', { family, label: 'Check ' + family }));
+         }
+         const list = await api.invoke('provider.list', undefined);
+         for (const account of added) {
+           if (!list.some(entry => entry.metadata.account?.label === account.label)) return 'no entry for ' + account.label;
+         }
+         // The simulated tool's card only shows in developer mode; the window
+         // loaded its settings at start, so the switch is flipped where a
+         // person would flip it.
+         await open('Settings');
+         [...document.querySelectorAll('.setting-disclosure')].find(node => node.textContent?.includes('Advanced'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 200));
+         const developer = document.querySelector('input[role="switch"][aria-label="Developer mode"]');
+         if (developer && !developer.checked) {
+           developer.click();
+           flipped = true;
+         }
+         await new Promise(resolve => setTimeout(resolve, 300));
+         // The Usage screen: every number says where it came from and how old it is.
+         await open('Usage');
+         const shown = await ${waitFor("[...document.querySelectorAll('.usage-card')].some(card => card.textContent?.includes('Mock') && card.querySelector('.usage-card__source')?.textContent?.startsWith('Reported by the tool'))", 5000)};
+         if (!shown) return 'the Usage screen does not say where the numbers came from';
+         // The model menu: the account's tightest window next to its name.
+         [...document.querySelectorAll('.sidebar__scroll .row')].find(node => node.textContent?.includes('Check session'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 400));
+         document.querySelector('.composer .popover > .pill')?.click();
+         const usage = await ${waitFor("[...document.querySelectorAll('.picker__head')].some(head => head.textContent?.includes('Mock') && /^\\d+%$/.test(head.querySelector('.picker__usage')?.textContent ?? ''))", 4000)};
+         document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+         return usage || 'the menu does not show the tightest window';
+       } finally {
+         for (const account of added) {
+           await api.invoke('account.remove', { id: account.id }).catch(() => {});
+         }
+         if (flipped) {
+           // Back to how the window had it; the stored setting stays on for
+           // the island checks that still follow.
+           await open('Settings');
+           [...document.querySelectorAll('.setting-disclosure')].find(node => node.textContent?.includes('Advanced'))?.click();
+           await new Promise(resolve => setTimeout(resolve, 200));
+           document.querySelector('input[role="switch"][aria-label="Developer mode"]')?.click();
+           await new Promise(resolve => setTimeout(resolve, 200));
+           await api.invoke('settings.update', { developerMode: true });
+         }
+       }
+     })()`,
+    30_000,
+  );
+
   await check(
     "a delete control sits on the row it deletes",
     `(async () => {
@@ -3111,6 +3174,17 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
       }
       throw new Error("the question stayed on the island");
     });
+
+    // A tool that reports no usage is listed and says so, rather than left out.
+    await check(
+      "a tool that reports no usage is listed as not reporting it",
+      `(async () => {
+         [...document.querySelectorAll('.sidebar__foot .row')].find(row => row.textContent?.includes('Usage'))?.click();
+         const listed = await ${waitFor("[...document.querySelectorAll('.usage-card[data-reports=\"false\"]')].some(card => card.textContent?.includes('Antigravity') && card.textContent?.includes('Not reported by this tool'))", 5000)};
+         return listed || 'cards: ' + [...document.querySelectorAll('.usage-card')].map(card => card.getAttribute('aria-label') + '/' + card.dataset.reports).join(', ')
+           + ' | antigravity: ' + JSON.stringify((await window.workbench.invoke('provider.list', undefined)).filter(entry => entry.metadata.id.startsWith('antigravity')).map(entry => [entry.metadata.id, entry.enabled, entry.installation.state]));
+       })()`,
+    );
 
     await check(
       "the stand-in for Antigravity is removed again",

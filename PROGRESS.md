@@ -409,10 +409,10 @@ follows when all goals are done.
 Also: a window can never attach a stored secret to a server by its reference — it only names the secrets a server already has (core test). Not covered: a rotated secret value is not detected as a change, because no fingerprint of a secret is kept.
 
 ### F3 — Accounts for every tool, and their limits (FutureFeatures 3)
-- [ ] Gemini CLI and OpenCode can hold several accounts, each run with its own home, the mechanism checked against the tool itself (profile tests, tool check here)
-- [ ] Antigravity accounts follow the same pattern, marked unverified until run against the tool
-- [ ] The Usage screen shows one row per account with every reported window, where it came from and how old it is, and "not reported by this tool" otherwise (startup check)
-- [ ] The model menu lists a tool's accounts with their tightest window (startup check)
+- [x] Gemini CLI and OpenCode can hold several accounts, each run with its own home, the mechanism checked against the tool itself (profile tests, tool check here) — Gemini CLI 0.61.0 reads everything from `GEMINI_CLI_HOME/.gemini`, OpenCode 1.18.32 keeps its sign-ins in `XDG_DATA_HOME/opencode/auth.json`; both checked here by running the tools with a separate home, the adapter test proves each account's run gets its own, and the startup check adds and removes an account of each
+- [ ] Antigravity accounts follow the same pattern, marked unverified until run against the tool — not done: `agy` can neither be installed nor its documentation reached from here, so where it keeps a sign-in is unknown and no account mechanism is claimed for it
+- [x] The Usage screen shows one row per account with every reported window, where it came from and how old it is, and "not reported by this tool" otherwise (startup check) — each card names its account, says "Reported by the tool" / "Read from the tool's command" / "From the provider's service" with the report's age; a tool without usage (the Antigravity stand-in) is listed as not reporting it
+- [x] The model menu lists a tool's accounts with their tightest window (startup check) — each account's heading in the menu carries its tightest reported window in percent, toned at 80 % and 100 %
 
 ### F4 — Switch account at a limit and keep the chat (FutureFeatures 1)
 - [ ] A setting decides what happens at a limit: switch, ask or stop (startup check)

@@ -3,7 +3,8 @@ import { Check, ChevronRight } from "lucide-react";
 import type { ModelInfo } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
 import { effortLabel, reasoningEffortsFor } from "../lib/reasoning-effort.js";
-import { isPickableProvider } from "../lib/provider-label.js";
+import { isPickableProvider, providerLabel } from "../lib/provider-label.js";
+import { tightestLimit, useNow } from "../lib/usage.js";
 import { usePanelFit } from "../lib/panel-fit.js";
 
 /**
@@ -34,6 +35,8 @@ export function ModelPicker(): JSX.Element {
   const sessions = useWorkbench((state) => state.sessions);
   const activeSessionId = useWorkbench((state) => state.activeSessionId);
   const providers = useWorkbench((state) => state.providers);
+  const usage = useWorkbench((state) => state.usage);
+  const now = useNow(60_000);
   const teams = useWorkbench((state) => state.teams);
   const teamRuns = useWorkbench((state) => state.teamRuns);
   const updateSession = useWorkbench((state) => state.updateSession);
@@ -293,10 +296,11 @@ export function ModelPicker(): JSX.Element {
                       }
                     >
                       <ChevronRight className="picker__chevron" size={13} aria-hidden="true" />
-                      <span className="picker__name">{entry.metadata.displayName}</span>
+                      <span className="picker__name">{providerLabel(entry)}</span>
                       <span className="picker__meta">
                         {currentModel ?? `${entry.models.length} model${entry.models.length === 1 ? "" : "s"}`}
                       </span>
+                      <AccountUsage providerId={id} usage={usage} now={now} />
                     </button>
                     {isOpen ? (
                       <div className="picker__models">
@@ -347,5 +351,33 @@ export function ModelPicker(): JSX.Element {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * How much of its tightest window an account has used, as its tool reported
+ * it — nothing when the tool reported none, never a guess.
+ */
+function AccountUsage({
+  providerId,
+  usage,
+  now,
+}: {
+  readonly providerId: string;
+  readonly usage: Parameters<typeof tightestLimit>[0];
+  readonly now: number;
+}): JSX.Element | null {
+  const tightest = tightestLimit(usage, new Set([providerId]), now);
+  if (!tightest) {
+    return null;
+  }
+  return (
+    <span
+      className="picker__usage"
+      data-tone={tightest.percentUsed >= 90 ? "danger" : tightest.percentUsed >= 70 ? "warning" : undefined}
+      title={`${tightest.limit.label}: ${tightest.percentUsed}% used`}
+    >
+      {tightest.percentUsed}%
+    </span>
   );
 }

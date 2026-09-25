@@ -12,7 +12,13 @@ import { mentionPath } from "../invocation.js";
 import { parseModelLines } from "../models.js";
 import { parseOpencodeStatsUsage } from "../usage.js";
 import { parseProfile, readPath, substitute, type CliProviderProfileInput } from "../profile.js";
-import { antigravityProfile, builtInCliProfiles, claudeCodeProfile } from "../profiles.js";
+import {
+  antigravityProfile,
+  builtInCliProfiles,
+  claudeCodeProfile,
+  geminiProfile,
+  opencodeProfile,
+} from "../profiles.js";
 
 const fixtures = join(
   import.meta.dirname,
@@ -741,6 +747,48 @@ describe("argument assembly", () => {
     );
     expect(flagged).toContain("--system");
     expect(flagged.at(-1)).toBe("the prompt");
+  });
+});
+
+describe("accounts of a tool", () => {
+  it("runs each Gemini CLI and OpenCode account with its own home, the one the tool reads", async () => {
+    // Prints the variable the profile names, the way the tool would read it.
+    const script = join(tmpdir(), `ai-workbench-account-env-${process.pid}.cjs`);
+    const { writeFile, rm } = await import("node:fs/promises");
+    await writeFile(script, "process.stdout.write(String(process.env[process.argv[2]] ?? 'unset'));");
+    try {
+      for (const tool of [geminiProfile, opencodeProfile]) {
+        const accounts = tool.accounts;
+        expect(accounts).toBeDefined();
+        const variable = accounts?.homeVariable ?? "";
+        const profile = parseProfile({
+          schemaVersion: 1,
+          id: `fixture-${tool.id}`,
+          displayName: "Fixture",
+          command: "node",
+          auth: { method: "none" },
+          capabilities: ["chat"],
+          args: [variable],
+          promptVia: "stdin",
+          output: { format: "text" },
+          ...(accounts ? { accounts } : {}),
+        });
+        const home = join(tmpdir(), `${tool.id}-work-account`);
+        const adapter = new CliProviderAdapter(profile, { account: { id: "work", label: "Work", home } });
+        await adapter.initialize(contextFor(script));
+        await adapter.createSession({ sessionId: "s1", workingDirectory: process.cwd() });
+        const events = await collect(adapter.sendMessage({ sessionId: "s1", providerSessionId: "pending:s1" }, { text: "hi" }));
+        expect(textOf(events).trim()).toBe(home);
+      }
+    } finally {
+      await rm(script, { force: true });
+    }
+    // What the tools were checked against: Gemini CLI keeps .gemini in
+    // GEMINI_CLI_HOME, OpenCode its sign-ins in XDG_DATA_HOME/opencode.
+    expect(geminiProfile.accounts?.homeVariable).toBe("GEMINI_CLI_HOME");
+    expect(geminiProfile.accounts?.markers).toContain(".gemini/oauth_creds.json");
+    expect(opencodeProfile.accounts?.homeVariable).toBe("XDG_DATA_HOME");
+    expect(opencodeProfile.accounts?.markers).toEqual(["opencode/auth.json"]);
   });
 });
 

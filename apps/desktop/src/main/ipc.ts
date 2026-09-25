@@ -328,10 +328,11 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
         toProviderConfigOverrides(config),
       );
       services.providers.setProviderEnabled(input.providerId, config.enabled);
-      return {
-        config,
-        summary: await services.providers.describe(input.providerId),
-      };
+      const summary = await services.providers.describe(input.providerId);
+      // Every window learns it, not only the screen that saved it: a path
+      // set or cleared changes whether the tool shows in Usage or the menu.
+      services.events.publish({ type: "provider.updated", summary });
+      return { config, summary };
     },
     "provider.rescanModels": async (input) => {
       const adapter = services.providers.get(input.providerId);

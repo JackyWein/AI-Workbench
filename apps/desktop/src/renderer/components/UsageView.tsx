@@ -15,7 +15,8 @@ import {
   hasReset,
   meterTone,
   snapshotOf,
-  usageProviders,
+  usageAccounts,
+  usageSourceLabel,
   useNow,
   usedPercent,
 } from "../lib/usage.js";
@@ -37,7 +38,7 @@ export function UsageView(): JSX.Element {
   const now = useNow(1000);
   const [refreshing, setRefreshing] = useState(false);
 
-  const shown = useMemo(() => usageProviders(providers, developerMode), [providers, developerMode]);
+  const shown = useMemo(() => usageAccounts(providers, developerMode), [providers, developerMode]);
   const running = useMemo(
     () =>
       Object.values(agentTerminals)
@@ -97,16 +98,15 @@ export function UsageView(): JSX.Element {
         </header>
 
         {shown.length === 0 ? (
-          <p className="view__empty">
-            No installed tool reports usage. Install one under Providers.
-          </p>
+          <p className="view__empty">No tool is installed yet. Install one under Providers.</p>
         ) : (
           <div className="usage-grid">
-            {shown.map((provider) => (
+            {shown.map(({ provider, reports }) => (
               <UsageCard
                 key={provider.metadata.id}
                 provider={provider}
-                snapshot={snapshotOf(usage, provider.metadata.id)}
+                reports={reports}
+                snapshot={reports ? snapshotOf(usage, provider.metadata.id) : null}
                 now={now}
               />
             ))}
@@ -135,10 +135,13 @@ export function UsageView(): JSX.Element {
 
 function UsageCard({
   provider,
+  reports,
   snapshot,
   now,
 }: {
   readonly provider: ProviderSummary;
+  /** Whether the tool reports usage at all. */
+  readonly reports: boolean;
   readonly snapshot: ProviderUsageSnapshot | null;
   readonly now: number;
 }): JSX.Element {
@@ -149,7 +152,11 @@ function UsageCard({
   const account = provider.metadata.account?.label;
 
   return (
-    <article className="usage-card" aria-label={`${provider.metadata.displayName} usage`}>
+    <article
+      className="usage-card"
+      aria-label={`${provider.metadata.displayName}${account ? ` · ${account}` : ""} usage`}
+      data-reports={reports}
+    >
       <header className="usage-card__head">
         <span className="logo-well" aria-hidden="true">
           <Logo name={provider.metadata.icon} label={provider.metadata.displayName} size={16} />
@@ -162,13 +169,15 @@ function UsageCard({
           {plan ? <span className="usage-card__plan">{capitalize(plan)}</span> : null}
         </span>
         {snapshot ? (
-          <time
-            className="usage-card__age"
-            dateTime={snapshot.updatedAt.toISOString()}
-            title={`Reported ${snapshot.updatedAt.toLocaleString()}`}
-          >
-            {formatAge(snapshot.updatedAt, now)}
-          </time>
+          <span className="usage-card__age">
+            <span className="usage-card__source">{usageSourceLabel(snapshot.source)} · </span>
+            <time
+              dateTime={snapshot.updatedAt.toISOString()}
+              title={`Reported ${snapshot.updatedAt.toLocaleString()}`}
+            >
+              {formatAge(snapshot.updatedAt, now)}
+            </time>
+          </span>
         ) : null}
       </header>
 
@@ -196,7 +205,9 @@ function UsageCard({
         </>
       ) : null}
 
-      {limits.length === 0 ? (
+      {!reports ? (
+        <p className="usage-card__empty">Not reported by this tool.</p>
+      ) : limits.length === 0 ? (
         <p className="usage-card__empty">{snapshot?.note ?? "Not reported yet."}</p>
       ) : snapshot?.note ? (
         <p className="usage-card__note">{snapshot.note}</p>
