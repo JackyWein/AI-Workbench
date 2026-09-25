@@ -27,6 +27,8 @@ async function repository(path: string): Promise<void> {
   git(path, "config", "user.name", "Check");
   git(path, "config", "user.email", "check@example.invalid");
   git(path, "config", "commit.gpgsign", "false");
+  // Files stay as written, whatever the machine's own line-ending setting.
+  git(path, "config", "core.autocrlf", "false");
 }
 
 describe("source control against a remote", () => {

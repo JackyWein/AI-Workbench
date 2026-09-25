@@ -29,6 +29,7 @@ describe("source control for a session's folder", () => {
     git(work, "config", "user.name", "Check");
     git(work, "config", "user.email", "check@example.invalid");
     git(work, "config", "commit.gpgsign", "false");
+    git(work, "config", "core.autocrlf", "false");
     const logger = createNullLogger();
     providers = new ProviderManager({ logger, stateDirectory: join(root, "providers") });
     await providers.register(new MockProviderAdapter({ chunkDelayMs: 0, startupDelayMs: 0 }));

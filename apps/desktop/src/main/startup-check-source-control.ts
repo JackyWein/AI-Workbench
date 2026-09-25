@@ -75,6 +75,7 @@ async function repository(path: string): Promise<void> {
   await git(path, "config", "user.name", "Startup check");
   await git(path, "config", "user.email", "check@example.invalid");
   await git(path, "config", "commit.gpgsign", "false");
+  await git(path, "config", "core.autocrlf", "false");
 }
 
 /**
