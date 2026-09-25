@@ -5,7 +5,8 @@ import { execCli, findExecutable } from "@ai-workbench/transport-cli";
 import type { McpServerConfig } from "@ai-workbench/shared";
 
 /** Antigravity reads its global MCP file, including for runs outside Workbench. */
-const SERVER_NAME = "ai-workbench-obsidian-memory";
+export const ANTIGRAVITY_MEMORY_SERVER_NAME = "ai-workbench-obsidian-memory";
+const SERVER_NAME = ANTIGRAVITY_MEMORY_SERVER_NAME;
 const OWNER_MARKER = "AI_WORKBENCH_OBSIDIAN_MEMORY";
 
 export type AntigravityMemoryState = "configured" | "unavailable" | "conflict" | "not-configured" | "error";

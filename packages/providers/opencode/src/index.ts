@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -14,8 +15,10 @@ import {
   type CliInteractiveRun,
   type CliInteractiveTelemetry,
   type CliProviderExtensions,
+  parseJsonWithComments,
+  readOpenCodeMcpServers,
 } from "@ai-workbench/provider-cli";
-import type { ProviderFactory } from "@ai-workbench/provider-base";
+import type { ImportableMcpServer, ProviderFactory } from "@ai-workbench/provider-base";
 import type {
   ModelInfo,
   ProviderUsageSnapshot,
@@ -430,7 +433,16 @@ export const opencodeExtensions: CliProviderExtensions = {
             ]
           : []),
       ]),
-      mcpServers: [],
+      mcpServers: [
+        ...(await readOpenCodeConfig(join(config, "opencode.json"), "OpenCode · your servers")),
+        ...(await readOpenCodeConfig(join(config, "opencode.jsonc"), "OpenCode · your servers")),
+        ...(request.workspacePath
+          ? [
+              ...(await readOpenCodeConfig(join(request.workspacePath, "opencode.json"), "OpenCode · this project")),
+              ...(await readOpenCodeConfig(join(request.workspacePath, "opencode.jsonc"), "OpenCode · this project")),
+            ]
+          : []),
+      ],
     };
   },
   mcpLaunch: (servers) => opencodeMcpLaunch(servers),
@@ -439,6 +451,15 @@ export const opencodeExtensions: CliProviderExtensions = {
   interactiveTelemetry,
   parseLine: parseOpencodeLine,
 };
+
+/** The MCP servers of one OpenCode configuration file; none when it is missing. */
+async function readOpenCodeConfig(path: string, source: string): Promise<ImportableMcpServer[]> {
+  try {
+    return readOpenCodeMcpServers(parseJsonWithComments(await readFile(path, "utf8")), source);
+  } catch {
+    return [];
+  }
+}
 
 export function opencodeFactory(): ProviderFactory {
   return cliProviderFactory(parseProfile(opencodeProfile), opencodeExtensions);

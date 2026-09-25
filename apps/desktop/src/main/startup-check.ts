@@ -1053,7 +1053,9 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
     reply({ protocolVersion: message.params.protocolVersion, capabilities: { tools: {} },
       serverInfo: { name: "check-tool-server", version: "1.0.0" } });
   } else if (message.method === "tools/list") {
-    reply({ tools: [{ name: "check_lookup", description: "Looks something up for the startup check",
+    // Its tool's name says whether the secret variable reached the process.
+    const keyed = process.env.CHECK_API_TOKEN === "check-secret-value" ? "_with_token" : "_without_token";
+    reply({ tools: [{ name: "check_lookup" + keyed, description: "Looks something up for the startup check",
       inputSchema: { type: "object", properties: {} } }] });
   } else if (message.method === "tools/call") {
     reply({ content: [{ type: "text", text: "looked up" }] });
@@ -1070,7 +1072,7 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
         "check-tool-server": {
           command: process.execPath,
           args: [toolServer],
-          env: { ELECTRON_RUN_AS_NODE: "1" },
+          env: { ELECTRON_RUN_AS_NODE: "1", CHECK_API_TOKEN: "check-secret-value" },
         },
       },
     }),
@@ -1088,12 +1090,20 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
        if (!server) return 'not imported: ' + JSON.stringify(result.failed);
        window.__checkImportedServerId = server.id;
        if (server.availability !== 'everywhere' || !server.enabled) return 'imported for ' + server.availability;
+       // The secret variable went into secure storage: named, never shown.
+       if (!server.secretEnv?.CHECK_API_TOKEN) return 'the secret was not kept securely: ' + JSON.stringify(server.secretEnv);
+       if ('CHECK_API_TOKEN' in server.env) return 'the secret was saved as a plain variable';
+       const everything = JSON.stringify([result, await api.invoke('mcp.list', undefined), await api.invoke('mcp.discover', { workspaceId })]);
+       if (everything.includes('check-secret-value')) return 'the window received the secret';
 
-       // It is up, and so is the built-in skills server.
+       // It is up — started with the secret — and so is the built-in skills server.
        const statuses = await api.invoke('mcp.statuses', undefined);
        const imported = statuses.find(status => status.id === server.id);
        const skills = statuses.find(status => status.id === 'ai-workbench-skills');
        if (imported?.state !== 'connected') return 'the imported server is ' + imported?.state + ': ' + imported?.detail;
+       if (!imported.tools.some(tool => tool.name === 'check_lookup_with_token')) {
+         return 'the server did not get its secret: ' + imported.tools.map(tool => tool.name).join(', ');
+       }
        if (skills?.state !== 'connected') return 'the skills server is ' + skills?.state + ': ' + skills?.detail;
        if (!skills.tools?.some(tool => tool.name === 'skill_read')) return 'the skills server offers no skill_read';
 
@@ -1110,7 +1120,8 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
            const messages = await api.invoke('message.list', { sessionId: session.id });
            reply = messages.find(message => message.role === 'assistant' && (message.content ?? '').includes('Tools available'))?.content ?? '';
          }
-         if (!reply.includes('check_lookup')) return 'the session did not get the imported tool: ' + reply.slice(-300);
+         if (!reply.includes('check_lookup_with_token')) return 'the session did not get the imported tool: ' + reply.slice(-300);
+         if (reply.includes('check-secret-value')) return 'the session was handed the secret';
          if (!reply.includes('skill_read')) return 'the session did not get the skills: ' + reply.slice(-300);
          return true;
        } finally {
@@ -1118,6 +1129,41 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
        }
      })()`,
     40_000,
+  );
+
+  // The tool's configuration changes: the import offers the update, and
+  // taken into this workspace only, the same server is updated in place.
+  await writeFile(
+    join(workspaceDirectory, ".mcp.json"),
+    JSON.stringify({
+      mcpServers: {
+        "check-tool-server": {
+          command: process.execPath,
+          args: [toolServer],
+          env: { ELECTRON_RUN_AS_NODE: "1", CHECK_API_TOKEN: "check-secret-value", CHECK_MODE: "changed" },
+        },
+      },
+    }),
+  );
+  await check(
+    "a server changed at its source is offered as an update, and can be kept to one workspace",
+    `(async () => {
+       const api = window.workbench;
+       const workspaceId = window.__checkWorkspaceId;
+       const id = window.__checkImportedServerId;
+       const found = (await api.invoke('mcp.discover', { workspaceId })).find(entry => entry.name === 'check-tool-server');
+       if (!found) return 'the server is no longer offered';
+       if (!found.imported || !found.changed) return 'the change is not offered: ' + JSON.stringify({ imported: found.imported, changed: found.changed });
+       const result = await api.invoke('mcp.importDiscovered', { keys: [found.key], workspaceId, scope: 'workspace' });
+       const server = result.imported[0];
+       if (!server) return 'not updated: ' + JSON.stringify(result.failed);
+       if (server.id !== id) return 'imported again as ' + server.id + ' instead of updating ' + id;
+       if (server.env.CHECK_MODE !== 'changed') return 'the change was not taken over';
+       if (server.availability !== 'workspaces' || server.workspaceIds.join() !== workspaceId) return 'not kept to the workspace';
+       const again = (await api.invoke('mcp.discover', { workspaceId })).find(entry => entry.name === 'check-tool-server');
+       return again?.changed === false || 'still offered as changed';
+     })()`,
+    30_000,
   );
 
   // A team member gets its skills too — here on a tool without MCP, so they

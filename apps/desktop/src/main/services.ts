@@ -25,6 +25,7 @@ import { ClaudeSkillImporter, MarkdownSkillImporter } from "@ai-workbench/skills
 import { createDatabase, runMigrations, type DatabaseHandle } from "@ai-workbench/database";
 import {
   AntigravityMemoryBridge,
+  antigravityExtensions,
   antigravityProfile,
   cliProviderFactory,
   parseProfile,
@@ -243,7 +244,7 @@ async function createServicesInner(
   const cliFactories = [
     claudeCodeFactory(),
     codexFactory(),
-    cliProviderFactory(parseProfile(antigravityProfile)),
+    cliProviderFactory(parseProfile(antigravityProfile), antigravityExtensions),
     geminiFactory(),
     opencodeFactory(),
   ];

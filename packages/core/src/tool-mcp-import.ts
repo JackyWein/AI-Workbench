@@ -28,6 +28,12 @@ const SECRET_FLAG = /^--?[\w-]*(key|token|secret|password|auth)[\w-]*$/i;
 export async function discoverToolMcpServers(
   providers: ProviderManager,
   workspacePath: string | undefined,
+  /** Servers other applications keep (editors that are not tools here), by application. */
+  apps: ReadonlyArray<{
+    readonly appId: string;
+    readonly appName: string;
+    readonly servers: readonly ImportableMcpServer[];
+  }> = [],
 ): Promise<ToolMcpFinding[]> {
   const found = new Map<string, ToolMcpFinding>();
   for (const summary of await providers.describeAll()) {
@@ -51,6 +57,21 @@ export async function discoverToolMcpServers(
       });
     }
   }
+  for (const app of apps) {
+    const providerId = `app:${app.appId}`;
+    for (const server of app.servers) {
+      const name = server.name.trim().toLowerCase();
+      if (found.has(name)) {
+        continue;
+      }
+      found.set(name, {
+        key: findingKey(providerId, server),
+        server,
+        providerId,
+        providerName: app.appName,
+      });
+    }
+  }
   return [...found.values()];
 }
 
@@ -62,6 +83,7 @@ export function describeFinding(
   const { server } = finding;
   const names = new Set(existing.map((config) => config.name.trim().toLowerCase()));
   const ids = new Set(existing.map((config) => config.id));
+  const same = importedFrom(finding, existing);
   return {
     key: finding.key,
     name: server.name,
@@ -76,30 +98,78 @@ export function describeFinding(
       ...Object.keys(server.env).filter((name) => SECRET_NAME.test(name)),
       ...Object.keys(server.headers),
     ],
-    imported: names.has(server.name.trim().toLowerCase()) || ids.has(serverId(server.name)),
+    imported: Boolean(same) || names.has(server.name.trim().toLowerCase()) || ids.has(serverId(server.name)),
+    changed: Boolean(same && same.origin?.fingerprint !== fingerprintOf(server)),
   };
 }
 
+/** The server imported from this finding before, when there is one. */
+export function importedFrom(
+  finding: ToolMcpFinding,
+  existing: readonly McpServerConfig[],
+): McpServerConfig | undefined {
+  return existing.find((config) => config.origin?.key === finding.key);
+}
+
 /**
- * The server as the application saves it. A remote server's key header
- * becomes a stored key (encrypted by the credential store on save); an
- * environment variable that holds a secret is not carried over in plain text
- * — it is named in the notes so the person can set it, rather than silently
- * written to the database.
+ * What a server looked like at its source: everything that decides how it
+ * runs, with the names of its secrets but never their values.
+ */
+export function fingerprintOf(server: ImportableMcpServer): string {
+  const plainEnv = Object.entries(server.env)
+    .filter(([name]) => !SECRET_NAME.test(name))
+    .sort(([left], [right]) => left.localeCompare(right));
+  return createHash("sha256")
+    .update(
+      JSON.stringify([
+        server.transport,
+        server.command ?? "",
+        redactArgs(server.args),
+        server.url ?? "",
+        server.cwd ?? "",
+        plainEnv,
+        Object.keys(server.env).filter((name) => SECRET_NAME.test(name)).sort(),
+        Object.keys(server.headers).sort(),
+      ]),
+    )
+    .digest("hex")
+    .slice(0, 32);
+}
+
+/**
+ * The server as the application saves it:
+ * - a variable that holds a secret moves into secure storage (`secrets`),
+ *   never into the database;
+ * - a remote server's key header becomes its stored key;
+ * - a secret passed as an argument cannot be moved and is left out, named in
+ *   the notes so the person can set it.
+ * Imported again, it keeps its id and is updated in place.
  */
 export function toSaveInput(
   finding: ToolMcpFinding,
   takenIds: ReadonlySet<string>,
-): { input: McpServerSaveInput; notes: string[] } {
+  options: { readonly existingId?: string; readonly workspaceId?: string } = {},
+): {
+  input: McpServerSaveInput;
+  secrets: Record<string, string>;
+  origin: { key: string; source: string; fingerprint: string };
+  notes: string[];
+} {
   const { server } = finding;
   const notes: string[] = [];
-  const id = uniqueId(serverId(server.name), takenIds);
+  const id = options.existingId ?? uniqueId(serverId(server.name), takenIds);
+  const where = options.workspaceId
+    ? { availability: "workspaces" as const, workspaceIds: [options.workspaceId] }
+    : { availability: "everywhere" as const, workspaceIds: [] };
+  const origin = { key: finding.key, source: server.source, fingerprint: fingerprintOf(server) };
 
   if (server.transport === "stdio") {
     const env: Record<string, string> = {};
+    const secrets: Record<string, string> = {};
     for (const [name, value] of Object.entries(server.env)) {
       if (SECRET_NAME.test(name)) {
-        notes.push(`${name} holds a secret and was not copied; set it in the server's settings.`);
+        secrets[name] = value;
+        notes.push(`${name} is kept in secure storage; tools reach this server through the application.`);
       } else {
         env[name] = value;
       }
@@ -120,8 +190,10 @@ export function toSaveInput(
         env,
         ...(server.cwd ? { cwd: server.cwd } : {}),
         enabled: true,
-        availability: "everywhere",
+        ...where,
       },
+      secrets,
+      origin,
       notes,
     };
   }
@@ -143,7 +215,7 @@ export function toSaveInput(
       args: [],
       env: {},
       enabled: true,
-      availability: "everywhere",
+      ...where,
       ...(key
         ? {
             apiKey: key[1],
@@ -151,6 +223,8 @@ export function toSaveInput(
           }
         : {}),
     },
+    secrets: {},
+    origin,
     notes,
   };
 }

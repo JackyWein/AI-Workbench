@@ -527,6 +527,8 @@ export const ipcContract = {
     input: z.object({
       keys: z.array(z.string().min(1)).min(1).max(100),
       workspaceId: z.string().min(1).optional(),
+      /** Everywhere, or only the workspace it is imported from. */
+      scope: z.enum(["everywhere", "workspace"]).default("everywhere"),
     }),
     output: z.object({
       imported: z.array(mcpServerConfigSchema),

@@ -5973,6 +5973,27 @@ button.sidebar__user[aria-current="true"] {
   font-size: 11px;
 }
 
+.connector-secrets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.connector-secrets li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.connector-secrets__name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
 .connector-workspaces {
   list-style: none;
   margin: 0 0 0 22px;

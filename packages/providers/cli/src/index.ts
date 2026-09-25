@@ -10,3 +10,5 @@ export * from "./factory.js";
 export * from "./antigravity-memory.js";
 export * from "./skills.js";
 export * from "./mcp-configs.js";
+export * from "./app-mcp-configs.js";
+export * from "./antigravity.js";

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { McpServerConfig } from "@ai-workbench/shared";
-import { describeFinding, serverId, toSaveInput, type ToolMcpFinding } from "../tool-mcp-import.js";
+import {
+  describeFinding,
+  fingerprintOf,
+  serverId,
+  toSaveInput,
+  type ToolMcpFinding,
+} from "../tool-mcp-import.js";
 
 const stitch: ToolMcpFinding = {
   key: "k1",
@@ -61,16 +67,42 @@ describe("importing MCP servers from the person's tools", () => {
     expect(notes).toEqual([]);
   });
 
-  it("keeps plain variables and names the secret ones instead of copying them", () => {
-    const { input, notes } = toSaveInput(roblox, new Set(["roblox-studio"]));
+  it("keeps plain variables and moves the secret ones to secure storage", () => {
+    const { input, secrets, notes } = toSaveInput(roblox, new Set(["roblox-studio"]));
     expect(input.id).toBe("roblox-studio-2");
+    // Only plain variables are saved with the server...
     expect(input.env).toEqual({ MODE: "studio" });
-    // A secret passed as an argument is left out the same way.
+    // ...the secret travels separately, for the credential store.
+    expect(secrets).toEqual({ ROBLOX_API_KEY: "hidden" });
+    // A secret passed as an argument cannot be moved; it is left out and named.
     expect(input.args).toEqual(["/c", "mcp.bat"]);
     expect(notes).toEqual([
-      "ROBLOX_API_KEY holds a secret and was not copied; set it in the server's settings.",
+      "ROBLOX_API_KEY is kept in secure storage; tools reach this server through the application.",
       "The argument --api-token holds a secret and was not copied; add it in the server's settings.",
     ]);
+  });
+
+  it("imports into this workspace only when asked, and updates a server imported before", () => {
+    const scoped = toSaveInput(roblox, new Set(), { workspaceId: "ws-1" });
+    expect(scoped.input).toMatchObject({ availability: "workspaces", workspaceIds: ["ws-1"] });
+    const again = toSaveInput(roblox, new Set(["roblox-studio"]), { existingId: "roblox-studio" });
+    expect(again.input.id).toBe("roblox-studio");
+    expect(again.origin).toEqual({ key: "k2", source: "Codex · config.toml", fingerprint: fingerprintOf(roblox.server) });
+  });
+
+  it("says when a server changed at its source since it was imported, never by its secret", () => {
+    const imported = {
+      id: "roblox-studio",
+      name: "Roblox_Studio",
+      origin: { key: "k2", source: "Codex · config.toml", fingerprint: fingerprintOf(roblox.server) },
+    } as McpServerConfig;
+    expect(describeFinding(roblox, [imported])).toMatchObject({ imported: true, changed: false });
+    // A new key value is not a change the window can see or be told about...
+    const rotated = { ...roblox, server: { ...roblox.server, env: { ...roblox.server.env, ROBLOX_API_KEY: "other" } } };
+    expect(describeFinding(rotated, [imported]).changed).toBe(false);
+    // ...a different command or variable is.
+    const moved = { ...roblox, server: { ...roblox.server, env: { MODE: "cloud", ROBLOX_API_KEY: "hidden" } } };
+    expect(describeFinding(moved, [imported]).changed).toBe(true);
   });
 
   it("makes ids from names", () => {

@@ -199,13 +199,18 @@ function ImportServersFromTools({ onDone }: { readonly onDone: () => void }): JS
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [notes, setNotes] = useState<string[]>([]);
+  const hasWorkspace = useWorkbench((state) => state.activeWorkspaceId !== null);
+  const [scope, setScope] = useState<"everywhere" | "workspace">("everywhere");
 
   useEffect(() => {
     let current = true;
     void discover().then((servers) => {
       if (current) {
         setFound(servers);
-        setChosen(new Set(servers.filter((server) => !server.imported).map((server) => server.key)));
+        // New servers and ones that changed at their source are offered.
+        setChosen(
+          new Set(servers.filter((server) => !server.imported || server.changed).map((server) => server.key)),
+        );
       }
     });
     return () => {
@@ -217,7 +222,7 @@ function ImportServersFromTools({ onDone }: { readonly onDone: () => void }): JS
     setBusy(true);
     setProblem(null);
     try {
-      const result = await importKeys([...chosen]);
+      const result = await importKeys([...chosen], scope);
       setNotes(result.notes);
       if (result.failed) {
         setProblem(result.failed);
@@ -251,8 +256,8 @@ function ImportServersFromTools({ onDone }: { readonly onDone: () => void }): JS
         <p className="setting__description">Looking…</p>
       ) : found.length === 0 ? (
         <p className="setting__description">
-          None of your tools has an MCP server configured. Claude Code keeps them in ~/.claude.json,
-          Codex in ~/.codex/config.toml, Gemini CLI in ~/.gemini/settings.json.
+          None of your tools has an MCP server configured. Looked in Claude Code, Claude Desktop, Codex,
+          Gemini CLI, OpenCode, Antigravity, Cursor, VS Code and Windsurf.
         </p>
       ) : (
         [...byTool.entries()].map(([tool, servers]) => (
@@ -262,8 +267,8 @@ function ImportServersFromTools({ onDone }: { readonly onDone: () => void }): JS
               <label className="radio-row" key={server.key} title={server.url ?? [server.command, ...server.args].join(" ")}>
                 <input
                   type="checkbox"
-                  disabled={server.imported}
-                  checked={server.imported || chosen.has(server.key)}
+                  disabled={server.imported && !server.changed}
+                  checked={(server.imported && !server.changed) || chosen.has(server.key)}
                   onChange={(event) => {
                     const next = new Set(chosen);
                     if (event.target.checked) {
@@ -276,7 +281,7 @@ function ImportServersFromTools({ onDone }: { readonly onDone: () => void }): JS
                 />
                 <span>
                   {server.name}
-                  {server.imported ? " · imported" : ""}
+                  {server.changed ? " · changed at its source — update" : server.imported ? " · imported" : ""}
                   <span className="field__description">
                     {server.url ?? [server.command, ...server.args].join(" ")}
                     {server.secretNames.length > 0 ? ` · key kept securely: ${server.secretNames.join(", ")}` : ""}
@@ -288,6 +293,19 @@ function ImportServersFromTools({ onDone }: { readonly onDone: () => void }): JS
           </div>
         ))
       )}
+      {found && found.length > 0 && hasWorkspace ? (
+        <div className="connector-panel__section" role="radiogroup" aria-label="Where the servers are used">
+          <p className="connector-panel__label">Use them</p>
+          <label className="radio-row">
+            <input type="radio" name="import-scope" checked={scope === "everywhere"} onChange={() => setScope("everywhere")} />
+            <span>Everywhere</span>
+          </label>
+          <label className="radio-row">
+            <input type="radio" name="import-scope" checked={scope === "workspace"} onChange={() => setScope("workspace")} />
+            <span>Only in this workspace</span>
+          </label>
+        </div>
+      ) : null}
       {problem ? (
         <p className="setting__description" data-tone="error" role="alert">
           {problem}
@@ -812,6 +830,32 @@ function ServerDetail({
         </div>
       ) : null}
 
+      {Object.keys(server.secretEnv).length > 0 ? (
+        <div className="connector-panel__section">
+          <p className="connector-panel__label">Kept in secure storage</p>
+          <ul className="connector-secrets">
+            {Object.keys(server.secretEnv).map((name) => (
+              <li key={name}>
+                <span className="connector-secrets__name">{name}</span>
+                <span className="field__description">set · never shown again</span>
+                <button
+                  type="button"
+                  className="link-button"
+                  onClick={() =>
+                    void update({ keepSecretEnv: Object.keys(server.secretEnv).filter((entry) => entry !== name) })
+                  }
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="field__description">
+            Tools reach this server through AI Workbench, so the values never go into their settings.
+          </p>
+        </div>
+      ) : null}
+
       <div className="connector-panel__section">
         <p className="connector-panel__label">Available in</p>
         <label className="radio-row">
@@ -965,6 +1009,7 @@ function CustomConnector({ onSaved }: { readonly onSaved: (id: string) => void }
   const [command, setCommand] = useState("");
   const [args, setArgs] = useState("");
   const [env, setEnv] = useState("");
+  const [secretEnv, setSecretEnv] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
 
@@ -984,13 +1029,16 @@ function CustomConnector({ onSaved }: { readonly onSaved: (id: string) => void }
     setBusy(true);
     setProblem(null);
     try {
-      const environment = Object.fromEntries(
-        env
-          .split("\n")
-          .map((line) => line.trim())
-          .filter((line) => line.includes("="))
-          .map((line) => [line.slice(0, line.indexOf("=")).trim(), line.slice(line.indexOf("=") + 1)]),
-      );
+      const pairs = (text: string): Record<string, string> =>
+        Object.fromEntries(
+          text
+            .split("\n")
+            .map((line) => line.trim())
+            .filter((line) => line.includes("="))
+            .map((line) => [line.slice(0, line.indexOf("=")).trim(), line.slice(line.indexOf("=") + 1)]),
+        );
+      const environment = pairs(env);
+      const secrets = pairs(secretEnv);
       const failed = await save(
         kind === "remote"
           ? {
@@ -1008,6 +1056,7 @@ function CustomConnector({ onSaved }: { readonly onSaved: (id: string) => void }
               command: command.trim(),
               args: args.split("\n").map((line) => line.trim()).filter(Boolean),
               env: environment,
+              ...(Object.keys(secrets).length > 0 ? { newSecretEnv: secrets } : {}),
             },
       );
       if (failed) {
@@ -1120,6 +1169,19 @@ function CustomConnector({ onSaved }: { readonly onSaved: (id: string) => void }
                 spellCheck={false}
                 value={env}
                 onChange={(event) => setEnv(event.target.value)}
+              />
+            </label>
+            <label className="stacked-field">
+              <span className="field__description">
+                Secrets, one NAME=value per line — kept in secure storage and never shown again
+              </span>
+              <textarea
+                className="text-input text-input--multiline"
+                rows={2}
+                spellCheck={false}
+                autoComplete="off"
+                value={secretEnv}
+                onChange={(event) => setSecretEnv(event.target.value)}
               />
             </label>
           </>

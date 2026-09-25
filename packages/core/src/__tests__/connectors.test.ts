@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirectory, removeTempDirectory } from "@ai-workbench/test-support";
@@ -21,10 +21,11 @@ const base = {
   enabled: true,
   availability: "everywhere" as const,
   workspaceIds: [],
+  secretEnv: {},
 };
 
 function server(id: string, extra: Partial<McpServerConfig> = {}): McpServerConfig {
-  return { id, name: id, transport: "stdio", command: "server", ...base, ...extra };
+  return { id, name: id, transport: "stdio", command: "server", ...base, ...extra, secretEnv: extra.secretEnv ?? {} };
 }
 
 describe("where a connector may be used", () => {
@@ -110,6 +111,77 @@ describe("connectors in sessions and terminal agents", () => {
     await mcp.manager.disconnectAll();
     database.close();
     await removeTempDirectory(directory);
+  });
+
+  it("keeps a secret variable in secure storage, starts the server with it, and never hands it out", async () => {
+    // A stdio server that answers whether it was given the variable.
+    const script = join(directory, "env-server.cjs");
+    await writeFile(
+      script,
+      [
+        'const send = (m) => process.stdout.write(JSON.stringify(m) + "\\n");',
+        'require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {',
+        "  let m; try { m = JSON.parse(line); } catch { return; }",
+        "  if (m.id === undefined) return;",
+        "  const reply = (result) => send({ jsonrpc: '2.0', id: m.id, result });",
+        "  if (m.method === 'initialize') reply({ protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'env', version: '1' } });",
+        "  else if (m.method === 'tools/list') reply({ tools: [{ name: 'has_key', description: 'Whether the key arrived', inputSchema: { type: 'object', properties: {} } }] });",
+        "  else if (m.method === 'tools/call') reply({ content: [{ type: 'text', text: process.env.SERVICE_API_KEY === 's3cret' ? 'yes' : 'no' }] });",
+        "  else reply({});",
+        "});",
+      ].join("\n"),
+    );
+    const saved = await mcp.saveFromWindow({
+      id: "keyed",
+      name: "Keyed",
+      transport: "stdio",
+      command: process.execPath,
+      args: [script],
+      env: { MODE: "plain" },
+      newSecretEnv: { SERVICE_API_KEY: "s3cret" },
+    });
+
+    // Stored as a reference; the value is nowhere in the configuration.
+    const reference = saved.secretEnv["SERVICE_API_KEY"];
+    expect(reference).toBeDefined();
+    expect(secrets.get(reference ?? "")).toBe("s3cret");
+    const listed = await mcp.list();
+    expect(JSON.stringify(listed)).not.toContain("s3cret");
+    expect(listed.find((entry) => entry.id === "keyed")?.env).toEqual({ MODE: "plain" });
+
+    // The application's own connection starts the process with the value.
+    const called = await mcp.manager.callTool("keyed", "has_key", {});
+    expect(JSON.stringify(called)).toContain("yes");
+
+    // A tool is handed the server through the gateway, never the command and value.
+    const access = await mcp.toolAccess(capabilities, ["keyed"]);
+    const handed = access?.mcpServers.find((entry) => entry.id === "keyed");
+    expect(handed?.transport).toBe("http");
+    expect(handed?.url).toContain("/mcp-all/");
+    expect(JSON.stringify(access)).not.toContain("s3cret");
+    expect(handed?.command).toBeUndefined();
+
+    // A window cannot point a server at a stored secret by its reference:
+    // it can only keep the ones the server has, by name.
+    const other = await mcp.saveFromWindow({
+      id: "thief",
+      name: "Thief",
+      transport: "stdio",
+      command: process.execPath,
+      args: [script],
+      env: {},
+      keepSecretEnv: ["SERVICE_API_KEY"],
+      secretEnv: { SERVICE_API_KEY: reference },
+    } as unknown as Parameters<McpService["saveFromWindow"]>[0]);
+    expect(other.secretEnv).toEqual({});
+
+    // Dropping the variable, or the server, forgets the secret.
+    await mcp.saveFromWindow({ ...saved, keepSecretEnv: [] });
+    expect(secrets.has(reference ?? "")).toBe(false);
+    const again = await mcp.saveFromWindow({ ...saved, newSecretEnv: { SERVICE_API_KEY: "s3cret" } });
+    const second = again.secretEnv["SERVICE_API_KEY"] ?? "";
+    await mcp.delete("keyed");
+    expect(secrets.has(second)).toBe(false);
   });
 
   it("is available in every session by default, and a session can switch it off", async () => {

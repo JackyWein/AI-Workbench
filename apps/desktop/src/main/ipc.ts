@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { inspectMemoryVault, openMemoryVault } from "@ai-workbench/mcp";
+import { discoverAppMcpServers } from "@ai-workbench/provider-cli";
 import {
   APP_EVENT_CHANNEL,
   TERMINAL_EVENT_CHANNEL,
@@ -18,6 +19,7 @@ import {
 import {
   describeFinding,
   discoverToolMcpServers,
+  importedFrom,
   draftSkill,
   inspectAttachments,
   removeWorkspace,
@@ -624,20 +626,24 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
 
     "mcp.list": () => services.mcp.list(),
     "mcp.discover": async (input) => {
+      const path = await localWorkspacePath(input.workspaceId);
       const [findings, existing] = await Promise.all([
-        discoverToolMcpServers(services.providers, await localWorkspacePath(input.workspaceId)),
+        discoverToolMcpServers(services.providers, path, await discoverAppMcpServers(path ? { workspacePath: path } : {})),
         services.mcp.list(),
       ]);
       return findings.map((finding) => describeFinding(finding, existing));
     },
     "mcp.importDiscovered": async (input) => {
       // Only servers the tools themselves name can be imported this way.
+      const path = await localWorkspacePath(input.workspaceId);
       const findings = await discoverToolMcpServers(
         services.providers,
-        await localWorkspacePath(input.workspaceId),
+        path,
+        await discoverAppMcpServers(path ? { workspacePath: path } : {}),
       );
       const byKey = new Map(findings.map((finding) => [finding.key, finding]));
-      const taken = new Set((await services.mcp.list()).map((config) => config.id));
+      const existing = await services.mcp.list();
+      const taken = new Set(existing.map((config) => config.id));
       const imported = [];
       const failed: Array<{ key: string; reason: string }> = [];
       const notes: Array<{ key: string; note: string }> = [];
@@ -648,8 +654,21 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
           continue;
         }
         try {
-          const converted = toSaveInput(finding, taken);
-          const saved = await services.mcp.saveFromWindow(converted.input);
+          // Imported before: updated in place, keeping its id.
+          const before = importedFrom(finding, existing);
+          const converted = toSaveInput(finding, taken, {
+            ...(before ? { existingId: before.id } : {}),
+            ...(input.scope === "workspace" && input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+          });
+          // Secrets go into secure storage in the main process; the window
+          // never had them and never gets them.
+          const saved = await services.mcp.saveFromWindow(
+            {
+              ...converted.input,
+              ...(Object.keys(converted.secrets).length > 0 ? { newSecretEnv: converted.secrets } : {}),
+            },
+            { origin: converted.origin },
+          );
           taken.add(saved.id);
           imported.push(saved);
           notes.push(...converted.notes.map((note) => ({ key, note })));

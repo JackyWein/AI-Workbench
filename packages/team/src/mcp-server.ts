@@ -369,5 +369,6 @@ export function describeTeamMcpServer(scope: TeamMcpScope, stdio: TeamMcpStdio):
     enabled: true,
     availability: "everywhere",
     workspaceIds: [],
+    secretEnv: {},
   };
 }

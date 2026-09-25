@@ -48,6 +48,24 @@ export const mcpServerConfigSchema = z
     /** The catalog entry the server was added from, when it was. */
     catalogId: z.string().min(1).max(100).optional(),
     /**
+     * Variables whose values are secrets, by name, each a reference into the
+     * credential store. The main process puts the value into the server's
+     * environment only when it starts the server itself; a tool is handed
+     * such a server through the local gateway, never the value.
+     */
+    secretEnv: z.record(z.string().min(1).max(200)).default({}),
+    /** Where an imported server came from, so a change there can be offered. */
+    origin: z
+      .object({
+        /** The discovery key it was imported under. */
+        key: z.string().min(1),
+        /** Where the tool keeps it, in words. */
+        source: z.string(),
+        /** What it looked like when imported; secret values are not part of it. */
+        fingerprint: z.string().min(1),
+      })
+      .optional(),
+    /**
      * Signs in with OAuth, the way MCP specifies it. The registration and
      * tokens live in the credential store under this reference; the main
      * process uses them and nothing else ever sees them.
@@ -156,6 +174,14 @@ export const mcpServerSaveInputSchema = z.object({
     .optional(),
   /** Forgets the stored API key. */
   clearApiKey: z.boolean().optional(),
+  /**
+   * Secret variables to keep, by name. The window only ever names them: the
+   * references stay in the main process, so no window can point a server at
+   * a secret it was not given.
+   */
+  keepSecretEnv: z.array(z.string().min(1).max(200)).optional(),
+  /** New secret variables, by name; stored securely, never kept here. */
+  newSecretEnv: z.record(z.string().min(1).max(10_000)).optional(),
 });
 export type McpServerSaveInput = z.input<typeof mcpServerSaveInputSchema>;
 
@@ -182,5 +208,7 @@ export const discoveredMcpServerSchema = z.object({
   secretNames: z.array(z.string()),
   /** A server with this name is connected already. */
   imported: z.boolean(),
+  /** Imported before, and changed at its source since. */
+  changed: z.boolean().default(false),
 });
 export type DiscoveredMcpServer = z.infer<typeof discoveredMcpServerSchema>;

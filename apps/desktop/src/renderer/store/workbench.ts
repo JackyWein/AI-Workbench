@@ -304,7 +304,7 @@ interface WorkbenchState {
   /** MCP servers the person's tools already have, to import. */
   discoverMcpServers(): Promise<DiscoveredMcpServer[]>;
   /** Imports servers found by discoverMcpServers; what happened, in words. */
-  importDiscoveredMcpServers(keys: string[]): Promise<{
+  importDiscoveredMcpServers(keys: string[], scope?: "everywhere" | "workspace"): Promise<{
     imported: number;
     failed: string | null;
     notes: string[];
@@ -1209,11 +1209,12 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
     }
   },
 
-  async importDiscoveredMcpServers(keys) {
+  async importDiscoveredMcpServers(keys, scope = "everywhere") {
     try {
       const workspaceId = get().activeWorkspaceId;
       const result = await invoke("mcp.importDiscovered", {
         keys,
+        scope,
         ...(workspaceId ? { workspaceId } : {}),
       });
       await get().refreshMcp();

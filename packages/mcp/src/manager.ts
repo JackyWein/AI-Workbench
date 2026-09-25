@@ -246,10 +246,20 @@ export class McpManager {
   async #connectStdio(
     config: McpServerConfig,
   ): Promise<{ client: Client; tools: McpTool[] }> {
+    // Secret variables are read from secure storage only now, for the
+    // process being started, and never kept on the configuration.
+    const secrets: Record<string, string> = {};
+    for (const [name, reference] of Object.entries(config.secretEnv ?? {})) {
+      const value = await this.#resolveCredential?.(reference);
+      if (!value) {
+        throw new Error(`The secret for ${name} could not be read from secure storage.`);
+      }
+      secrets[name] = value;
+    }
     const transport = new StdioClientTransport({
       command: config.command as string,
       args: config.args,
-      env: { ...(process.env as Record<string, string>), ...config.env },
+      env: { ...(process.env as Record<string, string>), ...config.env, ...secrets },
       ...(config.cwd === undefined ? {} : { cwd: config.cwd }),
       stderr: "ignore",
     });

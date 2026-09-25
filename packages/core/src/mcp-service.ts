@@ -61,6 +61,15 @@ export interface McpCredentialSource {
 const CREDENTIAL_ENV_KEY = "AI_WORKBENCH_MCP_CREDENTIAL_REFERENCE";
 /** Kept next to the reference the same way: which header the key goes in. */
 const CREDENTIAL_HEADER_KEY = "AI_WORKBENCH_MCP_CREDENTIAL_HEADER";
+/**
+ * Secret variables of a server — names and credential references, never a
+ * value — and where an imported server came from, kept in the same bag under
+ * reserved keys until the database grows columns for them. Both are taken out
+ * again before the configuration reaches anything else.
+ */
+const SECRET_ENV_KEY = "AI_WORKBENCH_MCP_SECRET_ENV";
+const ORIGIN_KEY = "AI_WORKBENCH_MCP_ORIGIN";
+const RESERVED_ENV_KEYS = [CREDENTIAL_ENV_KEY, CREDENTIAL_HEADER_KEY, SECRET_ENV_KEY, ORIGIN_KEY];
 
 /**
  * Stores MCP server configurations, keeps the connections in step with them and
@@ -219,6 +228,22 @@ export class McpService {
   }
 
   #forTools(config: McpServerConfig): ProviderToolAccess["mcpServers"][number] {
+    // A server with secret variables is never handed to a tool as a command:
+    // the tool would need the values in its configuration. The application
+    // runs it with them and serves its tools through the local gateway.
+    if (config.transport === "stdio" && Object.keys(config.secretEnv).length > 0 && this.#gateway) {
+      const endpoint = this.#gateway.endpointForAll([config.id]);
+      return {
+        id: config.id,
+        name: config.name,
+        transport: "http",
+        args: [],
+        env: {},
+        url: endpoint.url,
+        headers: endpoint.headers,
+        ...(this.#trusted.has(config.id) ? { trusted: true } : {}),
+      };
+    }
     const signs = config.transport !== "stdio" && (config.oauth || config.credentialReference);
     const endpoint = signs && this.#gateway ? this.#gateway.endpointFor(config.id) : null;
     return {
@@ -269,6 +294,15 @@ export class McpService {
     // what the user set; a credential reference is only honored (and only
     // stored) for remote transports.
     const env = { ...config.env };
+    for (const key of RESERVED_ENV_KEYS) {
+      delete env[key];
+    }
+    if (Object.keys(config.secretEnv).length > 0) {
+      env[SECRET_ENV_KEY] = JSON.stringify(config.secretEnv);
+    }
+    if (config.origin) {
+      env[ORIGIN_KEY] = JSON.stringify(config.origin);
+    }
     if (config.credentialReference && config.transport !== "stdio") {
       env[CREDENTIAL_ENV_KEY] = config.credentialReference;
       if (config.apiKeyHeader) {
@@ -355,9 +389,38 @@ export class McpService {
    * reference kept; a sign-in made before is kept. The server is connected
    * (or let go) to match.
    */
-  async saveFromWindow(raw: McpServerSaveInput): Promise<McpServerConfig> {
+  async saveFromWindow(
+    raw: McpServerSaveInput,
+    extras: { readonly origin?: NonNullable<McpServerConfig["origin"]> } = {},
+  ): Promise<McpServerConfig> {
     const input = mcpServerSaveInputSchema.parse(raw);
     const existing = await this.get(input.id);
+    // Secret variables: the window names which to keep and sends new values;
+    // the references never leave this process, so no window can attach a
+    // stored secret to a server it defines.
+    const secretEnv: Record<string, string> = {};
+    const keep = new Set(input.keepSecretEnv ?? Object.keys(existing?.secretEnv ?? {}));
+    for (const [name, reference] of Object.entries(existing?.secretEnv ?? {})) {
+      if (keep.has(name) && !(name in (input.newSecretEnv ?? {}))) {
+        secretEnv[name] = reference;
+      } else if (!(name in (input.newSecretEnv ?? {}))) {
+        await this.#credentials?.delete?.(reference);
+      }
+    }
+    for (const [name, value] of Object.entries(input.newSecretEnv ?? {})) {
+      if (!this.#credentials?.store) {
+        throw new Error("Secrets cannot be stored in this process.");
+      }
+      secretEnv[name] = await this.#credentials.store(
+        `${input.name} ${name}`,
+        value,
+        existing?.secretEnv[name],
+      );
+    }
+    const env = { ...input.env };
+    for (const name of Object.keys(secretEnv)) {
+      delete env[name];
+    }
     let credentialReference = existing?.credentialReference;
     if (input.apiKey) {
       if (!this.#credentials?.store) {
@@ -376,9 +439,19 @@ export class McpService {
     if (existing?.oauth?.reference && !input.oauth) {
       await this.#oauth?.signOut(existing.oauth.reference);
     }
-    const { apiKey: _apiKey, clearApiKey: _clear, ...config } = input;
+    const {
+      apiKey: _apiKey,
+      clearApiKey: _clear,
+      keepSecretEnv: _keep,
+      newSecretEnv: _new,
+      ...config
+    } = input;
+    const origin = extras.origin ?? existing?.origin;
     const saved = await this.save({
       ...config,
+      env,
+      secretEnv,
+      ...(origin ? { origin } : {}),
       ...(credentialReference ? { credentialReference } : {}),
       ...(input.oauth
         ? {
@@ -401,9 +474,12 @@ export class McpService {
     const config = await this.get(id);
     await this.#manager.disconnect(id);
     await this.#db.delete(mcpServers).where(eq(mcpServers.id, id));
-    // Its key and sign-in go with it.
+    // Its key, its secret variables and its sign-in go with it.
     if (config?.credentialReference) {
       await this.#credentials?.delete?.(config.credentialReference);
+    }
+    for (const reference of Object.values(config?.secretEnv ?? {})) {
+      await this.#credentials?.delete?.(reference);
     }
     await this.#oauth?.signOut(config?.oauth?.reference);
     return true;
@@ -522,8 +598,11 @@ function toConfig(row: McpServerRow): McpServerConfig {
   const env = { ...row.env };
   const credentialReference = env[CREDENTIAL_ENV_KEY];
   const apiKeyHeader = env[CREDENTIAL_HEADER_KEY];
-  delete env[CREDENTIAL_ENV_KEY];
-  delete env[CREDENTIAL_HEADER_KEY];
+  const secretEnv = readJson(env[SECRET_ENV_KEY], isStringRecord) ?? {};
+  const origin = readJson(env[ORIGIN_KEY], isOrigin);
+  for (const key of RESERVED_ENV_KEYS) {
+    delete env[key];
+  }
   return {
     id: row.id,
     name: row.name,
@@ -540,6 +619,8 @@ function toConfig(row: McpServerRow): McpServerConfig {
     enabled: row.enabled,
     availability: row.availability,
     workspaceIds: row.workspaceIds,
+    secretEnv,
+    ...(origin ? { origin } : {}),
     ...(row.catalogId === null ? {} : { catalogId: row.catalogId }),
     ...(isOAuth(row.oauth) ? { oauth: row.oauth } : {}),
   };
@@ -551,4 +632,33 @@ function isOAuth(value: unknown): value is NonNullable<McpServerConfig["oauth"]>
     value !== null &&
     Array.isArray((value as { scopes?: unknown }).scopes)
   );
+}
+
+function readJson<T>(raw: string | undefined, valid: (value: unknown) => value is T): T | null {
+  if (typeof raw !== "string" || raw.length === 0) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return valid(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === "string")
+  );
+}
+
+function isOrigin(value: unknown): value is { key: string; source: string; fingerprint: string } {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record["key"] === "string" && typeof record["source"] === "string" && typeof record["fingerprint"] === "string";
 }

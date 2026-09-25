@@ -399,13 +399,14 @@ follows when all goals are done.
 - [x] The draft runs on the chosen model (startup check: the chosen mock model answers)
 - [x] The last choice is remembered per purpose (startup check; unit tests drop a remembered model or effort that no longer exists)
 
-### F2 — MCP servers from connected apps, secrets kept safe (FutureFeatures 4)
-- [ ] A secret variable of an imported server is kept in the credential store; the database holds a reference and the window never receives the value (startup check)
-- [ ] The server still starts with the real value (startup check: the test server sees it)
-- [ ] A tool handed that server gets the value only when it is launched (unit test)
-- [ ] Import reads OpenCode, Antigravity, Cursor, VS Code and Windsurf configurations (unit tests per format)
-- [ ] Import offers a scope — everywhere or this workspace (startup check)
-- [ ] A server that changed at its source shows "Update" and can be updated (unit test, startup check)
+### F2 — MCP servers from connected apps, secrets kept safe (FutureFeatures 4) — done
+- [x] A secret variable of an imported server is kept in the credential store; the database holds a reference and the window never receives the value (startup check, both phases; core test)
+- [x] The server still starts with the real value (startup check: the test server's tool name says the value arrived; core test with a real stdio server)
+- [x] A tool is handed such a server through the local gateway, never its command and value (core test) — stricter than "only when it is launched"
+- [x] Import reads OpenCode, Antigravity, Cursor, VS Code and Windsurf configurations (unit tests per format against files in a test home, comments and VS Code inputs included)
+- [x] Import offers a scope — everywhere or this workspace (startup check)
+- [x] A server that changed at its source shows "Update" and is updated in place, keeping its id (unit tests, startup check)
+Also: a window can never attach a stored secret to a server by its reference — it only names the secrets a server already has (core test). Not covered: a rotated secret value is not detected as a change, because no fingerprint of a secret is kept.
 
 ### F3 — Accounts for every tool, and their limits (FutureFeatures 3)
 - [ ] Gemini CLI and OpenCode can hold several accounts, each run with its own home, the mechanism checked against the tool itself (profile tests, tool check here)

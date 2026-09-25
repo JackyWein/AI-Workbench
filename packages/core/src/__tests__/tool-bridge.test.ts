@@ -13,6 +13,7 @@ function config(id: string, enabled = true): McpServerConfig {
     enabled,
     availability: "everywhere",
     workspaceIds: [],
+    secretEnv: {},
   };
 }
 
