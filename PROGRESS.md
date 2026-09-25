@@ -26,7 +26,7 @@ Weighted contribution = weight x completion.
 **G7 — UX, security, reliability and performance.** As of 2026-09-25
 (release 0.0.7) `bun run verify` passes end to end: lockfile, lint,
 typecheck, 1020 tests, the build, the bundled memory server and both
-startup phases (216 checks, none failing). What remains in G6 is the tray,
+startup phases (218 checks, none failing). What remains in G6 is the tray,
 multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
 real providers collaborating. Antigravity (`agy`) could not be installed or
 read about here and stays unverified. No criterion was ticked for the 0.0.5
@@ -73,6 +73,10 @@ Verified here by tests and the startup check:
   helper could not confirm (unit test).
 - MCP servers imported from a tool's own configuration leave secrets in
   arguments out, as they already did for variables (unit test).
+- Hovering a session that was never opened no longer crashes the sidebar
+  (React error 185 from a store selector returning a new list on every
+  read): reproduced by a startup check before the fix, which passes after
+  it in both phases; a lint rule refuses such selectors.
 Not verified: the real Antigravity, and real Codex, OpenCode and Gemini
 CLI accounts on the person's Windows machine; a real update installed from
 one published release to the next; a real multi-hour team run. The crash

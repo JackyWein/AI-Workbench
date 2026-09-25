@@ -13,7 +13,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import type { Session, Workspace } from "@ai-workbench/shared";
+import type { ChatMessage, Session, Workspace } from "@ai-workbench/shared";
 import { compactNumber } from "../lib/format.js";
 import {
   formatSpan,
@@ -402,8 +402,17 @@ export function Sidebar({
  * never a zero or a guess — and providers are only ever told apart by their
  * own usage capability.
  */
+/**
+ * What a session that was never opened reads for its messages. It must be the
+ * same list on every read: a store selector that hands back a new one each
+ * time looks to React like a store that never settles, and it re-renders
+ * until it gives up (React error 185) — hovering such a session took the
+ * window down.
+ */
+const NO_MESSAGES: readonly ChatMessage[] = [];
+
 function SessionStatsLine({ session }: { readonly session: Session }): JSX.Element {
-  const messages = useWorkbench((state) => state.messages[session.id] ?? []);
+  const messages = useWorkbench((state) => state.messages[session.id] ?? NO_MESSAGES);
   const runSnapshots = useWorkbench((state) => state.runSnapshots);
   const teams = useWorkbench((state) => state.teams);
   const usage = useWorkbench((state) => state.usage);

@@ -45,6 +45,7 @@ Updates
 - When an update has downloaded in the background, the window and the island ask: Restart now, or Later. Restart now installs it without the setup wizard and opens the app again; Later installs it when you quit.
 
 Fixed
+- Hovering a session you had not opened yet could take the window down. The details it shows no longer send React into an endless re-render.
 - The model picker opens upward at the foot of the window, scrolls inside it, and is compact: your session's tool is open, the others fold to one line each.
 - The chat box no longer draws a second ring around the text you type; Aurora's chat box has one outline.
 - The opened island keeps its square corners in Swiss, and no island glow is cut off at the window's edge (Aurora).

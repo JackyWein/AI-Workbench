@@ -2076,6 +2076,48 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // Hovering a session shows where it works and how far it has come. A new
+  // session without a single message used to take the whole window down
+  // here: its line read the messages through a selector that made a new
+  // list on every read, which React takes for a store that never settles.
+  await check(
+    "hovering a session without messages shows its details and keeps the window",
+    `(async () => {
+       const api = window.workbench;
+       const workspaceId = window.__checkWorkspaceId;
+       const rows = () => [...document.querySelectorAll('.sidebar__scroll .row')];
+       rows().find(node => node.textContent?.includes('Check workspace'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 600));
+       // Created after the workspace opened, so it is listed but was never
+       // opened: nothing of it is loaded yet, which is what the crash needed.
+       const fresh = await api.invoke('session.create', {
+         workspaceId, name: 'Hover check session', type: 'solo', providerId: 'mock',
+       });
+       try {
+         await new Promise(resolve => setTimeout(resolve, 400));
+         const row = rows().find(node => node.querySelector('.row__text')?.textContent === 'Hover check session');
+         if (!row) return 'no row for the new session';
+         row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }));
+         row.focus();
+         await new Promise(resolve => setTimeout(resolve, 500));
+         const panel = [...document.querySelectorAll('.popover__panel')]
+           .find(node => node.textContent?.includes('No turns yet'));
+         if (document.querySelector('.error-fallback')) {
+           return 'the window fell back: ' + document.querySelector('.error-fallback')?.textContent;
+         }
+         if (!document.querySelector('.sidebar') || !document.querySelector('.composer')) return 'the window is gone';
+         return Boolean(panel) || 'no details on hover';
+       } finally {
+         document.activeElement?.blur?.();
+         await api.invoke('session.delete', { id: fresh.id }).catch(() => {});
+         rows().find(node => node.textContent?.includes('Check workspace'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 400));
+         rows().find(node => node.textContent?.includes('Check session'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 400));
+       }
+     })()`,
+  );
+
   // The model picker at the foot of the window opens upward, stays inside
   // the window and scrolls, with only the session's own tool opened.
   await check(
