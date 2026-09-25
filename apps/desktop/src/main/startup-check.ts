@@ -1558,10 +1558,20 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
          const folder = ${JSON.stringify(diffSpace)};
          const workspace = (await api.invoke('workspace.list', undefined)).find(entry => entry.path === folder)
            ?? await api.invoke('workspace.create', { name: 'Diff space', path: folder });
-         // A new session each time, so the goal starts a run of its own.
+         // A new session each time, so the goal starts a run of its own. One
+         // member does the work, so each change is its own alone.
          const session = await api.invoke('session.create', {
            workspaceId: workspace.id, name: 'Diff session', type: 'solo', providerId: 'mock',
          });
+         const pair = (await api.invoke('team.list', {})).find(entry => entry.name === 'Diff check team')
+           ?? await api.invoke('team.create', {
+             workspaceId: workspace.id,
+             name: 'Diff check team',
+             agents: [
+               { displayName: 'Lead', providerId: 'mock', role: 'plans', skills: [], plugins: [], mcpServers: [], settings: {} },
+               { displayName: 'Builder', providerId: 'mock', role: 'implements', skills: [], plugins: [], mcpServers: [], settings: {} },
+             ],
+           });
          const rows = () => [...document.querySelectorAll('.sidebar__scroll .row')];
          try {
            await new Promise(resolve => setTimeout(resolve, 300));
@@ -1573,7 +1583,7 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
              document.querySelector('.composer .popover > .pill')?.click();
              await new Promise(resolve => setTimeout(resolve, 400));
              [...document.querySelectorAll('.popover__panel [role="option"]')]
-               .find(node => node.textContent?.includes('Check team'))?.click();
+               .find(node => node.textContent?.includes('Diff check team'))?.click();
              if (!(await ${waitFor("document.querySelector('.team-intro, .team-run')", 4000)})) return 'no team view';
            }
            const goal = 'Add the feature [write: ${feature}]';
@@ -1582,12 +1592,11 @@ require("node:readline").createInterface({ input: process.stdin }).on("line", (l
            box.dispatchEvent(new Event('input', { bubbles: true }));
            box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 
-           const team = (await api.invoke('team.list', {})).find(entry => entry.name === 'Check team');
            let run = null;
            const deadline = Date.now() + 25000;
            while (Date.now() < deadline) {
              await new Promise(resolve => setTimeout(resolve, 300));
-             run = (await api.invoke('team.listRuns', { teamId: team.id })).find(entry => entry.goal === goal) ?? null;
+             run = (await api.invoke('team.listRuns', { teamId: pair.id })).find(entry => entry.goal === goal) ?? null;
              if (run && run.status !== 'running' && run.status !== 'pending') break;
            }
            if (!run) return 'no run for the goal';

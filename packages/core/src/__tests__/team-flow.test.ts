@@ -395,25 +395,64 @@ describe("team runs in the application", () => {
     await git("add", ".");
     await git("commit", "-m", "start");
 
-    const { teamId } = await makeTeam();
-    // The stand-in members write this file, the way a real tool edits the project.
-    const run = await app.teams.startRun({ teamId, goal: "Add the feature [write: src/feature.ts]" });
+    // One member does the work, so the change is its own alone. (With
+    // several writing the same file at once, a snapshot can catch another's
+    // write half done; that case is marked, as the next test shows.)
+    const workspace = await app.workspaces.create({ name: "Demo", path: directory });
+    const team = await app.teams.create({
+      workspaceId: workspace.id,
+      workingDirectory: workspace.path,
+      name: "Pair",
+      agents: [
+        { displayName: "Lead", providerId: "mock", role: "plans the work" },
+        { displayName: "Builder", providerId: "mock", role: "implements" },
+      ],
+    });
+    // The stand-in member writes this file, the way a real tool edits the project.
+    const run = await app.teams.startRun({ teamId: team.id, goal: "Add the feature [write: src/feature.ts]" });
     await settle(app, run.id);
 
     const snapshot = await app.teams.getSnapshot(run.id);
     expect(snapshot.run.status).toBe("completed");
     const diffs = snapshot.artifacts.filter((artifact) => artifact.type === "diff");
-    expect(diffs.length).toBeGreaterThan(0);
+    expect(diffs).toHaveLength(1);
     const first = diffs[0];
     expect(first?.path).toBe("src/feature.ts");
     expect(first?.content).toContain("+export const done = true;");
     expect(first?.metadata["source"]).toBe("folder");
+    expect(first?.metadata["concurrent"]).toBe(false);
     // In the member's name, for its task.
-    const team = await app.teams.require(teamId);
-    expect(team.agents.some((agent) => agent.id === first?.createdBy && agent.id !== team.leadAgentId)).toBe(true);
+    const builder = team.agents.find((agent) => agent.displayName === "Builder");
+    expect(first?.createdBy).toBe(builder?.id);
     expect(first?.taskId).not.toBeNull();
-    // Turns that changed nothing show nothing.
-    expect(diffs.every((artifact) => (artifact.content ?? "").includes("src/feature.ts"))).toBe(true);
+  });
+
+  it("says so when members changed the folder at the same time", async () => {
+    await app.dispose();
+    app = await bootApp(directory, { withGit: true });
+    const git = async (...args: string[]): Promise<void> => {
+      const { exit } = await execCli({ executablePath: "git", args, cwd: directory });
+      if (exit.code !== 0) {
+        throw new Error(`git ${args.join(" ")} failed: ${exit.stderr}`);
+      }
+    };
+    await git("init", "--initial-branch", "main");
+    await git("config", "user.email", "test@example.com");
+    await git("config", "user.name", "Test");
+    await writeFile(join(directory, ".gitignore"), "*.db*\nproviders/\n");
+    await git("add", ".");
+    await git("commit", "-m", "start");
+
+    // Two members work on their tasks at once, in the same folder.
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Add the feature [write: src/feature.ts]" });
+    await settle(app, run.id);
+
+    const diffs = (await app.teams.getSnapshot(run.id)).artifacts.filter((artifact) => artifact.type === "diff");
+    expect(diffs.length).toBeGreaterThan(0);
+    // Whose change it was cannot be told apart then, and the entry says so.
+    expect(diffs.every((artifact) => artifact.metadata["concurrent"] === true)).toBe(true);
+    expect(String(diffs[0]?.metadata["reason"])).toContain("Other members were working at the same time");
   });
 
   it("refuses a new goal while the run is still going", async () => {
