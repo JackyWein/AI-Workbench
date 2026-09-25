@@ -4,7 +4,9 @@ import { BrowserWindow, screen } from "electron";
 import { execCli } from "@ai-workbench/transport-cli";
 import type { Logger } from "@ai-workbench/shared";
 import type { startSshTestServer as StartSshTestServer } from "@ai-workbench/test-support";
+import type { GitHubService } from "@ai-workbench/core";
 import type { IslandController } from "./island-controller.js";
+import { checkSourceControl } from "./startup-check-source-control.js";
 
 /** Opens the stand-in machine's key in the SSH check; nothing real. */
 const CHECK_KEY_PASSPHRASE = "check passphrase";
@@ -40,6 +42,8 @@ export async function runStartupCheck(
     island: IslandController;
     /** Leaves the updater as a finished download would, or at rest (null). */
     simulateDownload: (build: { version: string; commit: string } | null) => void;
+    /** Pointed at a stand-in GitHub for the source control checks. */
+    github: GitHubService;
   },
 ): Promise<StartupCheckResult> {
   const { workspaceDirectory, mode, island, simulateDownload } = options;
@@ -981,6 +985,17 @@ export async function runStartupCheck(
              .includes('not a git repository');
          })()`,
   );
+
+  // --- source control and GitHub (F5) --------------------------------------
+  if (repository) {
+    await checkSourceControl({
+      check,
+      checkMain,
+      waitFor,
+      github: options.github,
+      folder: join(dirname(workspaceDirectory), "source-control-check"),
+    });
+  }
 
   // --- skills, plugins and MCP -------------------------------------------
 

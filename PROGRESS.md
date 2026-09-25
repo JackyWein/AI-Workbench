@@ -424,12 +424,13 @@ Also: a window can never attach a stored secret to a server by its reference —
 - Not yet: a team member at its limit does not switch; proactive switching before a turn (at 95 %) is not built
 
 ### F5 — Source control and GitHub (FutureFeatures 2 and F)
-- [ ] Source control: stage and unstage files, commit, pull, push, create a branch (startup check against a local remote)
-- [ ] The session's model can suggest the commit message (startup check)
-- [ ] Credentials come from the credential store through an askpass helper and never appear in .git/config or a remote URL (git test)
-- [ ] GitHub sign-in by device flow and by token; only a reference reaches the window (tests against a stand-in GitHub)
-- [ ] A pull request can be opened (test against a stand-in GitHub API)
-- [ ] A commit holding a likely secret is stopped with the finding (unit test, startup check)
+- [x] Source control: stage and unstage files, commit, pull, push, create a branch (startup check against a local remote) — the Changes panel: tick a file to stage it, commit, Pull, Push (a branch without upstream gets one), New branch; the startup check does each through the window against a local bare remote, and a second clone's commit comes in by Pull
+- [x] The session's model can suggest the commit message (startup check) — "Suggest" asks the session's own tool and model, read-only in a scratch folder, from the staged diff; the check sees the simulated model's message land in the box and on the remote
+- [x] Credentials come from the credential store through an askpass helper and never appear in .git/config or a remote URL (git test) — a remote served by git's own http-backend that wants a token: the push only succeeds with it, given through a one-run askpass channel on 127.0.0.1; .git/config, the remote URL and a credential helper the person configured hold no trace of it
+- [x] GitHub sign-in by device flow and by token; only a reference reaches the window (tests against a stand-in GitHub) — core tests for both ways and the startup check for the device flow through Settings; the status the window gets names the login, never the token. The real device flow needs an OAuth app registered for the build (`AI_WORKBENCH_GITHUB_CLIENT_ID`); without it only a token connects
+- [x] A pull request can be opened (test against a stand-in GitHub API) — core test and startup check: the pushed branch's pull request reaches the stand-in with the connected account's token, into the repository's default branch
+- [x] A commit holding a likely secret is stopped with the finding (unit test, startup check) — the staged diff's added lines are checked for documented key formats (GitHub, AWS, Anthropic, OpenAI, Google, Slack, Stripe, npm, private keys, passwords in code); the finding names kind, file and line and only the first characters; "Commit anyway" only after the person saw it
+- Not yet: git in a workspace on another machine; pull with rebase as a setting; the pull request's checks in the panel
 
 ### F6 — Team templates drafted by AI (FutureFeatures 7)
 - [ ] Own templates are stored, listed next to the built-in ones, and can be deleted (startup check)

@@ -140,6 +140,20 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     };
   };
 
+  /**
+   * A session's folder on this machine, for git to work in. A workspace on
+   * another machine has none here: running git on its path would touch a
+   * different repository, or nothing.
+   */
+  const localFolder = async (sessionId: string): Promise<string> => {
+    const session = await services.sessions.require(sessionId);
+    const workspace = await services.workspaces.require(session.workspaceId);
+    if (workspace.connectionId !== null) {
+      throw new Error("Source control for a workspace on another machine is not available yet.");
+    }
+    return session.workingDirectory;
+  };
+
   /** A workspace's folder on this machine; none for a remote workspace. */
   const localWorkspacePath = async (workspaceId: string | undefined): Promise<string | undefined> => {
     const workspace = workspaceId ? await services.workspaces.get(workspaceId) : null;
@@ -427,6 +441,67 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       const diff = await services.git.diff(session.workingDirectory, input.path, input.staged);
       return { path: input.path, diff };
     },
+
+    "git.stage": async (input) => {
+      const folder = await localFolder(input.sessionId);
+      await services.sourceControl.stage(folder, input.paths);
+      return services.git.status(folder);
+    },
+    "git.unstage": async (input) => {
+      const folder = await localFolder(input.sessionId);
+      await services.sourceControl.unstage(folder, input.paths);
+      return services.git.status(folder);
+    },
+    "git.commit": async (input) =>
+      services.sourceControl.commit(await localFolder(input.sessionId), input.message, input.allowSecrets ?? false),
+    "git.suggestMessage": async (input) => {
+      const session = await services.sessions.require(input.sessionId);
+      if (!session.providerId) {
+        throw new Error("Choose a model for this session first.");
+      }
+      const effort = session.settings["reasoningEffort"];
+      return {
+        message: await services.sourceControl.suggestMessage(await localFolder(input.sessionId), {
+          providerId: session.providerId,
+          modelId: session.modelId ?? undefined,
+          reasoningEffort: typeof effort === "string" ? effort : undefined,
+        }),
+      };
+    },
+    "git.createBranch": async (input) => {
+      const folder = await localFolder(input.sessionId);
+      await services.sourceControl.createBranch(folder, input.name);
+      return services.git.status(folder);
+    },
+    "git.pull": async (input) => {
+      const folder = await localFolder(input.sessionId);
+      await services.sourceControl.pull(folder);
+      return services.git.status(folder);
+    },
+    "git.push": async (input) => {
+      const folder = await localFolder(input.sessionId);
+      await services.sourceControl.push(folder);
+      return services.git.status(folder);
+    },
+    "git.openPullRequest": async (input) =>
+      services.sourceControl.openPullRequest(await localFolder(input.sessionId), {
+        title: input.title,
+        ...(input.body ? { body: input.body } : {}),
+        ...(input.base ? { base: input.base } : {}),
+      }),
+
+    "github.status": () => services.github.status(),
+    "github.signInWithToken": (input) => services.github.signInWithToken(input.token),
+    "github.startDeviceFlow": async () => {
+      const status = await services.github.startDeviceFlow();
+      const page = status.pending?.verificationUri;
+      // Only GitHub's own https page is ever opened from here.
+      if (page && /^https:\/\//.test(page)) {
+        void shell.openExternal(page).catch(() => undefined);
+      }
+      return status;
+    },
+    "github.signOut": () => services.github.signOut(),
 
     "terminal.list": (input) => services.terminals.list(input.sessionId),
     "terminal.create": async (input) => {

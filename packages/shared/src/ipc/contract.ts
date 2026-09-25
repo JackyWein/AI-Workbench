@@ -78,6 +78,7 @@ import {
   teamRunSnapshotSchema,
 } from "../domain/team.js";
 import { updateStateSchema } from "../domain/updater.js";
+import { commitResultSchema, gitHubStatusSchema } from "../domain/source-control.js";
 
 /**
  * The single source of truth for privileged main-process operations (spec §105).
@@ -325,6 +326,57 @@ export const ipcContract = {
     }),
     output: z.object({ path: z.string(), diff: z.string().max(200 * 1024) }),
   },
+  /** Adds files to what the next commit holds. */
+  "git.stage": {
+    input: z.object({ sessionId: z.string().min(1), paths: z.array(z.string().min(1).max(4096)).min(1).max(1000) }),
+    output: gitStatusSchema,
+  },
+  "git.unstage": {
+    input: z.object({ sessionId: z.string().min(1), paths: z.array(z.string().min(1).max(4096)).min(1).max(1000) }),
+    output: gitStatusSchema,
+  },
+  /**
+   * Commits what is staged. A likely secret stops it and comes back as
+   * findings; `allowSecrets` is only sent after the person saw them.
+   */
+  "git.commit": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      message: z.string().min(1).max(20_000),
+      allowSecrets: z.boolean().optional(),
+    }),
+    output: commitResultSchema,
+  },
+  /** A commit message for what is staged, from the session's own tool and model. */
+  "git.suggestMessage": {
+    input: z.object({ sessionId: z.string().min(1) }),
+    output: z.object({ message: z.string() }),
+  },
+  "git.createBranch": {
+    input: z.object({ sessionId: z.string().min(1), name: z.string().min(1).max(250) }),
+    output: gitStatusSchema,
+  },
+  "git.pull": { input: z.object({ sessionId: z.string().min(1) }), output: gitStatusSchema },
+  "git.push": { input: z.object({ sessionId: z.string().min(1) }), output: gitStatusSchema },
+  "git.openPullRequest": {
+    input: z.object({
+      sessionId: z.string().min(1),
+      title: z.string().min(1).max(256),
+      body: z.string().max(60_000).optional(),
+      base: z.string().min(1).max(250).optional(),
+    }),
+    output: z.object({ number: z.number().int(), url: z.string() }),
+  },
+
+  /** Who is connected to GitHub; the token itself never reaches the window. */
+  "github.status": { input: z.void(), output: gitHubStatusSchema },
+  "github.signInWithToken": {
+    input: z.object({ token: z.string().min(1).max(512) }),
+    output: gitHubStatusSchema,
+  },
+  /** Starts GitHub's device flow and opens its page in the browser. */
+  "github.startDeviceFlow": { input: z.void(), output: gitHubStatusSchema },
+  "github.signOut": { input: z.void(), output: gitHubStatusSchema },
 
   "terminal.list": {
     input: z.object({ sessionId: z.string().min(1) }),

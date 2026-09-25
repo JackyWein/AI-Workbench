@@ -8,6 +8,7 @@ export * from "./domain/agent-terminal.js";
 export * from "./domain/usage.js";
 export * from "./domain/settings.js";
 export * from "./domain/workspace-tools.js";
+export * from "./domain/source-control.js";
 export * from "./domain/skill.js";
 export * from "./domain/plugin.js";
 export * from "./domain/mcp.js";

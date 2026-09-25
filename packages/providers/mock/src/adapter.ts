@@ -318,7 +318,9 @@ export class MockProviderAdapter implements AIProviderAdapter {
         ? describeSessionContext(state)
         : asked.includes("/recall")
           ? `Given so far:\n\n${state.prompts.join("\n\n---\n\n")}`
-          : // A team prompt gets a team answer, so Team Mode can be exercised
+          : asked.startsWith("Write a git commit message")
+            ? commitMessageFor(asked)
+            : // A team prompt gets a team answer, so Team Mode can be exercised
           // end to end without spending an account (spec §20).
           looksLikeTeamPrompt(prompt)
           ? buildTeamReply(prompt)
@@ -423,6 +425,12 @@ export class MockProviderAdapter implements AIProviderAdapter {
  */
 function withoutHandover(prompt: string): string {
   return prompt.replace(/^\s*<conversation-so-far>[\s\S]*<\/conversation-so-far>/, "");
+}
+
+/** A commit message for a diff, named after the first file it changes. */
+function commitMessageFor(prompt: string): string {
+  const file = /^\+\+\+ b\/(.+)$/m.exec(prompt)?.[1]?.trim() ?? "the files";
+  return `Update ${file}\n\nSuggested by the simulated provider from the staged diff.`;
 }
 
 /** The entries a prompt tells to hit their limit, from "/limit@<entry id>". */

@@ -4,6 +4,7 @@ import { prepareKey } from "@ai-workbench/workspace-ssh";
 import {
   AgentTerminalService,
   EventBus,
+  GitHubService,
   McpService,
   PluginService,
   ProviderAccountService,
@@ -12,6 +13,7 @@ import {
   SessionManager,
   SettingsService,
   SkillService,
+  SourceControlService,
   TeamManager,
   ConnectionService,
   SqlCredentialStorage,
@@ -84,6 +86,8 @@ export interface AppServices {
   readonly skillImporters: readonly (ClaudeSkillImporter | MarkdownSkillImporter)[];
   readonly files: WorkspaceFileSystem;
   readonly git: GitService;
+  readonly github: GitHubService;
+  readonly sourceControl: SourceControlService;
   readonly terminals: TerminalManager;
   /** Providers' own interactive interfaces running in terminals. */
   readonly agentTerminals: AgentTerminalService;
@@ -441,6 +445,19 @@ async function createServicesInner(
   }
 
   const git = new GitService({ logger });
+  const github = new GitHubService({
+    credentials,
+    logger,
+    // The device flow needs an OAuth app registered by whoever ships the
+    // build; without its client id only a token can connect.
+    endpoints: { clientId: process.env["AI_WORKBENCH_GITHUB_CLIENT_ID"]?.trim() || null },
+  });
+  const sourceControl = new SourceControlService({
+    git,
+    github,
+    providers,
+    scratchDirectory: join(options.userDataPath, "source-control"),
+  });
   const teams = new TeamManager({
     db: database.db,
     events,
@@ -573,6 +590,8 @@ async function createServicesInner(
     skillImporters: [new ClaudeSkillImporter(), new MarkdownSkillImporter()],
     files,
     git,
+    github,
+    sourceControl,
     terminals,
     agentTerminals,
     onTerminalEvent: (listener) => {

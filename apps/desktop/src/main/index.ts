@@ -229,6 +229,7 @@ async function bootstrap(): Promise<void> {
       mode: process.env["AI_WORKBENCH_CHECK_MODE"] === "resume" ? "resume" : "create",
       island,
       simulateDownload: simulateDownloadForCheck,
+      github: services.github,
     });
     await shutdown();
     app.exit(result.healthy ? 0 : 1);

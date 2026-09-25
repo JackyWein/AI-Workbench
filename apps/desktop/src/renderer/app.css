@@ -2976,6 +2976,100 @@ input[type="checkbox"].mini-switch:disabled {
   color: var(--text-primary);
 }
 
+/* Source control: tick a file to put it into the next commit. */
+.changes__icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.changes__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.changes__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.changes__stage {
+  flex: none;
+  margin: 0 0 0 var(--space-2);
+  accent-color: var(--accent);
+}
+
+.changes__branch-form,
+.changes__pr--open {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.changes__branch-form .text-input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.changes__pr--open {
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: none;
+}
+
+.changes__commit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.changes__message {
+  width: 100%;
+  resize: vertical;
+  font-size: var(--text-sm);
+}
+
+.changes__commit-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.changes__findings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.changes__findings-title {
+  margin: 0;
+  color: var(--danger);
+}
+
+.changes__findings ul {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+.changes__pr {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+
 /* Diff preview: add/del tones only, chrome stays neutral. */
 .diff-preview {
   margin: 0 var(--space-2) var(--space-2);
@@ -6908,4 +7002,22 @@ button.sidebar__user[aria-current="true"] {
 .app-crash__actions {
   display: flex;
   gap: var(--space-3);
+}
+
+/* GitHub connection in Settings. */
+.github-token {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.github-token .text-input {
+  min-width: 220px;
+}
+
+.github-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-md);
+  letter-spacing: 0.12em;
+  color: var(--text-primary);
 }

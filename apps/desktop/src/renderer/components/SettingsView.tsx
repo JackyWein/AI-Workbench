@@ -17,6 +17,7 @@ import {
 import { ConnectionSettings } from "./ConnectionsView.js";
 import { KeyboardShortcuts } from "./KeyboardShortcuts.js";
 import { MODES } from "../lib/themes.js";
+import { GitHubSettings } from "./GitHubSettings.js";
 import { ThemePicker } from "./ThemePicker.js";
 import { UpdateSection } from "./UpdateSection.js";
 
@@ -121,6 +122,8 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
             />
           </SettingRow>
         </SettingGroup>
+
+        <GitHubSettings />
 
         <SettingGroup title="Shortcuts">
           <KeyboardShortcuts />

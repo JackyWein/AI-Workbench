@@ -1,7 +1,4 @@
-import { mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
-import type { ProviderEvent } from "@ai-workbench/shared";
-import { createId } from "./ids.js";
+import { askOnce } from "./one-turn.js";
 import type { ProviderManager } from "./provider-manager.js";
 
 /** A skill as a provider drafted it, for the person to read before saving. */
@@ -41,46 +38,20 @@ export async function draftSkill(
   request: DraftSkillRequest,
   scratchDirectory: string,
 ): Promise<SkillDraft> {
-  const adapter = providers.get(request.providerId);
-  if (!adapter) {
+  if (!providers.get(request.providerId)) {
     throw new SkillDraftError("That provider is not available.");
   }
-  const sessionId = createId("draft");
-  const folder = join(scratchDirectory, sessionId);
-  await mkdir(folder, { recursive: true });
-  const info = await adapter.createSession({
-    sessionId,
-    workingDirectory: folder,
-    ...(request.modelId ? { modelId: request.modelId } : {}),
-    ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
-    // Writing a skill needs no tool of the agent's; it only answers.
-    permissionMode: "readOnly",
-  });
-  const modelId = info.modelId ?? request.modelId;
-  const handle = {
-    sessionId,
-    providerSessionId: info.providerSessionId,
-    ...(modelId ? { modelId } : {}),
-    ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
-    permissionMode: "readOnly" as const,
-  };
-  let text = "";
-  let failure: string | null = null;
-  const timer = setTimeout(() => void adapter.cancel(handle).catch(() => undefined), DRAFT_TIMEOUT_MS);
-  try {
-    for await (const event of adapter.sendMessage(handle, { text: draftPrompt(request.request) })) {
-      const typed = event as ProviderEvent;
-      if (typed.type === "text_delta") {
-        text += typed.text;
-      } else if (typed.type === "error") {
-        failure = typed.error.message;
-      }
-    }
-  } finally {
-    clearTimeout(timer);
-    await adapter.destroySession(handle).catch(() => undefined);
-    await rm(folder, { recursive: true, force: true }).catch(() => undefined);
-  }
+  const { text, failure, modelId } = await askOnce(
+    providers,
+    {
+      providerId: request.providerId,
+      modelId: request.modelId,
+      reasoningEffort: request.reasoningEffort,
+      prompt: draftPrompt(request.request),
+      timeoutMs: DRAFT_TIMEOUT_MS,
+    },
+    scratchDirectory,
+  );
   if (text.trim() === "") {
     throw new SkillDraftError(failure ?? "The provider did not answer with a skill.");
   }
