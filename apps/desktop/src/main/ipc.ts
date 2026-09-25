@@ -270,6 +270,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
 
     "session.list": (input) => services.sessions.list(input.workspaceId),
     "session.create": (input) => services.sessions.create(input),
+    "session.fork": (input) => services.sessions.fork(input),
     "session.update": (input) => services.sessions.update(input),
     "session.delete": async (input) => ({
       deleted: await services.sessions.delete(input.id),
@@ -333,6 +334,8 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
 
     "message.list": (input) =>
       services.sessions.listMessages(input.sessionId, input.limit),
+    "session.undoTurn": (input) => services.sessions.undoTurn(input.sessionId, input.messageId),
+    "team.undoTurn": (input) => services.teams.undoTurn(input.runId, input.artifactId),
 
     "provider.list": () => services.providers.describeAll(),
     "provider.refresh": () => services.providers.describeAll(),

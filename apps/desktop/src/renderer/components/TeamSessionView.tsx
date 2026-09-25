@@ -78,13 +78,20 @@ export function TeamSessionView({
   const [member, setMember] = useState<string>(EVERYONE);
 
   // Follow the run: team events refresh it, and a slow tick keeps it honest
-  // while a turn streams without producing a team event.
+  // while a turn streams without producing a team event. Throttled in the
+  // store (2s + in-flight guard); the tick itself is slow and pauses while
+  // the tab is hidden so a long session cannot flood IPC/SQLite.
   useEffect(() => {
     if (!runId) {
       return;
     }
     void refreshTeamRun(runId);
-    const timer = setInterval(() => void refreshTeamRun(runId), 3_000);
+    const timer = setInterval(() => {
+      if (document.hidden) {
+        return;
+      }
+      void refreshTeamRun(runId);
+    }, 5_000);
     return () => clearInterval(timer);
   }, [refreshTeamRun, runId]);
 
@@ -399,6 +406,14 @@ type FeedEntry =
 /** Entries by one author this close together read as one turn. */
 const GROUP_MS = 5 * 60_000;
 
+/**
+ * How many timeline entries render at once. A long team session produces
+ * hundreds of messages/tasks/turns; rendering them all on every 5s snapshot
+ * plus every progress heartbeat freezes the view. Only the newest window
+ * renders, older entries load on demand.
+ */
+const TIMELINE_PAGE = 100;
+
 function TeamTimeline({
   team,
   providers,
@@ -419,6 +434,13 @@ function TeamTimeline({
   const nameOf = (id: string): string =>
     id === "user" ? "You" : id === "*" ? "everyone" : (agents.get(id)?.displayName ?? "A former member");
   const entries = useMemo(() => (snapshot ? feedFor(snapshot, member) : []), [snapshot, member]);
+  const [visibleCount, setVisibleCount] = useState(TIMELINE_PAGE);
+  // A new run or a different member starts back at the newest window.
+  useEffect(() => {
+    setVisibleCount(TIMELINE_PAGE);
+  }, [snapshot?.run.id, member]);
+  const visible = entries.length <= visibleCount ? entries : entries.slice(entries.length - visibleCount);
+  const hiddenCount = entries.length - visible.length;
   const agent = member === EVERYONE ? null : (agents.get(member) ?? null);
   const run = snapshot?.run ?? null;
   const working = team.agents
@@ -437,7 +459,7 @@ function TeamTimeline({
     if (nearBottom) {
       element.scrollTop = element.scrollHeight;
     }
-  }, [entries.length, working.length]);
+  }, [visible.length, working.length]);
 
   return (
     <div className="chat team-feed" ref={scroller} role="log" aria-live="polite" aria-label="Team activity">
@@ -460,28 +482,40 @@ function TeamTimeline({
                 {agent ? `Nothing from ${agent.displayName} yet.` : "Nothing yet — the run has just begun."}
               </p>
             ) : (
-              entries.map((entry, index) => {
-                const previous = entries[index - 1];
-                const head =
-                  !previous ||
-                  previous.author !== entry.author ||
-                  groupKey(previous) !== groupKey(entry) ||
-                  entry.at.getTime() - previous.at.getTime() > GROUP_MS;
-                const author = agents.get(entry.author) ?? null;
-                return (
-                  <FeedItem
-                    key={entry.id}
-                    entry={entry}
-                    head={head}
-                    author={author}
-                    authorName={nameOf(entry.author)}
-                    providers={providers}
-                    team={team}
-                    nameOf={nameOf}
-                    snapshot={snapshot}
-                  />
-                );
-              })
+              <>
+                {hiddenCount > 0 ? (
+                  <button
+                    type="button"
+                    className="link-button"
+                    onClick={() => setVisibleCount((count) => count + TIMELINE_PAGE)}
+                  >
+                    Show {Math.min(hiddenCount, TIMELINE_PAGE)} earlier of {entries.length} entries
+                  </button>
+                ) : null}
+                {visible.map((entry, index) => {
+                  const absolute = index + hiddenCount;
+                  const previous = entries[absolute - 1];
+                  const head =
+                    !previous ||
+                    previous.author !== entry.author ||
+                    groupKey(previous) !== groupKey(entry) ||
+                    entry.at.getTime() - previous.at.getTime() > GROUP_MS;
+                  const author = agents.get(entry.author) ?? null;
+                  return (
+                    <FeedItem
+                      key={entry.id}
+                      entry={entry}
+                      head={head}
+                      author={author}
+                      authorName={nameOf(entry.author)}
+                      providers={providers}
+                      team={team}
+                      nameOf={nameOf}
+                      snapshot={snapshot}
+                    />
+                  );
+                })}
+              </>
             )}
             {run && agent === null ? <RunEnding run={run} team={team} /> : null}
             {working.map(({ agent: entry, detail }) => (

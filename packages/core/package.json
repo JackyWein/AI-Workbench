@@ -18,6 +18,7 @@
     "@ai-workbench/skills": "workspace:*",
     "@ai-workbench/team": "workspace:*",
     "@ai-workbench/workspace-fs": "workspace:*",
+    "cron-parser": "^5.10.1",
     "drizzle-orm": "^0.45.0",
     "pino": "^9.6.0"
   },

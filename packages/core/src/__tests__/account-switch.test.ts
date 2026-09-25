@@ -163,6 +163,28 @@ describe("a chat at its account's limit", () => {
     await removeTempDirectory(directory);
   });
 
+  it("forks a conversation with history, resumes on the chosen tool and leaves the source untouched", async () => {
+    const source = await startChat();
+    await sessions.sendMessage(source.id, "Remember the word heron.");
+    const originalMessages = await settle(source.id);
+    const originalSession = await sessions.require(source.id);
+    const fork = await sessions.fork({ sessionId: source.id, providerId: "mock@spare" });
+    expect(fork.providerSessionId).toBeNull();
+    expect((await sessions.listMessages(fork.id)).map((message) => message.content)).toEqual(originalMessages.map((message) => message.content));
+    await sessions.sendMessage(fork.id, "/recall");
+    const continued = await settle(fork.id);
+    expect(continued.at(-1)?.content).toContain("heron");
+    expect(continued.at(-1)?.providerId).toBe("mock@spare");
+    expect(await sessions.require(source.id)).toEqual(originalSession);
+    expect(await sessions.listMessages(source.id)).toEqual(originalMessages);
+  });
+
+  it("refuses an unavailable fork destination without creating a conversation", async () => {
+    const source = await startChat();
+    await expect(sessions.fork({ sessionId: source.id, providerId: "missing" })).rejects.toThrow();
+    expect(await sessions.list()).toHaveLength(1);
+  });
+
   const startChat = async () => {
     const workspace = await workspaces.create({ name: "Work", path: directory });
     return sessions.create({ workspaceId: workspace.id, name: "Chat", type: "solo", providerId: "mock" });

@@ -1,6 +1,6 @@
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { copyFile, lstat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Logger } from "@ai-workbench/shared";
 import { CliTransport } from "@ai-workbench/transport-cli";
 import { startAskpass } from "./askpass.js";
@@ -175,13 +175,13 @@ export class GitService {
     }
     try {
       const names = await this.#transport.exec({
-        args: ["diff", "--name-only", "--no-renames", before, after],
+        args: ["diff", "--name-only", "-z", "--no-renames", before, after],
         cwd: workingDirectory,
       });
       if (names.exit.code !== 0) {
         return none;
       }
-      const files = names.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+      const files = names.stdout.split("\0").filter(Boolean);
       if (files.length === 0) {
         return none;
       }
@@ -204,6 +204,87 @@ export class GitService {
   }
 
   /** Adds files, new and deleted ones too, to what the next commit holds. */
+  async retainSnapshot(folder: string, key: string, tree: string): Promise<void> {
+    if (!/^[a-zA-Z0-9_-]+\/(before|after)$/.test(key) || !/^[0-9a-f]{40,64}$/.test(tree)) {
+      throw new GitCommandError("Invalid snapshot reference.");
+    }
+    await this.#run(folder, ["update-ref", `refs/ai-workbench/turns/${key}`, tree]);
+  }
+
+  /** Restores only this turn's paths. The real index, HEAD and branches stay untouched. */
+  async undo(folder: string, before: string, after: string): Promise<string[]> {
+    for (const tree of [before, after]) {
+      if (!/^[0-9a-f]{40,64}$/.test(tree)) throw new GitCommandError("Invalid snapshot.");
+      await this.#run(folder, ["cat-file", "-e", `${tree}^{tree}`]);
+    }
+    const root = (await this.#run(folder, ["rev-parse", "--show-toplevel"])).trim();
+    const names = await this.#run(root, ["diff", "--name-only", "-z", "--no-renames", before, after]);
+    const files = names.split("\0").filter(Boolean);
+    if (files.length === 0) return [];
+    const current = await this.snapshot(root);
+    if (!current) throw new GitCommandError("The current folder could not be checked; nothing was restored.");
+    const changes = (await this.#run(root, ["diff", "--name-only", "-z", "--no-renames", after, current])).split("\0").filter(Boolean);
+    const conflicts = files.filter((file) => changes.some((changed) =>
+      changed === file || changed.startsWith(`${file}/`) || file.startsWith(`${changed}/`)));
+    if (conflicts.length > 0) throw new GitCommandError(`Cannot undo: changed since this turn: ${conflicts.join(", ")}`);
+    // Refuse submodules and a redirected parent directory before any write.
+    const entries = await this.#run(root, ["ls-tree", "-r", "-z", before]);
+    for (const file of files) {
+      if (entries.split("\0").some((entry) => entry.startsWith("160000 ") && entry.endsWith(`\t${file}`))) {
+        throw new GitCommandError(`Cannot undo submodule: ${file}`);
+      }
+      const target = resolve(root, file);
+      const rel = relative(root, target);
+      if (!rel || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new GitCommandError("Unsafe snapshot path.");
+      let parent = dirname(target);
+      while (parent !== resolve(root)) {
+        const stat = await lstat(parent).catch(() => null);
+        if (stat?.isSymbolicLink()) throw new GitCommandError(`Cannot undo through a symbolic link: ${file}`);
+        parent = dirname(parent);
+      }
+    }
+    const scratch = await mkdtemp(join(tmpdir(), "ai-workbench-undo-"));
+    try {
+      const env = { GIT_INDEX_FILE: join(scratch, "index") };
+      await this.#run(root, ["read-tree", after], { env });
+      await this.#run(root, ["--literal-pathspecs", "restore", `--source=${before}`, "--worktree", "--pathspec-from-file=-", "--pathspec-file-nul"], { env, stdin: files.join("\0") + "\0" });
+      return files;
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  }
+
+  /** Creates an isolated branch; existing worktrees are reused only on their expected branch. */
+  async ensureWorktree(folder: string, target: string, branch: string): Promise<void> {
+    const existing = await lstat(target).catch(() => null);
+    if (existing) {
+      const actual = await this.#run(target, ["symbolic-ref", "--short", "HEAD"]);
+      if (actual.trim() !== branch) throw new GitCommandError("The run worktree is on an unexpected branch.");
+      return;
+    }
+    await this.#run(folder, ["rev-parse", "--verify", "HEAD"]);
+    await this.#run(folder, ["worktree", "add", "-b", branch, target, "HEAD"]);
+  }
+
+  /** Commits the isolated member's working tree only, with an application identity. */
+  async checkpointWorktree(folder: string, message: string): Promise<string> {
+    await this.#run(folder, ["add", "--all", "--", "."]);
+    const changed = await this.#run(folder, ["diff", "--cached", "--name-only"]);
+    if (changed.trim()) {
+      await this.#run(folder, ["-c", "user.name=AI Workbench", "-c", "user.email=workbench@localhost", "-c", "commit.gpgsign=false", "commit", "--no-verify", "--file=-"], { stdin: message });
+    }
+    return (await this.#run(folder, ["rev-parse", "HEAD"])).trim();
+  }
+
+  /** Merges finished member work into the lead's worktree, retaining real conflict files. */
+  async mergeWorktree(folder: string, branch: string): Promise<{ conflicts: string[] }> {
+    if (!(await this.status(folder)).clean) throw new GitCommandError("The lead worktree has uncommitted changes.");
+    const merge = await this.#transport.exec({ cwd: folder, args: ["-c", "user.name=AI Workbench", "-c", "user.email=workbench@localhost", "-c", "commit.gpgsign=false", "merge", "--no-edit", "--no-ff", branch] });
+    const conflicts = (await this.#run(folder, ["diff", "--name-only", "-z", "--diff-filter=U"])).split("\0").filter(Boolean);
+    if (merge.exit.code !== 0 && conflicts.length === 0) throw new GitCommandError(merge.exit.stderr || "Worktree merge failed.");
+    return { conflicts };
+  }
+
   async stage(workingDirectory: string, paths: readonly string[]): Promise<void> {
     if (paths.length === 0) {
       return;

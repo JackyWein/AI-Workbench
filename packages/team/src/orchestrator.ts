@@ -35,6 +35,11 @@ export interface TeamOrchestratorOptions {
    * changed is shown as it is — whatever the member itself reports.
    */
   readonly turnWatcher?: TurnWatcher;
+  readonly worktreeLifecycle?: {
+    beforeTurn(agent: AgentDefinition): Promise<void>;
+    afterTurn(agent: AgentDefinition, task: TeamTask | null): Promise<void>;
+    beforeFinish(): Promise<void>;
+  };
 }
 
 /** What a member's turn changed in the run's folder, as the application saw it. */
@@ -54,11 +59,22 @@ export interface TurnWatcher {
    * over, told whether other members were working at the same time; null
    * when the folder cannot be watched.
    */
-  begin(): Promise<((context: { readonly concurrent: boolean }) => Promise<TurnChange | null>) | null>;
+  begin(agent: AgentDefinition): Promise<((context: { readonly concurrent: boolean }) => Promise<TurnChange | null>) | null>;
 }
 
 /** How often a working turn says so while it works. */
 const PROGRESS_MS = 5_000;
+
+/** Stalled passes without progress before the run is ended instead of spinning. */
+const MAX_STALL_QUIET_PASSES = 5;
+
+/**
+ * Batches that neither started a turn nor moved a task before the run is
+ * ended. Ten passes take seconds; without the bound a batch the scheduler
+ * keeps picking but that never starts (e.g. claims refused on a stale
+ * status) retried forever, flooding the log until the app froze and died.
+ */
+const MAX_BATCH_QUIET_PASSES = 10;
 
 interface AgentSession {
   readonly adapter: AIProviderAdapter;
@@ -109,12 +125,28 @@ export class TeamOrchestrator {
   /** A lead priority turn is already running; never start a second one. */
   #leadTurnRunning = false;
   /**
+   * What the last stall warning was about. A stalled graph is re-checked
+   * every loop pass, so without this every pass spammed the mailbox and the
+   * island with the same warning until a budget stopped the run.
+   */
+  #lastStallNotified: string | null = null;
+  /**
+   * Loop passes over the same stall that spent no agent call (e.g. every
+   * lead turn fails before reaching the provider). Without a bound the loop
+   * spins forever once warnings are deduplicated; with it the run ends
+   * instead of burning the machine.
+   */
+  #stallQuietPasses = 0;
+  /** Consecutive batches that changed nothing (no turn, no task moved). */
+  #quietBatches = 0;
+  /**
    * Agents with a turn in flight. One agent is one provider conversation:
    * two turns at once would resume the same session twice, and the tool's
    * own history, the cancel handle and the session id would race.
    */
   readonly #busyAgents = new Set<string>();
   readonly #turnWatcher: TurnWatcher | undefined;
+  readonly #worktreeLifecycle: TeamOrchestratorOptions["worktreeLifecycle"];
   /** Turns begun so far; tells a turn whether another began while it ran. */
   #turnsBegun = 0;
 
@@ -124,6 +156,7 @@ export class TeamOrchestrator {
     this.#logger = options.logger.child("TEAM");
     this.#turnTimeoutMs = options.turnTimeoutMs;
     this.#turnWatcher = options.turnWatcher;
+    this.#worktreeLifecycle = options.worktreeLifecycle;
   }
 
   /**
@@ -167,7 +200,15 @@ export class TeamOrchestrator {
   async pause(): Promise<TeamRun> {
     this.#stopping = true;
     this.#stopReason = "paused";
-    await this.#running?.catch(() => undefined);
+    if (this.#running) {
+      // A wedged turn must not hang shutdown forever (which ends in a
+      // force-kill with no trace): after a grace period the run is settled
+      // as paused regardless, like `cancel` does for its reason.
+      await Promise.race([
+        this.#running.catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+      ]);
+    }
     return this.#service.run.status === "running"
       ? this.#service.stop("paused", "paused")
       : this.#service.run;
@@ -278,7 +319,28 @@ export class TeamOrchestrator {
         // A batch blocks the loop while its members work. A user's note to
         // the lead must not wait behind it: the wait below gives the lead a
         // priority turn alongside the batch instead of after it.
+        this.#lastStallNotified = null;
+        this.#stallQuietPasses = 0;
+        const begunBefore = this.#turnsBegun;
+        const tasksBefore = this.#service.taskFingerprint();
         await this.#waitForBatch(batch.map((task) => this.#workOn(task)));
+        const progressed =
+          this.#turnsBegun !== begunBefore ||
+          this.#service.taskFingerprint() !== tasksBefore;
+        if (progressed) {
+          this.#quietBatches = 0;
+        } else {
+          // Nothing started and nothing moved: re-picking the identical
+          // batch next pass would spin forever on the same refusals.
+          this.#quietBatches += 1;
+          if (this.#quietBatches >= MAX_BATCH_QUIET_PASSES) {
+            this.#logger.warn("Run stopped: batches make no progress", {
+              runId: this.#service.run.id,
+              passes: this.#quietBatches,
+            });
+            return this.#service.stop("completed", "noWorkLeft");
+          }
+        }
         continue;
       }
 
@@ -286,6 +348,7 @@ export class TeamOrchestrator {
         // Concurrency is saturated by turns claimed outside this loop (e.g.
         // via Team MCP). Wait for progress instead of spinning hot — but a
         // user's note still earns the lead a turn right away.
+        this.#quietBatches = 0;
         if (this.#takeLeadInterrupt()) {
           await this.#leadTurnIfNeeded();
           continue;
@@ -296,19 +359,26 @@ export class TeamOrchestrator {
 
       if (hasStalled(view)) {
         const stuck = view.unsatisfiable[0] ?? view.blocked[0];
-        this.#logger.warn("Task graph stalled", { taskId: stuck?.id });
-        await this.#service.sendMessage({
-          from: "orchestrator",
-          to: this.#leadId() ?? "*",
-          type: "warning",
-          content:
-            `Nothing can run: "${stuck?.title ?? "a task"}" is waiting on work that ` +
-            "will not complete. Re-plan or finish the goal.",
-          ...(stuck ? { taskId: stuck.id } : {}),
-        });
-        this.#service.emitAttentionRequired(
-          `Task graph stalled on "${stuck?.title ?? "a task"}"`,
-        );
+        // One warning per blockade, not one per loop pass: the graph is
+        // re-checked continuously, and every pass used to spam the mailbox
+        // and the island until a message budget stopped the run.
+        const stuckId = stuck?.id ?? null;
+        if (stuckId !== null && stuckId !== this.#lastStallNotified) {
+          this.#lastStallNotified = stuckId;
+          this.#logger.warn("Task graph stalled", { taskId: stuck?.id });
+          await this.#service.sendMessage({
+            from: "orchestrator",
+            to: this.#leadId() ?? "*",
+            type: "warning",
+            content:
+              `Nothing can run: "${stuck?.title ?? "a task"}" is waiting on work that ` +
+              "will not complete. Re-plan or finish the goal.",
+            ...(stuck ? { taskId: stuck.id } : {}),
+          });
+          this.#service.emitAttentionRequired(
+            `Task graph stalled on "${stuck?.title ?? "a task"}"`,
+          );
+        }
       }
 
       // Nothing runnable: the lead decides what happens next.
@@ -331,7 +401,27 @@ export class TeamOrchestrator {
         this.#service.view().inFlight.length === 0 &&
         after.agentCalls > before.agentCalls
       ) {
+        this.#stallQuietPasses = 0;
         return this.#service.stop("completed", "noWorkLeft");
+      }
+      if (
+        this.#service.view().runnable.length === 0 &&
+        this.#service.view().inFlight.length === 0 &&
+        after.agentCalls === before.agentCalls
+      ) {
+        // The lead's turn spent nothing and changed nothing — its provider
+        // is gone, not slow. Looping on would spin forever (and did, once
+        // warnings were the only thing being spent).
+        this.#stallQuietPasses += 1;
+        if (this.#stallQuietPasses >= MAX_STALL_QUIET_PASSES) {
+          this.#logger.warn("Run stopped: stalled with no progress", {
+            runId: after.id,
+            passes: this.#stallQuietPasses,
+          });
+          return this.#service.stop("completed", "noWorkLeft");
+        }
+      } else {
+        this.#stallQuietPasses = 0;
       }
     }
   }
@@ -499,7 +589,9 @@ export class TeamOrchestrator {
     }
     this.#busyAgents.add(agent.id);
     try {
+      await this.#worktreeLifecycle?.beforeTurn(agent);
       await this.#runTurn(agent, task);
+      await this.#worktreeLifecycle?.afterTurn(agent, task);
     } finally {
       this.#busyAgents.delete(agent.id);
     }
@@ -513,7 +605,7 @@ export class TeamOrchestrator {
       return null;
     }
     try {
-      const end = await this.#turnWatcher.begin();
+      const end = await this.#turnWatcher.begin(agent);
       return end ? { end, serial, othersAtStart } : null;
     } catch (error) {
       this.#logger.warn("The folder could not be watched for this turn", {
@@ -720,6 +812,7 @@ export class TeamOrchestrator {
           if (this.#leadId() && agent.id !== this.#leadId()) {
             throw new TeamRuleError("Only the lead agent finishes the goal");
           }
+          await this.#worktreeLifecycle?.beforeFinish();
           await this.#service.finishGoal(action.outcome, agent.id);
           return;
       }

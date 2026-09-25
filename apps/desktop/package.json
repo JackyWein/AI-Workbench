@@ -1,6 +1,6 @@
 {
   "name": "@ai-workbench/desktop",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "private": true,
   "main": "./out/main/index.js",
   "scripts": {
@@ -11,13 +11,14 @@
     "package:dir": "electron-vite build && electron-builder --dir --publish never"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@libsql/client": "^0.15.0",
     "drizzle-orm": "^0.45.0",
     "electron-updater": "^6.3.0",
     "node-pty": "^1.1.0",
     "pino": "^9.6.0",
-    "zod": "^3.25.76",
-    "ssh2": "^1.17.0"
+    "ssh2": "^1.17.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@ai-workbench/core": "workspace:*",

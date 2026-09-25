@@ -115,6 +115,7 @@ export const chatMessages = sqliteTable(
     error: text("error"),
     /** The application's own line in the chat, like an account switch. */
     notice: text("notice", { mode: "json" }).$type<unknown>(),
+    turnDiff: text("turn_diff", { mode: "json" }).$type<Record<string, unknown>>(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
@@ -594,3 +595,30 @@ export type TeamMessageRow = typeof teamMessages.$inferSelect;
 export type TeamDecisionRow = typeof teamDecisions.$inferSelect;
 export type TeamArtifactRow = typeof teamArtifacts.$inferSelect;
 export type TeamTurnRow = typeof teamTurns.$inferSelect;
+
+export const schedules = sqliteTable("schedules", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  content: text("content", { mode: "json" }).$type<unknown>().notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull(),
+  lastRunAt: integer("last_run_at", { mode: "timestamp_ms" }),
+  nextRunAt: integer("next_run_at", { mode: "timestamp_ms" }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+export const scheduleRuns = sqliteTable("schedule_runs", {
+  id: text("id").primaryKey(),
+  scheduleId: text("schedule_id").notNull().references(() => schedules.id, { onDelete: "cascade" }),
+  sessionId: text("session_id"), teamRunId: text("team_run_id"),
+  dueAt: integer("due_at", { mode: "timestamp_ms" }).notNull(),
+  startedAt: integer("started_at", { mode: "timestamp_ms" }).notNull(),
+  finishedAt: integer("finished_at", { mode: "timestamp_ms" }),
+  status: text("status").notNull(),
+  turns: integer("turns").notNull().default(0), tokens: integer("tokens"), error: text("error"),
+});
+export const scheduleProposals = sqliteTable("schedule_proposals", {
+  id: text("id").primaryKey(),
+  content: text("content", { mode: "json" }).$type<unknown>().notNull(),
+  status: text("status").notNull(), scheduleId: text("schedule_id"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+});

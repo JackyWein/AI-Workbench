@@ -461,6 +461,17 @@ function byProviderId(
 let workspaceRequest = 0;
 let sessionRequest = 0;
 
+/**
+ * Guards team snapshot reloads: team events plus a poll tick can otherwise
+ * stack full-snapshot IPC calls for the same run on top of each other. While
+ * one is in flight further requests are coalesced; back-to-back reloads are
+ * throttled to one per 2s with a trailing reload. Without this a long team
+ * session floods SQLite/IPC and freezes the view.
+ */
+const teamRefreshInFlight = new Set<string>();
+const teamRefreshLastAt = new Map<string, number>();
+const teamRefreshTrailing = new Map<string, ReturnType<typeof setTimeout>>();
+
 export const useWorkbench = create<WorkbenchState>((set, get) => ({
   ready: false,
   error: null,
@@ -1502,8 +1513,26 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
   },
 
   async refreshTeamRun(runId) {
+    if (teamRefreshInFlight.has(runId)) {
+      return;
+    }
+    const now = Date.now();
+    const last = teamRefreshLastAt.get(runId) ?? 0;
+    if (now - last < 2_000) {
+      if (!teamRefreshTrailing.has(runId)) {
+        const wait = 2_000 - (now - last);
+        const timer = setTimeout(() => {
+          teamRefreshTrailing.delete(runId);
+          void get().refreshTeamRun(runId);
+        }, wait);
+        teamRefreshTrailing.set(runId, timer);
+      }
+      return;
+    }
+    teamRefreshInFlight.add(runId);
     try {
       const snapshot = await invoke("team.getRun", { runId });
+      teamRefreshLastAt.set(runId, Date.now());
       set((state) => ({
         runSnapshots: { ...state.runSnapshots, [runId]: snapshot },
         teamRuns: {
@@ -1515,6 +1544,8 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       }));
     } catch (error) {
       set({ error: describeError(error) });
+    } finally {
+      teamRefreshInFlight.delete(runId);
     }
   },
 

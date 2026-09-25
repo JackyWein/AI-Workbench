@@ -8,6 +8,78 @@ you. The long day-by-day history that used to live here is in git
 Everything is on `claude/repo-setup-instructions-8tgcbw`. The design rollout
 branch `design/approved-rollout` is merged into it and can be deleted.
 
+## Where things stand (2026-09-25, 4th teams crash — first on 0.0.8 — under diagnosis)
+
+Continuing a team session killed the app again — hard, no log trail, no
+renderer-crash report, no WER entry. Live forensics (crash-reports, main log,
+DB, process tree) in `docs/team-session-freeze-2026-09-25.md` ("Nachtrag"):
+the continued run is SMALL (no snapshot OOM); all 4 agents ran OpenCode with
+free third-party models and every turn failed; a review task sat permanently
+blocked; every crash orphans provider children (`opencode serve --service`
+400+ MB still alive, MCP `node` leftovers) that pile up per cycle.
+
+Fixed on top (uncommitted, verified on Windows 2026-09-25): `#starting` reservation against
+double-resume double-drive (`team-manager.ts`), stalled warnings once per
+blockade + run ends after 5 progress-less stall passes (`orchestrator.ts`),
+`pause()` 5 s grace (`orchestrator.ts`), `start()` clears stale stopReason
+(`team/service.ts`). Root cause of the million-warning flood found via the
+user's log excerpt: scheduler picks by graph, `claimTask` refused by stale
+`blocked` label — hot pick/refuse loop with zero state change. Fixed by
+healing the label in `claimTask` via `settledStatus` plus a no-progress batch
+bound (10 passes, `taskFingerprint`). New tests green: `stall-warning` 3/3
+(inkl. Regressionstest mit exakt dem User-Zustand), team package 40/40,
+team-flow "refuses a second resume" 1/1; typecheck OK, lint 0 errors, build OK.
+Still open: orphan cleanup on the machine, and the hard-death cause itself is
+not provable from the traces (no trail by definition) — do NOT claim it fixed
+until a continued team session survives in real use. All fixes are UNCOMMITTED:
+the 0.0.8 exe predates them; either run dev or rebuild the installer.
+
+## Where things stand (2026-09-25, teams-freeze fix, uncommitted)
+
+Teams sessions froze/crashed after a while. A 4-subagent fleet found it was not
+one bug but compounding load paths that grow with session lifetime; all fixed,
+uncommitted. Full story + prevention rules:
+`docs/team-session-freeze-2026-09-25.md`.
+
+Fixed: island full-refresh per token/heartbeat now filtered + throttled
+(`island-controller.ts`); `refreshTeamRun` in-flight-guarded + 2s-throttled
+(`store/workbench.ts`); team poll 3s → 5s + hidden-pause, timeline windowed at
+100 entries (`TeamSessionView.tsx`); agent prompt bounded (~24KB cap,
+`team/prompt.ts`); member-setup timeouts 15/30/60s + `TeamManager.undoTurn`
+implemented (`team-manager.ts`, also fixes the `team.undoTurn` IPC `TypeError`
+— `ipc.ts` called a method that did not exist); `SessionManager.cancel`
+force-retires after 5s grace (no more busy-forever); `TerminalManager.close`
+kills before dispose + idempotent `onExit`; `AsyncQueue` capped at 5.000;
+`workspace.deleted` also cancels team runs (`services.ts`).
+
+Also repaired uncommitted WIP that broke the gate: stray `worktreeGit` options
+on `SessionManager` removed, `teams.snapshot()` → `getSnapshot()`,
+`separateWorktrees: false` in 4 team test fixtures, `import()`-type lint +
+`memory-index.ts` escapes.
+
+Checked 2026-09-25 on Windows: `typecheck` OK, `lint` OK (0 errors, 3 known
+script `console` warnings), `packages/team` 37/37, `team-flow` 19/19,
+`resilience` 7/7, terminal tests OK, `build` OK. Full `bun run test` and both
+`verify:app` phases still need a Linux/macOS run before anything is ticked in
+`PROGRESS.md`; on Windows `verify:app` fails for platform reasons by design.
+Next: Linux/macOS `bun run verify`, then continue normal work.
+
+## 0.0.8 installer (2026-09-25, local Windows build, uncommitted)
+
+Version bumped 0.0.7 → 0.0.8 (`package.json`, `apps/desktop/package.json`;
+`release-notes.md` rewritten for 0.0.8; lockfile synced). Built locally with
+`bun run package`: `release/AI-Workbench-0.0.8-windows-x64.exe` (NSIS, ~195 MB)
++ `release/AI-Workbench-0.0.8-windows-portable-x64.exe` (~195 MB), both
+unsigned (no certificates, SmartScreen will warn), `latest.yml` carries 0.0.8
+with the new notes. `verify:memory` passes (check script updated for the 5
+real memory tools: search/read/add/update/append), `verify:memory:package`
+passes against `win-unpacked`. Rebuilt 16:26 with the resume/stall fixes
+(claim healing, batch bound, reservation, pause grace) overwriting the first
+0.0.8; packaged check passes again. Size jump vs 0.0.7 (~120 → ~195 MB) comes from
+uncommitted F8 voice-deps (`@huggingface/transformers`), not from the freeze
+fixes. Later release: Actions → Release → Run workflow tags v0.0.8 and builds
+all three platforms (this local exe is Windows-only).
+
 ## Where things stand (2026-09-24, after 0.0.7 + uncommitted follow-up)
 
 Uncommitted on top of `2011f5e Release 0.0.7`: custom Titlebar

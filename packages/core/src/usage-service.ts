@@ -5,6 +5,7 @@ import type {
 } from "@ai-workbench/shared";
 import type { EventBus } from "./event-bus.js";
 import type { ProviderManager } from "./provider-manager.js";
+import { UsageForecaster } from "./usage-forecast.js";
 
 export interface UsageServiceOptions {
   readonly providers: ProviderManager;
@@ -28,6 +29,7 @@ export class UsageService {
   #cache: AggregatedUsage | null = null;
   #fetchedAt = 0;
   #inFlight: Promise<AggregatedUsage> | null = null;
+  readonly #forecaster = new UsageForecaster();
 
   constructor(options: UsageServiceOptions) {
     this.#providers = options.providers;
@@ -70,7 +72,7 @@ export class UsageService {
       }),
     );
 
-    const usage: AggregatedUsage = { snapshots, updatedAt: new Date() };
+    const usage: AggregatedUsage = { snapshots: snapshots.map((snapshot) => this.#forecaster.observe(snapshot)), updatedAt: new Date() };
     this.#cache = usage;
     this.#fetchedAt = Date.now();
     this.#events.publish({ type: "provider.usage.updated", usage });

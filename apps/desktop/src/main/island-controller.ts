@@ -55,6 +55,8 @@ export class IslandController {
   #timer: NodeJS.Timeout | null = null;
   #refreshing = false;
   #needsRefresh = false;
+  #lastRefreshAt = 0;
+  #trailingTimer: NodeJS.Timeout | null = null;
   #lastSessionCount = 0;
   #lastRunCount = 0;
   /**
@@ -167,13 +169,17 @@ export class IslandController {
     // Anything that changes what the island should show also refreshes it.
     // Fire-and-forget refreshes must never reject unhandled: a failing
     // refresh is logged and the next tick retries.
-    this.#eventsUnsubscribe = this.#services.events.subscribe(() =>
-      this.refresh().catch((error: unknown) =>
-        this.#services.logger.warn("Island refresh failed", {
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      ),
-    );
+    // High-frequency streaming events (per-token deltas, raw provider events
+    // and per-agent progress heartbeats) never trigger a full refresh on
+    // their own: a refresh reads up to 10 full team snapshots plus sessions,
+    // terminals and usage, so driving it per token blocks the main loop and
+    // freezes team sessions. The 2s timer below already picks up progress.
+    this.#eventsUnsubscribe = this.#services.events.subscribe((event) => {
+      if (!this.#shouldRefreshFor(event.type, event)) {
+        return;
+      }
+      this.#requestRefresh();
+    });
     // Time passes too: an entry ages out and usage changes on its own, and
     // an island that lost its z-order (full-screen app, other topmost tool)
     // is put back rather than staying gone until someone toggles it.
@@ -229,6 +235,7 @@ export class IslandController {
     let state: IslandState;
     try {
       state = await this.#refreshInner();
+      this.#lastRefreshAt = Date.now();
     } finally {
       this.#refreshing = false;
     }
@@ -237,6 +244,61 @@ export class IslandController {
       return await this.refresh();
     }
     return state;
+  }
+
+  /**
+   * Whether a domain event warrants a full island refresh. Streaming and
+   * heartbeat events are intentionally ignored: they arrive per token (or
+   * every few seconds per agent) while the 2s timer already repaints
+   * progress. Refreshing the full snapshot set per token is what froze the
+   * main loop in long team sessions.
+   */
+  #shouldRefreshFor(type: string, event: unknown): boolean {
+    if (type === "message.delta" || type === "provider.event") {
+      return false;
+    }
+    if (type === "team.event" && typeof event === "object" && event !== null) {
+      const inner = (event as { event?: { type?: string } }).event;
+      if (inner?.type === "AGENT_PROGRESS") {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /**
+   * Event-triggered refresh, throttled: at most one full refresh per second,
+   * with a trailing refresh when events arrive faster. Prevents an event
+   * storm (task/message/artifact per turn across parallel agents) from
+   * stacking full DB scans.
+   */
+  #requestRefresh(): void {
+    if (this.#refreshing) {
+      this.#needsRefresh = true;
+      return;
+    }
+    const now = Date.now();
+    const elapsed = now - this.#lastRefreshAt;
+    if (elapsed >= 1_000) {
+      void this.refresh().catch((error: unknown) =>
+        this.#services.logger.warn("Island refresh failed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+      return;
+    }
+    if (this.#trailingTimer) {
+      return;
+    }
+    this.#trailingTimer = setTimeout(() => {
+      this.#trailingTimer = null;
+      void this.refresh().catch((error: unknown) =>
+        this.#services.logger.warn("Island refresh failed", {
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
+    }, 1_000 - elapsed);
+    this.#trailingTimer.unref?.();
   }
 
   async #refreshInner(): Promise<IslandState> {
@@ -1041,6 +1103,10 @@ export class IslandController {
     if (this.#timer) {
       clearInterval(this.#timer);
       this.#timer = null;
+    }
+    if (this.#trailingTimer) {
+      clearTimeout(this.#trailingTimer);
+      this.#trailingTimer = null;
     }
     this.#tray.destroy();
     this.#window.destroy();

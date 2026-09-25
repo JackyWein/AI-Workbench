@@ -8,7 +8,7 @@ import {
   type ProviderSessionHandle,
   type ProviderToolAccess,
 } from "@ai-workbench/provider-base";
-import { accountNoticeSchema, readSessionRuntimeSettings } from "@ai-workbench/shared";
+import { accountNoticeSchema, readSessionRuntimeSettings, turnDiffSchema } from "@ai-workbench/shared";
 import type {
   AccountNotice,
   AppSettings,
@@ -24,6 +24,7 @@ import type {
   Session,
   SessionStatus,
   ToolCallRecord,
+  TurnDiff,
   UpdateSessionInput,
 } from "@ai-workbench/shared";
 import { join } from "node:path";
@@ -38,6 +39,7 @@ import type { McpService } from "./mcp-service.js";
 import type { SkillService } from "./skill-service.js";
 import type { UsageService } from "./usage-service.js";
 import type { WorkspaceManager } from "./workspace-manager.js";
+import type { FolderHistory } from "./team-manager.js";
 
 export class SessionNotFoundError extends Error {
   constructor(id: string) {
@@ -70,6 +72,7 @@ interface ActiveRun {
 }
 
 export interface SessionManagerOptions {
+  readonly folderHistory?: FolderHistory;
   readonly db: Database;
   readonly events: EventBus;
   readonly logger: Logger;
@@ -101,6 +104,9 @@ export interface SessionManagerOptions {
  * main window is closed (spec §91, §104).
  */
 export class SessionManager {
+  readonly #folderHistory: FolderHistory | undefined;
+  readonly #undoing = new Set<string>();
+  readonly #watchedFolders = new Map<string, Set<{ concurrent: boolean }>>();
   readonly #db: Database;
   readonly #events: EventBus;
   readonly #logger: Logger;
@@ -120,6 +126,7 @@ export class SessionManager {
   readonly #limited = new Map<string, { readonly until: Date | null }>();
 
   constructor(options: SessionManagerOptions) {
+    this.#folderHistory = options.folderHistory;
     this.#db = options.db;
     this.#events = options.events;
     this.#logger = options.logger.child("SESSION");
@@ -190,6 +197,43 @@ export class SessionManager {
     });
     this.#events.publish({ type: "session.created", session });
     return session;
+  }
+
+  /** Copies the recorded conversation; the first new turn uses the normal handover path. */
+  async fork(input: { sessionId: string; providerId: string; modelId?: string; reasoningEffort?: string }): Promise<Session> {
+    const source = await this.require(input.sessionId);
+    if (source.type !== "solo") throw new Error("Only solo conversations can be continued in another tool.");
+    if (this.isBusy(source.id)) throw new SessionBusyError(source.id);
+    const provider = await this.#providers.describe(input.providerId);
+    if (!provider.enabled || !provider.capabilities.supported.includes("chat") || provider.installation.state !== "installed") {
+      throw new Error("The selected tool is not ready to chat.");
+    }
+    if (input.modelId && !provider.models.some((model) => model.id === input.modelId)) throw new Error("The selected model is no longer available.");
+    const rows = await this.#db.select().from(chatMessages).where(eq(chatMessages.sessionId, source.id)).orderBy(asc(chatMessages.createdAt));
+    const target = await this.create({
+      workspaceId: source.workspaceId,
+      name: `${source.name} · ${provider.metadata.displayName}`.slice(0, 200),
+      type: "solo", providerId: input.providerId,
+      ...(input.modelId ? { modelId: input.modelId } : {}),
+      workingDirectory: source.workingDirectory,
+      enabledSkills: source.enabledSkills, enabledPlugins: source.enabledPlugins, enabledMcpServers: source.enabledMcpServers,
+      settings: { forkedFrom: source.id, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) },
+    });
+    try {
+      for (const row of rows) {
+        const messageId = createId("msg");
+        const attachments = toChatMessage(row).attachments;
+        const copied = attachments.length && this.#attachmentsDirectory
+          ? await keepAttachments(attachments, join(this.#attachmentsDirectory, target.id, messageId))
+          : attachments;
+        // Old turn undo operations and actionable account notices belong only to the source.
+        await this.#db.insert(chatMessages).values({ ...row, id: messageId, sessionId: target.id, attachments: copied, notice: null, turnDiff: null });
+      }
+      return target;
+    } catch (error) {
+      await this.delete(target.id);
+      throw error;
+    }
   }
 
   async update(input: UpdateSessionInput): Promise<Session> {
@@ -280,7 +324,63 @@ export class SessionManager {
   }
 
   isBusy(sessionId: string): boolean {
-    return this.#runs.has(sessionId);
+    return this.#runs.has(sessionId) || this.#undoing.has(sessionId);
+  }
+
+  /** Undo is an explicit action on a recorded answer, never caller-supplied paths. */
+  async undoTurn(sessionId: string, messageId: string): Promise<ChatMessage> {
+    if (this.isBusy(sessionId)) throw new SessionBusyError(sessionId);
+    const session = await this.require(sessionId);
+    if ((await this.list()).some((other) => other.workingDirectory === session.workingDirectory && this.isBusy(other.id))) {
+      throw new Error("Stop other sessions working in this folder before undoing a turn.");
+    }
+    this.#undoing.add(sessionId);
+    try {
+      const [row] = await this.#db.select().from(chatMessages).where(and(eq(chatMessages.id, messageId), eq(chatMessages.sessionId, sessionId)));
+      const diff = row?.turnDiff ? turnDiffSchema.parse(row.turnDiff) : null;
+      if (!row || !diff || !this.#folderHistory?.undo) throw new Error("This turn has no restorable snapshot.");
+      if (diff.undoneAt) throw new Error("This turn was already undone.");
+      if (diff.concurrent) throw new Error("Other sessions worked in this folder during this turn; attribution is uncertain.");
+      if (diff.folder !== session.workingDirectory) throw new Error("The session folder changed; the original snapshot cannot be restored here.");
+      await this.#folderHistory.undo(diff.folder, diff.before, diff.after);
+      const updatedAt = new Date();
+      const updated = { ...diff, undoneAt: updatedAt };
+      await this.#db.update(chatMessages).set({ turnDiff: updated, updatedAt }).where(eq(chatMessages.id, messageId));
+      const message = toChatMessage({ ...row, turnDiff: updated, updatedAt });
+      this.#events.publish({ type: "message.updated", message });
+      return message;
+    } finally {
+      this.#undoing.delete(sessionId);
+    }
+  }
+
+  async #watchFolder(folder: string, messageId: string): Promise<() => Promise<TurnDiff | undefined>> {
+    const history = this.#folderHistory;
+    if (!history) return async () => undefined;
+    const before = await history.snapshot(folder).catch(() => null);
+    if (!before) return async () => undefined;
+    const watchers = this.#watchedFolders.get(folder) ?? new Set<{ concurrent: boolean }>();
+    const watcher = { concurrent: watchers.size > 0 };
+    for (const existing of watchers) existing.concurrent = true;
+    watchers.add(watcher);
+    this.#watchedFolders.set(folder, watchers);
+    return async () => {
+      try {
+        const after = await history.snapshot(folder);
+        if (!after) return undefined;
+        const change = await history.compare(folder, before, after);
+        if (change.files.length === 0) return undefined;
+        await history.retainSnapshot?.(folder, `${messageId}/before`, before);
+        await history.retainSnapshot?.(folder, `${messageId}/after`, after);
+        return { before, after, folder, files: [...change.files], diff: change.diff, truncated: change.truncated, concurrent: watcher.concurrent, undoneAt: null };
+      } catch (error) {
+        this.#logger.warn("Turn diff could not be recorded", { error: error instanceof Error ? error.message : String(error) });
+        return undefined;
+      } finally {
+        watchers.delete(watcher);
+        if (watchers.size === 0) this.#watchedFolders.delete(folder);
+      }
+    };
   }
 
   /**
@@ -467,7 +567,8 @@ export class SessionManager {
         ? { attachments: sent.map(({ kind, path }) => ({ kind, path })) }
         : {}),
     };
-    run.finished = this.#stream(run, providerId, assistantMessage, message, userMessage).finally(
+    const endDiff = await this.#watchFolder(session.workingDirectory, assistantMessage.id);
+    run.finished = this.#stream(run, providerId, assistantMessage, message, userMessage, endDiff).finally(
       () => {
         // A turn that went on on another account has registered its own run.
         if (this.#runs.get(sessionId) === run) {
@@ -524,6 +625,17 @@ export class SessionManager {
       run.finished.catch(() => undefined),
       new Promise((resolve) => setTimeout(resolve, 5_000)),
     ]);
+    // A provider that never settles its stream would otherwise leave the
+    // session busy forever: no new message, no delete, UI frozen. Retire it
+    // here; a late stream end finds its entry gone and only writes its
+    // already-persisted answer, never resurrecting the busy state.
+    if (this.#runs.get(sessionId) === run) {
+      this.#runs.delete(sessionId);
+      this.#logger.warn("Provider did not settle after cancel; session retired", {
+        sessionId,
+      });
+      this.#publishStatus(sessionId, "idle");
+    }
     return true;
   }
 
@@ -590,6 +702,7 @@ export class SessionManager {
     message: ChatMessage,
     request: AgentMessage,
     userMessage: ChatMessage,
+    endDiff: () => Promise<TurnDiff | undefined>,
   ): Promise<void> {
     const sessionId = message.sessionId;
     let content = "";
@@ -684,6 +797,7 @@ export class SessionManager {
       status = "cancelled";
     }
 
+    const turnDiff = await endDiff();
     const finalMessage: ChatMessage = {
       ...message,
       content,
@@ -692,6 +806,7 @@ export class SessionManager {
       usage,
       error: error?.message ?? null,
       updatedAt: new Date(),
+      ...(turnDiff ? { turnDiff } : {}),
     };
 
     await this.#db
@@ -703,6 +818,7 @@ export class SessionManager {
         usage: finalMessage.usage,
         error: finalMessage.error,
         updatedAt: finalMessage.updatedAt,
+        turnDiff: turnDiff ?? null,
       })
       .where(eq(chatMessages.id, message.id));
 
@@ -1201,6 +1317,7 @@ export class SessionManager {
       usage: null,
       error: null,
       notice: input.notice ?? null,
+      turnDiff: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -1267,6 +1384,7 @@ function toSession(row: SessionRow): Session {
 
 function toChatMessage(row: ChatMessageRow): ChatMessage {
   const notice = row.notice ? accountNoticeSchema.safeParse(row.notice) : null;
+  const turnDiff = row.turnDiff ? turnDiffSchema.safeParse(row.turnDiff) : null;
   return {
     id: row.id,
     sessionId: row.sessionId,
@@ -1281,6 +1399,7 @@ function toChatMessage(row: ChatMessageRow): ChatMessage {
     usage: (row.usage ?? null) as MessageUsage | null,
     error: row.error,
     ...(notice?.success ? { notice: notice.data } : {}),
+    ...(turnDiff?.success ? { turnDiff: turnDiff.data } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

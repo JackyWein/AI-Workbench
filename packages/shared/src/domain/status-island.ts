@@ -137,6 +137,7 @@ export const islandUsageRowSchema = z.object({
   window: z.string().max(60).default(""),
   /** Percent remaining, or null when the provider did not report a number. */
   percentLeft: z.number().min(0).max(100).nullable(),
+  forecast: z.object({ exhaustsAt: z.date(), sampledAt: z.date() }).optional(),
   /** Provider mark key; null falls back to a letter. */
   icon: z.string().max(120).nullable().default(null),
   /** Why there is no number, when there is none ("Usage unavailable"). */

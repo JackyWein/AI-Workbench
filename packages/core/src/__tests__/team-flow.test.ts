@@ -558,6 +558,52 @@ describe("team runs in the application", () => {
     expect((await app.teams.getSnapshot(run.id)).run.status).toBe("completed");
   });
 
+  it("refuses a second resume while the first is still attaching", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "Resume me twice" });
+    await settle(app, run.id);
+
+    // A paused run with nothing driving it, like after a crash recovery.
+    const store = new SqlTeamRunStore(app.database.db);
+    const finished = await app.teams.getSnapshot(run.id);
+    await store.saveRun({ ...finished.run, status: "paused", stopReason: "paused", finishedAt: null });
+    expect(app.teams.isRunning(run.id)).toBe(false);
+
+    const started = app.teamEvents.filter(
+      (event) => event.type === "TEAM_STARTED" && event.runId === run.id,
+    ).length;
+    const [first, second] = await Promise.allSettled([
+      app.teams.resumeRun(run.id),
+      app.teams.resumeRun(run.id),
+    ]);
+    const fulfilled = [first, second].filter((outcome) => outcome.status === "fulfilled");
+    const rejected = [first, second].filter((outcome) => outcome.status === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    const reason = rejected[0];
+    expect(reason && reason.status === "rejected" ? String(reason.reason) : "").toMatch(
+      /already starting/,
+    );
+
+    // The resumed run leaves "paused" exactly once: a doubled resume would
+    // have attached two orchestrators with two provider sessions per agent.
+    // (Windows SQLite is slow: allow the attach its time instead of racing it.)
+    let begins = started;
+    for (let attempt = 0; attempt < 1500; attempt += 1) {
+      begins = app.teamEvents.filter(
+        (event) => event.type === "TEAM_STARTED" && event.runId === run.id,
+      ).length;
+      if (begins - started === 1) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(begins - started).toBe(1);
+
+    await app.teams.cancelRun(run.id);
+    await settle(app, run.id);
+  });
+
   it("cancels a run on request and says so", async () => {
     const { teamId } = await makeTeam();
     const run = await app.teams.startRun({ teamId, goal: "Something long" });

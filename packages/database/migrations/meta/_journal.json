@@ -1,48 +1,55 @@
-{
-  "version": "7",
-  "dialect": "sqlite",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "6",
-      "when": 1789985488298,
-      "tag": "0000_init",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1789988006327,
-      "tag": "0001_provider-configs",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1789994820117,
-      "tag": "0002_skills-plugins-mcp",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1789998513270,
-      "tag": "0003_teams",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1790014641657,
-      "tag": "0004_provider-accounts",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1790015001450,
-      "tag": "0005_agent-terminals",
-      "breakpoints": true
-    }
-  ]
+﻿{
+    "version":  "7",
+    "dialect":  "sqlite",
+    "entries":  [
+                    {
+                        "idx":  0,
+                        "version":  "6",
+                        "when":  1789985488298,
+                        "tag":  "0000_init",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  1,
+                        "version":  "6",
+                        "when":  1789988006327,
+                        "tag":  "0001_provider-configs",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  2,
+                        "version":  "6",
+                        "when":  1789994820117,
+                        "tag":  "0002_skills-plugins-mcp",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  3,
+                        "version":  "6",
+                        "when":  1789998513270,
+                        "tag":  "0003_teams",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  4,
+                        "version":  "6",
+                        "when":  1790014641657,
+                        "tag":  "0004_provider-accounts",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  5,
+                        "version":  "6",
+                        "when":  1790015001450,
+                        "tag":  "0005_agent-terminals",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  14,
+                        "version":  "6",
+                        "when":  1790337671414,
+                        "tag":  "0014_schedules-turn-diffs",
+                        "breakpoints":  true
+                    }
+                ]
 }

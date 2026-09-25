@@ -492,6 +492,7 @@ async function createServicesInner(
   const usage = new UsageService({ providers, events, logger });
   usageRef = usage;
   const sessions = new SessionManager({
+    folderHistory: git,
     usage,
     settings,
     skillsServerId: SKILLS_SERVER_ID,
@@ -558,6 +559,9 @@ async function createServicesInner(
   events.on("workspace.deleted", (event) => {
     if (event.type === "workspace.deleted") {
       agentTerminals.stopAll(event.workspaceId);
+      // Team runs work in the workspace's folder: stop them too, or their
+      // CLI children keep running with no workspace to belong to.
+      void teams.cancelRunsIn(event.workspaceId).catch(() => undefined);
     }
   });
 

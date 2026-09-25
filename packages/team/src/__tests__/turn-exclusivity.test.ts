@@ -38,6 +38,7 @@ function teamOf(agents: AgentDefinition[], leadAgentId: string): TeamDefinition 
     leadAgentId,
     agents,
     settings: {
+      separateWorktrees: false,
       instructions: "",
       allowOutsideWorkspace: false,
       workingDirectory: null,

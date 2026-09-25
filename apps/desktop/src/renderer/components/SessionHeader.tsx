@@ -12,6 +12,7 @@ import { invoke } from "../lib/client.js";
 import { ModeToggle } from "./AgentsView.js";
 import { UsageIndicator } from "./UsageIndicator.js";
 import { ModelPicker } from "./ModelPicker.js";
+import { ContinueSession } from "./ContinueSession.js";
 
 interface SessionHeaderProps {
   readonly session: Session;
@@ -93,6 +94,7 @@ export function SessionHeader({
       <div className="header__actions">
         {branchPill}
         {statusPill}
+        <ContinueSession key={session.id} session={session} providers={providers} busy={status === "working" || status === "streaming" || status === "planning" || status === "waiting"} />
         <ModelPicker />
 
         <UsageIndicator

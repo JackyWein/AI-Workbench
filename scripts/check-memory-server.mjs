@@ -29,7 +29,7 @@ try {
   });
   await client.connect(transport);
   assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name), [
-    "memory_search", "memory_read", "memory_add",
+    "memory_search", "memory_read", "memory_add", "memory_update", "memory_append",
   ]);
   const search = await client.callTool({ name: "memory_search", arguments: { query: "Shared note" } });
   assert.equal(search.isError, undefined);

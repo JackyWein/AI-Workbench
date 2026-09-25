@@ -173,6 +173,11 @@ export class TerminalManager {
     );
     state.disposables.push(
       pty.onExit(({ exitCode }) => {
+        // close() cleans up idempotently and reports exit itself; a late
+        // exit event for the same id must not report twice.
+        if (!this.#terminals.has(id)) {
+          return;
+        }
         for (const disposable of state.disposables) {
           try {
             disposable.dispose();
@@ -316,6 +321,22 @@ export class TerminalManager {
     if (!state) {
       return false;
     }
+    // Kill first while the exit listener is still attached: deleting and
+    // disposing before kill silenced onExit, so agent tiles never learned
+    // their terminal died and stayed "running" forever with leaked ptys.
+    try {
+      state.pty.kill();
+    } catch (error) {
+      this.#logger.warn("Terminal could not be killed", {
+        terminalId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    // The exit event may still arrive (or never, if the pty is already gone):
+    // clean up idempotently here and let onExit become a no-op for this id.
+    if (!this.#terminals.has(id)) {
+      return true;
+    }
     this.#terminals.delete(id);
     for (const disposable of state.disposables) {
       try {
@@ -325,12 +346,9 @@ export class TerminalManager {
       }
     }
     try {
-      state.pty.kill();
-    } catch (error) {
-      this.#logger.warn("Terminal could not be killed", {
-        terminalId: id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      this.#options.onExit(id, 0);
+    } catch {
+      // Exit reporting must not break close.
     }
     return true;
   }

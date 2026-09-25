@@ -171,6 +171,10 @@ export const ipcContract = {
     output: z.array(sessionSchema),
   },
   "session.create": { input: createSessionInputSchema, output: sessionSchema },
+  "session.fork": {
+    input: z.object({ sessionId: z.string().min(1), providerId: z.string().min(1), modelId: z.string().min(1).optional(), reasoningEffort: z.string().min(1).max(100).optional() }),
+    output: sessionSchema,
+  },
   "session.update": { input: updateSessionInputSchema, output: sessionSchema },
   "session.delete": {
     input: z.object({ id: z.string().min(1) }),
@@ -227,6 +231,14 @@ export const ipcContract = {
       limit: z.number().int().positive().max(1000).optional(),
     }),
     output: z.array(chatMessageSchema),
+  },
+  "session.undoTurn": {
+    input: z.object({ sessionId: z.string().min(1), messageId: z.string().min(1) }),
+    output: chatMessageSchema,
+  },
+  "team.undoTurn": {
+    input: z.object({ runId: z.string().min(1), artifactId: z.string().min(1) }),
+    output: z.object({ files: z.array(z.string()) }),
   },
 
   "provider.list": { input: z.void(), output: z.array(providerSummarySchema) },

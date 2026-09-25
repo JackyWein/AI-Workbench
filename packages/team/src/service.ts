@@ -172,6 +172,15 @@ export class TeamService {
     return this.#team.agents.find((agent) => agent.id === agentId) ?? null;
   }
 
+  /**
+   * Ids and statuses of every task. The orchestrator reads it around a batch
+   * to tell whether the batch changed anything — a batch that neither
+   * started a turn nor moved a task must not be retried forever.
+   */
+  taskFingerprint(): string {
+    return this.#tasks.map((task) => `${task.id}:${task.status}`).join(",");
+  }
+
   listTasks(filter?: { status?: string; assignedTo?: string }): TeamTask[] {
     return this.#tasks.filter(
       (task) =>
@@ -265,9 +274,18 @@ export class TeamService {
 
   /** An agent takes a task it may work on. */
   async claimTask(taskId: string, agentId: string): Promise<TeamTask> {
-    const task = this.#require(taskId);
+    let task = this.#require(taskId);
     if (!this.getAgent(agentId)) {
       throw new TeamRuleError(`Agent "${agentId}" is not on this team`);
+    }
+    // Heal a stale status label before judging: the scheduler picks by the
+    // graph (dependencies met) while this check reads the stored label. A
+    // task left labeled "blocked" with met dependencies was picked as
+    // runnable forever but refused here forever — a hot pick/refuse loop
+    // logging millions of warnings until the app froze and died.
+    const settled = settledStatus(task, new Map(this.#tasks.map((entry) => [entry.id, entry])));
+    if (settled !== task.status) {
+      task = await this.#update(task, { status: settled });
     }
     if (isTerminal(task.status)) {
       throw new TeamRuleError(`"${task.title}" is already ${task.status}`);
@@ -576,6 +594,9 @@ export class TeamService {
     this.#run = {
       ...this.#run,
       status: "running",
+      // A resumed run carried the reason it stopped ("interrupted"); running
+      // again, it has none — a stale reason confuses the UI and recovery.
+      stopReason: null,
       startedAt: this.#run.startedAt ?? this.#now(),
     };
     await this.#store.saveRun(this.#run);

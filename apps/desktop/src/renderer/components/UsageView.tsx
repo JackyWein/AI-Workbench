@@ -246,6 +246,11 @@ function Quota({ limit, now }: { readonly limit: UsageLimit; readonly now: numbe
           : (limit.resetsText ?? "Reset time not reported")}
         {percent >= 100 && !reset && noResetInfo ? " · limit may still apply" : null}
       </p>
+      {limit.forecast && now - limit.forecast.sampledAt.getTime() <= 600_000 && limit.forecast.exhaustsAt.getTime() > now ? (
+        <p className="quota__foot" title={`${limit.forecast.samples} reports over ${Math.round(limit.forecast.observationMinutes)} minutes`}>
+          At this pace: used up {formatWhen(limit.forecast.exhaustsAt, now)} (estimate)
+        </p>
+      ) : null}
     </div>
   );
 }

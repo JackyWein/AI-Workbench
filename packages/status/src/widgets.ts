@@ -519,6 +519,7 @@ export const providerUsageWidget: IslandWidget = {
                       icon: provider.icon,
                       window: limit.label,
                       percentLeft: Math.min(100, Math.max(0, 100 - used)),
+                      ...(limit.forecast ? { forecast: limit.forecast } : {}),
                       note: "",
                     },
                   ];

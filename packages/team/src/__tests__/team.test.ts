@@ -47,6 +47,7 @@ function makeTeam(agents: AgentDefinition[], leadAgentId: string | null): TeamDe
     leadAgentId,
     agents,
     settings: {
+      separateWorktrees: false,
       instructions: "",
       allowOutsideWorkspace: false,
       workingDirectory: null,

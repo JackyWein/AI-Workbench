@@ -50,6 +50,12 @@ export class AsyncQueue<T> implements AsyncIterable<T> {
       waiter.resolve({ value: item, done: false });
       return;
     }
+    // Bound the buffer: a verbose CLI that outruns its consumer used to grow
+    // this array without limit and OOM the main process in long team turns.
+    // Oldest lines go first; the consumer still sees a live tail.
+    if (this.#items.length >= 5_000) {
+      this.#items.shift();
+    }
     this.#items.push(item);
   }
 

@@ -89,6 +89,8 @@ export function upgradeRunLimits(limits: TeamRunConfig): TeamRunConfig {
 }
 
 export const teamSettingsSchema = z.object({
+  /** Isolated run branches; finished work is integrated in the lead's worktree. */
+  separateWorktrees: z.boolean().default(false),
   limits: teamRunConfigSchema.default({}),
   /** Extra instructions handed to every agent of this team. */
   instructions: z.string().max(10_000).default(""),
@@ -137,6 +139,7 @@ export type CreateTeamInputData = z.input<typeof createTeamInputSchema>;
  * the workspace it is started from, or in the team's own folder.
  */
 export const updateTeamInputSchema = z.object({
+  separateWorktrees: z.boolean().optional(),
   teamId: z.string().min(1),
   name: z.string().min(1).max(200).optional(),
   agents: z

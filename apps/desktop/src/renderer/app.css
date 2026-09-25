@@ -3956,6 +3956,22 @@ button.sidebar__user[aria-current="true"] {
 
 .header__main .mode-toggle {
   margin-right: 2px;
+  -webkit-app-region: no-drag;
+}
+
+/*
+ * The header is a window drag region (frameless window). Every interactive
+ * descendant inside the draggable left side must opt out, or Electron
+ * treats its clicks as the start of a window drag — which is exactly how
+ * the Chat/Agents toggle became unclickable. The right side (.header__actions)
+ * already opts out as a whole; this covers the left side without taking the
+ * drag surface away from the surrounding text.
+ */
+.header__main button,
+.header__main select,
+.header__main input,
+.header__main a {
+  -webkit-app-region: no-drag;
 }
 
 /* ------------------------------------------------------------- settings -- */
@@ -7099,3 +7115,16 @@ button.sidebar__user[aria-current="true"] {
 .template-preview__member {
   color: var(--text-primary);
 }
+/* A native dialog provides keyboard focus trapping and Escape dismissal. */
+.continuation-dialog {
+  max-width: 560px;
+  width: calc(100vw - 64px);
+  padding: 24px;
+  color: var(--text-primary);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+.continuation-dialog::backdrop { background: var(--overlay-backdrop); }
+.continuation-dialog p { margin-block: 12px; }
+.continuation-dialog .view__actions { margin-top: 20px; justify-content: flex-end; }

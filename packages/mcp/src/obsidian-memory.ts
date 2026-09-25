@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { scanText } from "@ai-workbench/shared";
+import { z } from "zod";
+import { indexedMemorySearch, type IndexedMemoryNote, type MemorySearchHit } from "./memory-index.js";
 
 const MAX_FILES = 5_000;
 const MAX_NOTE_BYTES = 1_000_000;
@@ -152,62 +154,64 @@ async function notePath(root: string, value: unknown): Promise<string> {
   return candidate;
 }
 
-function stringArg(args: Record<string, unknown>, key: string, max: number): string {
-  const value = args[key];
-  if (typeof value !== "string" || value.trim().length === 0 || value.length > max) {
-    throw new Error(`${key} must be text of at most ${max} characters.`);
-  }
-  return value.trim();
-}
-
 function titleOf(content: string, path: string): string {
   const heading = /^#\s+([^\r\n]+)/m.exec(content)?.[1];
   return (heading ?? basename(path, ".md")).replace(/\s+/g, " ").trim().slice(0, 120);
 }
 
 /** Returns short matches; agents only read a full note when they choose it. */
-export async function searchMemory(root: string, query: string, limit = 10): Promise<Array<{
-  path: string; title: string; snippet: string;
-}>> {
+export async function searchMemory(root: string, query: string, limit = 10): Promise<MemorySearchHit[]> {
   const needle = query.trim().toLowerCase();
   if (needle.length < 2 || needle.length > 160) throw new Error("Search for 2 to 160 characters.");
   if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error("limit must be between 1 and 20.");
-  const matches: Array<{ path: string; title: string; snippet: string; score: number }> = [];
+  return indexedMemorySearch(await openMemoryVault(root), query, limit, () => loadIndexNotes(root));
+}
+
+async function* loadIndexNotes(root: string): AsyncIterable<IndexedMemoryNote> {
   for (const path of await notes(root)) {
-    let content: string;
     try {
-      content = await readFile(await notePath(root, path), "utf8");
-    } catch {
-      continue;
-    }
-    const title = titleOf(content, path);
-    const where = content.toLowerCase().indexOf(needle);
-    const titleHit = title.toLowerCase().includes(needle);
-    if (where < 0 && !titleHit) continue;
-    const start = Math.max(0, where < 0 ? 0 : where - 60);
-    const snippet = content.slice(start, start + 180).replace(/\s+/g, " ").trim();
-    matches.push({ path, title, snippet, score: titleHit ? 2 : 1 });
+      const note = await fullNote(root, path);
+      // Never copy a credential from an externally edited note into the cache.
+      if (scanText(note.content).length) continue;
+      yield { path, title: titleOf(note.content, path), content: note.content, version: note.version };
+    } catch { /* An editor may move or replace a note during the scan. */ }
   }
-  return matches.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
-    .slice(0, limit)
-    .map(({ path, title, snippet }) => ({ path, title, snippet }));
+}
+
+export async function rebuildMemoryIndex(root: string): Promise<void> {
+  await indexedMemorySearch(await openMemoryVault(root), null, 0, () => loadIndexNotes(root));
+}
+
+async function fullNote(root: string, path: string): Promise<{ content: string; version: string; sha256: string }> {
+  const file = await notePath(root, path);
+  const before = await lstat(file, { bigint: true });
+  const content = await readFile(file, "utf8");
+  const after = await lstat(file, { bigint: true });
+  if (before.mtimeNs !== after.mtimeNs || before.size !== after.size || before.ino !== after.ino) {
+    throw new Error("The note changed while it was read. Read it again before editing.");
+  }
+  const sha256 = createHash("sha256").update(content).digest("hex");
+  return { content, sha256, version: `${after.mtimeNs}:${after.size}:${sha256}` };
 }
 
 export async function readMemory(root: string, path: string, offset = 0): Promise<{
-  path: string; content: string; totalChars: number; nextOffset: number | null;
+  path: string; content: string; totalChars: number; nextOffset: number | null; version: string; sha256: string;
 }> {
   if (!Number.isInteger(offset) || offset < 0) throw new Error("offset must be a nonnegative integer.");
-  const content = await readFile(await notePath(root, path), "utf8");
+  const { content, version, sha256 } = await fullNote(root, path);
   const end = Math.min(content.length, offset + 12_000);
-  return { path, content: content.slice(offset, end), totalChars: content.length, nextOffset: end < content.length ? end : null };
+  return { path, content: content.slice(offset, end), totalChars: content.length, nextOffset: end < content.length ? end : null, version, sha256 };
 }
 
 /** Add a new note without touching existing notes, including ones edited in Obsidian. */
-export async function addMemory(root: string, title: string, content: string): Promise<{ path: string; sha256: string }> {
+export async function addMemory(root: string, title: string, content: string): Promise<MemorySaveResult> {
+  root = await openMemoryVault(root);
   const cleanTitle = title.replace(/\s+/g, " ").trim();
   if (!cleanTitle || cleanTitle.length > 120 || content.length > 12_000 || !content.trim()) {
     throw new Error("A title and note of at most 12,000 characters are required.");
   }
+  assertNoSecret(`${cleanTitle}\n${content}`);
+  const related = await relatedNotes(root, cleanTitle, content);
   const folder = join(root, MEMORY_FOLDER);
   try {
     const stat = await lstat(folder);
@@ -224,9 +228,69 @@ export async function addMemory(root: string, title: string, content: string): P
   const slug = cleanTitle.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "note";
   const filename = `${new Date().toISOString().slice(0, 10)}-${slug}-${randomUUID().slice(0, 8)}.md`;
   const path = `${MEMORY_FOLDER}/${filename}`;
-  const text = `# ${cleanTitle}\n\n${content.trim()}\n`;
+  const text = withLinks(`# ${cleanTitle}\n\n${content.trim()}\n`, related);
   await writeFile(join(folder, filename), text, { encoding: "utf8", flag: "wx" });
-  return { path, sha256: createHash("sha256").update(text).digest("hex") };
+  const saved = await fullNote(root, path);
+  return { path, sha256: saved.sha256, version: saved.version, related };
+}
+
+export interface MemorySaveResult { path: string; sha256: string; version: string; related: MemorySearchHit[] }
+
+function assertNoSecret(content: string): void {
+  const found = scanText(content);
+  if (found.length) throw new Error(`Note refused: likely ${found[0]?.kind.toLowerCase() ?? "secret"}. Remove the secret before saving.`);
+}
+
+async function relatedNotes(root: string, title: string, content: string, exclude?: string): Promise<MemorySearchHit[]> {
+  const topic = title.length >= 2 ? title : content.slice(0, 160);
+  return (await searchMemory(root, topic.slice(0, 160), 4)).filter((hit) => hit.path !== exclude).slice(0, 3);
+}
+
+function withLinks(content: string, related: MemorySearchHit[]): string {
+  const links = related.filter((note) => !content.includes(`[[${note.path.replace(/\.md$/i, "")}`));
+  if (!links.length) return content;
+  return `${content.trimEnd()}\n\nRelated: ${links.map((note) => `[[${note.path.replace(/\.md$/i, "")}]]`).join(" · ")}\n`;
+}
+
+/** Refuses stale revisions across agent processes; a temporary file makes replacement atomic. */
+export async function updateMemory(root: string, path: string, content: string, expectedVersion: string, append = false): Promise<MemorySaveResult> {
+  root = await openMemoryVault(root);
+  if (!content.trim() || content.length > 12_000 || !expectedVersion) throw new Error("Read the note first and provide its version and up to 12,000 characters.");
+  assertNoSecret(content);
+  const file = await notePath(root, path);
+  const lock = `${file}.workbench-lock`;
+  try { await writeFile(lock, "Memory update in progress", { flag: "wx" }); }
+  catch { throw new Error("The note is being edited. Read it again and retry after the other update finishes."); }
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  try {
+    const original = await fullNote(root, path);
+    if (original.version !== expectedVersion) throw new Error("The note changed since it was read. Read it again and merge your changes.");
+    let next = append ? `${original.content.trimEnd()}\n\n${content.trim()}\n` : `${content.trim()}\n`;
+    assertNoSecret(next);
+    if (Buffer.byteLength(next) > MAX_NOTE_BYTES) throw new Error("The combined note exceeds 1 MB.");
+    const related = await relatedNotes(root, titleOf(next, path), next, path);
+    next = withLinks(next, related);
+    await writeFile(temporary, next, { flag: "wx" });
+    if ((await fullNote(root, path)).version !== expectedVersion) throw new Error("The note changed since it was read. Read it again and merge your changes.");
+    await rename(temporary, file);
+    const saved = await fullNote(root, path);
+    return { path, version: saved.version, sha256: saved.sha256, related };
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+    await unlink(lock);
+  }
+}
+
+/** A scoped server receives only this root, never a caller-selected workspace id. */
+export async function openWorkspaceMemory(workspacePath: string): Promise<string> {
+  let root = await openMemoryVault(workspacePath);
+  for (const folder of [".workbench", "memory"]) {
+    const next = join(root, folder);
+    await mkdir(next, { recursive: true });
+    if ((await lstat(next)).isSymbolicLink() || !inside(root, await realpath(next))) throw new Error("Workspace memory must stay inside the workspace.");
+    root = await realpath(next);
+  }
+  return root;
 }
 
 /**
@@ -241,32 +305,45 @@ export const OBSIDIAN_MEMORY_INSTRUCTIONS = [
   "Before non-trivial work, call memory_search with the project, component or topic to find earlier decisions, conventions, known problems and preferences; read a matching note with memory_read only when an excerpt is not enough.",
   "When you learn something durable, call memory_add once with a short note: a decision and why it was made, a convention of the project, the fix for a problem that could come back, setup or build steps that were hard to find, a preference the person stated.",
   "Do not store secrets, credentials, personal data, whole files or transient progress. One topic per note, a title that says what it is about.",
+  "Use memory_update or memory_append to improve an existing note: first memory_read, then pass its exact version. On a conflict, read again and merge. Saved notes suggest related wiki links.",
 ].join(" ");
 
 /** A tool-neutral MCP server. Every MCP-capable agent gets the same vault. */
-export function createObsidianMemoryServer(root: string): Server {
-  const server = new Server(
+export function createObsidianMemoryServer(root: string): McpServer {
+  const server = new McpServer(
     { name: "ai-workbench-memory", version: "0.0.7" },
     { capabilities: { tools: {} }, instructions: OBSIDIAN_MEMORY_INSTRUCTIONS },
   );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [
-    { name: "memory_search", description: "Search the shared long-term memory (an Obsidian vault) before non-trivial work: earlier decisions, project conventions, known problems and the person's preferences. Returns short excerpts; read a note only when an excerpt is not enough.", inputSchema: { type: "object" as const, properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 20 } }, required: ["query"] } },
-    { name: "memory_read", description: "Read up to 12,000 characters from one note of the shared memory by relative path; use offset for the next part.", inputSchema: { type: "object" as const, properties: { path: { type: "string" }, offset: { type: "integer", minimum: 0 } }, required: ["path"] } },
-    { name: "memory_add", description: "Save something the next agent should know: a decision and its reason, a project convention, the fix for a problem that could return, hard-won setup steps, a preference the person stated. One short note per topic; never secrets or transient progress. Adds a new note and never replaces one.", inputSchema: { type: "object" as const, properties: { title: { type: "string" }, content: { type: "string" } }, required: ["title", "content"] } },
-  ] }));
-  server.setRequestHandler(CallToolRequestSchema, async (request): Promise<ToolReply> => {
-    const args = request.params.arguments ?? {};
+  const respond = async (action: () => Promise<unknown>): Promise<ToolReply> => {
     try {
-      switch (request.params.name) {
-        case "memory_search": return reply(await searchMemory(root, stringArg(args, "query", 160), Number(args["limit"] ?? 10)));
-        case "memory_read": return reply(await readMemory(root, stringArg(args, "path", 500), Number(args["offset"] ?? 0)));
-        case "memory_add": return reply(await addMemory(root, stringArg(args, "title", 120), stringArg(args, "content", 12_000)));
-        default: return { ...reply({ error: "Unknown memory tool" }), isError: true };
-      }
+      return reply(await action());
     } catch (error) {
       return { ...reply({ error: error instanceof Error ? error.message : String(error) }), isError: true };
     }
-  });
+  };
+  const readAnnotations = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+  const writeAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+  const pathSchema = z.string().min(1).max(500).describe("Relative Markdown path returned by memory_search or memory_add.");
+  server.registerTool("memory_search", {
+    title: "Search memory", description: "Search before non-trivial work. Returns up to 20 ranked note names and short excerpts from a rebuildable local index.",
+    inputSchema: z.object({ query: z.string().trim().min(2).max(160), limit: z.number().int().min(1).max(20).default(10) }).strict(), annotations: readAnnotations,
+  }, ({ query, limit }) => respond(() => searchMemory(root, query, limit)));
+  server.registerTool("memory_read", {
+    title: "Read memory", description: "Read up to 12,000 characters and its version. Use offset for more; retain version for memory_update or memory_append.",
+    inputSchema: z.object({ path: pathSchema, offset: z.number().int().nonnegative().default(0) }).strict(), annotations: readAnnotations,
+  }, ({ path, offset }) => respond(() => readMemory(root, path, offset)));
+  server.registerTool("memory_add", {
+    title: "Add memory", description: "Save a short durable decision or project convention. Refuses likely secrets; returns the new path, version and related notes, also linked in the saved note.",
+    inputSchema: z.object({ title: z.string().trim().min(1).max(120), content: z.string().trim().min(1).max(12_000) }).strict(), annotations: writeAnnotations,
+  }, ({ title, content }) => respond(() => addMemory(root, title, content)));
+  for (const name of ["memory_update", "memory_append"] as const) {
+    server.registerTool(name, {
+      title: name === "memory_update" ? "Update memory" : "Append to memory",
+      description: `${name === "memory_update" ? "Replace the full Markdown content of" : "Append Markdown to"} an existing note. Requires its version from memory_read; changed notes are refused. Read again and merge after a conflict. Likely secrets are refused.`,
+      inputSchema: z.object({ path: pathSchema, content: z.string().trim().min(1).max(12_000), version: z.string().min(1).max(200).describe("Exact version returned by the most recent memory_read.") }).strict(),
+      annotations: { ...writeAnnotations, destructiveHint: name === "memory_update" },
+    }, ({ path, content, version }) => respond(() => updateMemory(root, path, content, version, name === "memory_append")));
+  }
   return server;
 }
 

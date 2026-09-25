@@ -48,6 +48,7 @@ function bootService(): { service: TeamService; team: TeamDefinition; events: Te
     leadAgentId: "lead",
     agents: [agent("lead", "Lead"), agent("worker", "Worker")],
     settings: {
+      separateWorktrees: false,
       instructions: "",
       allowOutsideWorkspace: false,
       workingDirectory: null,

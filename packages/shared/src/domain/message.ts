@@ -100,6 +100,19 @@ export const accountNoticeSchema = z.object({
 });
 export type AccountNotice = z.infer<typeof accountNoticeSchema>;
 
+/** Observed filesystem changes around one turn, persisted with its answer. */
+export const turnDiffSchema = z.object({
+  before: z.string().regex(/^[0-9a-f]{40,64}$/),
+  after: z.string().regex(/^[0-9a-f]{40,64}$/),
+  folder: z.string().min(1),
+  files: z.array(z.string()),
+  diff: z.string(),
+  truncated: z.boolean(),
+  concurrent: z.boolean().default(false),
+  undoneAt: z.coerce.date().nullable().default(null),
+});
+export type TurnDiff = z.infer<typeof turnDiffSchema>;
+
 export const chatMessageSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
@@ -115,6 +128,7 @@ export const chatMessageSchema = z.object({
   error: z.string().nullable(),
   /** Set on the application's own lines, like an account switch. */
   notice: accountNoticeSchema.optional(),
+  turnDiff: turnDiffSchema.optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

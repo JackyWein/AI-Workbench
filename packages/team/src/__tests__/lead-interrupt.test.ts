@@ -40,6 +40,7 @@ describe("lead interrupt (verify)", () => {
       leadAgentId: "lead",
       agents,
       settings: {
+        separateWorktrees: false,
         instructions: "",
         allowOutsideWorkspace: false,
         workingDirectory: null,

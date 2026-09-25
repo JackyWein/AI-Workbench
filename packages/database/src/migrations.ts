@@ -12,6 +12,7 @@ import teamMessageAttachments from "../migrations/0010_team-message-attachments.
 import teamRunSession from "../migrations/0011_team-run-session.sql?raw";
 import messageNotice from "../migrations/0012_message-notice.sql?raw";
 import teamTemplates from "../migrations/0013_team-templates.sql?raw";
+import schedulesTurnDiffs from "../migrations/0014_schedules-turn-diffs.sql?raw";
 
 export interface EmbeddedMigration {
   readonly id: string;
@@ -37,4 +38,5 @@ export const migrations: EmbeddedMigration[] = [
   { id: "0011_team_run_session", sql: teamRunSession },
   { id: "0012_message_notice", sql: messageNotice },
   { id: "0013_team_templates", sql: teamTemplates },
+  { id: "0014_schedules_turn_diffs", sql: schedulesTurnDiffs },
 ];

@@ -26,6 +26,13 @@ export const usageLimitSchema = z.object({
   resetsText: z.string().optional(),
   /** Length of the window this limit counts over, when the provider says. */
   windowMinutes: z.number().int().positive().optional(),
+  /** A local projection from reported samples, never a provider limit. */
+  forecast: z.object({
+    exhaustsAt: z.date(),
+    sampledAt: z.date(),
+    samples: z.number().int().min(3),
+    observationMinutes: z.number().positive(),
+  }).optional(),
 });
 export type UsageLimit = z.infer<typeof usageLimitSchema>;
 

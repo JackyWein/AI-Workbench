@@ -1227,6 +1227,9 @@ function UsageRows({ rows: all }: { readonly rows: readonly IslandUsageRow[] }):
               <div className="isl__ubar">
                 <i data-low={(row.percentLeft ?? 0) < 20} style={{ width: `${Math.round(row.percentLeft ?? 0)}%` }} />
               </div>
+              {row.forecast && Date.now() - row.forecast.sampledAt.getTime() <= 600_000 && row.forecast.exhaustsAt.getTime() > Date.now() ? (
+                <span className="isl__na">At this pace: used up {row.forecast.exhaustsAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} (estimate)</span>
+              ) : null}
             </div>
           ))}
         </div>

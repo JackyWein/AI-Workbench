@@ -11,6 +11,7 @@ import type {
   McpServerConfig,
   MessageAttachment,
   ModelInfo,
+  PermissionMode,
   ProviderCapabilities,
   ProviderEvent,
   ProviderMetadata,
@@ -20,6 +21,7 @@ import type {
   TeamEvent,
   TeamMessage,
   TeamRun,
+  TeamRunConfig,
   TeamRunSnapshot,
   TeamSettings,
   UpdateTeamInputData,
@@ -68,6 +70,7 @@ import { SqlTeamRunStore, toRun } from "./team-store.js";
 import { inspectAttachments, keepAttachments } from "./attachments.js";
 import { createId } from "./ids.js";
 import { withServerGuidance, type ServerInstructionsLookup } from "./server-guidance.js";
+import { prepareTeamWorktrees, teamWorktreeLifecycle, type TeamWorktreeGit } from "./team-worktrees.js";
 
 export class TeamNotFoundError extends Error {
   constructor(id: string) {
@@ -125,6 +128,8 @@ function isInside(root: string, target: string): boolean {
 }
 
 export interface TeamManagerOptions {
+  readonly worktreeGit?: TeamWorktreeGit;
+  readonly worktreesDirectory?: string;
   readonly db: Database;
   readonly events: EventBus;
   readonly logger: Logger;
@@ -166,6 +171,8 @@ export interface TeamManagerOptions {
 
 /** Snapshots of a folder and what changed between two of them (git). */
 export interface FolderHistory {
+  undo?(folder: string, before: string, after: string): Promise<string[]>;
+  retainSnapshot?(folder: string, key: string, tree: string): Promise<void>;
   snapshot(folder: string): Promise<string | null>;
   compare(
     folder: string,
@@ -179,23 +186,29 @@ export interface FolderHistory {
  * the turn starts and one when it ends. A folder that is no git repository
  * cannot be watched this way, and then nothing is claimed.
  */
-function folderWatcher(history: FolderHistory, folder: string): TurnWatcher {
+function folderWatcher(history: FolderHistory, folder: string, isolated = false): TurnWatcher {
   return {
-    async begin() {
+    async begin(agent) {
+      if (isolated) folder = agent.workingDirectory;
+      const turnFolder = folder;
       const before = await history.snapshot(folder);
       if (!before) {
         return null;
       }
-      return async ({ concurrent }) => {
-        const after = await history.snapshot(folder);
+      return async ({ concurrent: overlapped }) => {
+        const concurrent = !isolated && overlapped;
+        const after = await history.snapshot(turnFolder);
         if (!after) {
           return null;
         }
-        const change = await history.compare(folder, before, after);
+        const change = await history.compare(turnFolder, before, after);
         if (change.files.length === 0 || change.diff.trim().length === 0) {
           return null;
         }
         const single = change.files.length === 1 ? (change.files[0] ?? null) : null;
+        const key = createId("diff");
+        await history.retainSnapshot?.(turnFolder, `${key}/before`, before);
+        await history.retainSnapshot?.(turnFolder, `${key}/after`, after);
         return {
           name: single ?? `${change.files.length} files changed`,
           path: single,
@@ -204,6 +217,10 @@ function folderWatcher(history: FolderHistory, folder: string): TurnWatcher {
             source: "folder",
             files: [...change.files],
             concurrent,
+            before,
+            after,
+            folder: turnFolder,
+            isolated,
             reason: concurrent
               ? "What changed in the folder during this turn. Other members were working at the same time, so some of it may be theirs."
               : "What changed in the folder during this turn.",
@@ -227,6 +244,9 @@ interface ActiveRun {
  * `@ai-workbench/team` and knows nothing about the database or the UI.
  */
 export class TeamManager {
+  readonly #worktreeGit: TeamWorktreeGit | undefined;
+  readonly #worktreesDirectory: string | undefined;
+  readonly #undoing = new Set<string>();
   readonly #db: Database;
   readonly #events: EventBus;
   readonly #logger: Logger;
@@ -240,8 +260,18 @@ export class TeamManager {
   readonly #skillsServerId: string | undefined;
   readonly #folderHistory: FolderHistory | undefined;
   readonly #active = new Map<string, ActiveRun>();
+  /**
+   * Runs being attached right now: `resumeRun`/`continueRun` await the store
+   * before `#drive` registers the run, so a second Resume in that window
+   * used to start a second orchestrator for the same run — two loops, two
+   * provider sessions per agent, one database. Reserved synchronously, so a
+   * second attempt is refused instead of doubling the run.
+   */
+  readonly #starting = new Set<string>();
 
   constructor(options: TeamManagerOptions) {
+    this.#worktreeGit = options.worktreeGit;
+    this.#worktreesDirectory = options.worktreesDirectory;
     this.#db = options.db;
     this.#events = options.events;
     this.#logger = options.logger.child("TEAM");
@@ -549,8 +579,11 @@ export class TeamManager {
     /** The session starting the run; it alone shows and continues it. */
     sessionId?: string;
     attachments?: readonly Pick<MessageAttachment, "path">[];
+    limits?: Partial<TeamRunConfig>;
+    permissionMode?: PermissionMode;
   }): Promise<TeamRun> {
-    const team = await this.require(input.teamId);
+    const storedTeam = await this.require(input.teamId);
+    const team = input.permissionMode ? { ...storedTeam, agents: storedTeam.agents.map((agent) => ({ ...agent, settings: { ...agent.settings, permissionMode: input.permissionMode } })) } : storedTeam;
     if (team.agents.length === 0) {
       throw new Error("A team needs at least one agent before it can run");
     }
@@ -574,7 +607,7 @@ export class TeamManager {
         currentPlan: null,
         importantContext: [],
       },
-      limits: upgradeRunLimits(team.settings.limits),
+      limits: { ...upgradeRunLimits(team.settings.limits), ...input.limits },
       agentCalls: 0,
       failures: 0,
       messageCount: 0,
@@ -652,6 +685,25 @@ export class TeamManager {
     if (this.#active.has(input.runId)) {
       throw new Error("This run is still going; send the team a note instead of a new goal.");
     }
+    if (this.#starting.has(input.runId)) {
+      throw new Error("This run is already starting; give it a moment instead of continuing it again.");
+    }
+    this.#starting.add(input.runId);
+    try {
+      return await this.#continueInner(input);
+    } catch (error) {
+      this.#starting.delete(input.runId);
+      throw error;
+    }
+  }
+
+  async #continueInner(input: {
+    runId: string;
+    goal: string;
+    /** The session continuing it; a run is only ever continued by its own. */
+    sessionId?: string;
+    attachments?: readonly Pick<MessageAttachment, "path">[];
+  }): Promise<TeamRun> {
     const snapshot = await this.#store.loadSnapshot(input.runId);
     if (!snapshot) {
       throw new TeamRunNotFoundError(input.runId);
@@ -808,6 +860,19 @@ export class TeamManager {
     if (this.#active.has(runId)) {
       return this.#active.get(runId)!.service.run;
     }
+    if (this.#starting.has(runId)) {
+      throw new Error("This run is already starting; give it a moment instead of resuming it again.");
+    }
+    this.#starting.add(runId);
+    try {
+      return await this.#resumeInner(runId);
+    } catch (error) {
+      this.#starting.delete(runId);
+      throw error;
+    }
+  }
+
+  async #resumeInner(runId: string): Promise<TeamRun> {
     const snapshot = await this.#store.loadSnapshot(runId);
     if (!snapshot) {
       throw new TeamRunNotFoundError(runId);
@@ -946,6 +1011,38 @@ export class TeamManager {
     return stopped;
   }
 
+  /**
+   * Restores the folder snapshot a folder-watched turn left as an artifact.
+   * Refused while the run is going (live turns still write there) and when
+   * the artifact carries no restorable snapshot. Mirrors the solo undo path:
+   * explicit, folder-bound, never caller-supplied paths.
+   */
+  async undoTurn(runId: string, artifactId: string): Promise<{ files: string[] }> {
+    if (this.#active.has(runId)) {
+      throw new Error("This run is still going; stop it before undoing a turn.");
+    }
+    if (this.#undoing.has(artifactId)) {
+      throw new Error("This turn is already being undone.");
+    }
+    this.#undoing.add(artifactId);
+    try {
+      const snapshot = await this.getSnapshot(runId);
+      const artifact = snapshot.artifacts.find((entry) => entry.id === artifactId);
+      const metadata = (artifact?.metadata ?? {}) as Record<string, unknown>;
+      const folder = typeof metadata["folder"] === "string" ? (metadata["folder"] as string) : null;
+      const before = typeof metadata["before"] === "string" ? (metadata["before"] as string) : null;
+      const after = typeof metadata["after"] === "string" ? (metadata["after"] as string) : null;
+      const undo = this.#folderHistory?.undo;
+      if (!artifact || !folder || !before || !after || !undo) {
+        throw new Error("This turn has no restorable snapshot.");
+      }
+      const files = await undo(folder, before, after);
+      return { files };
+    } finally {
+      this.#undoing.delete(artifactId);
+    }
+  }
+
   /** Stops every run working in a workspace, before the workspace goes. */
   async cancelRunsIn(workspaceId: string): Promise<void> {
     const runs = [...this.#active]
@@ -1016,12 +1113,40 @@ export class TeamManager {
     return workspace?.path ?? "";
   }
 
-  #drive(team: TeamDefinition, folder: string, snapshot: TeamRunSnapshot): void {
+  async #drive(team: TeamDefinition, folder: string, snapshot: TeamRunSnapshot): Promise<void> {
     // Every member works in the run's folder, whatever their rows once said.
-    const running: TeamDefinition = {
+    let running: TeamDefinition = {
       ...team,
       agents: team.agents.map((agent) => ({ ...agent, workingDirectory: folder })),
     };
+    try {
+      if (team.settings.separateWorktrees) {
+        if (!this.#worktreeGit || !this.#worktreesDirectory) throw new Error("Worktree support is unavailable.");
+        running = await prepareTeamWorktrees(this.#worktreeGit, this.#worktreesDirectory, folder, team, snapshot.run.id, snapshot.turns.length === 0);
+      }
+    } catch (error) {
+      // Setup failed before the orchestrator existed: say so on the run
+      // instead of leaving it pending forever with an unhandled rejection.
+      this.#starting.delete(snapshot.run.id);
+      this.#logger.error("Team run could not start", {
+        runId: snapshot.run.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await this.#store.saveRun({
+        ...snapshot.run,
+        status: "failed",
+        stopReason: "tooManyFailures",
+        finishedAt: new Date(),
+      });
+      this.#publish({
+        type: "TEAM_FINISHED",
+        runId: snapshot.run.id,
+        status: "failed",
+        stopReason: "tooManyFailures",
+        outcome: null,
+      });
+      return;
+    }
     const service = new TeamService({
       team: running,
       snapshot,
@@ -1037,7 +1162,8 @@ export class TeamManager {
       service,
       runtime,
       logger: this.#logger,
-      ...(this.#folderHistory ? { turnWatcher: folderWatcher(this.#folderHistory, folder) } : {}),
+      ...(this.#folderHistory ? { turnWatcher: folderWatcher(this.#folderHistory, folder, team.settings.separateWorktrees) } : {}),
+      ...(team.settings.separateWorktrees && this.#worktreeGit ? { worktreeLifecycle: teamWorktreeLifecycle(this.#worktreeGit, service) } : {}),
     });
 
     const finished = orchestrator
@@ -1061,6 +1187,7 @@ export class TeamManager {
       });
 
     this.#active.set(snapshot.run.id, { service, orchestrator, finished });
+    this.#starting.delete(snapshot.run.id);
   }
 
   /**
@@ -1153,9 +1280,21 @@ export class TeamManager {
     adapter: AIProviderAdapter,
     service: TeamService,
   ): Promise<MemberSetup> {
+    // Session setup must never hang a turn forever: a provider/MCP/skills
+    // lookup that never settles used to leave #waitForBatch waiting with no
+    // silence/hard-cap timer armed (those start only after the session
+    // exists). Bound each step; on timeout the turn continues degraded.
     const capabilities = await this.#safeCapabilities(adapter);
-    const access = await this.#toolAccessFor(agent, capabilities, service);
-    const instructions = await this.#skillsFor(agent, capabilities, service, access);
+    const access = await withTimeout(
+      this.#toolAccessFor(agent, capabilities, service),
+      30_000,
+      null,
+    ).catch(() => null);
+    const instructions = await withTimeout(
+      this.#skillsFor(agent, capabilities, service, access),
+      30_000,
+      "",
+    ).catch(() => "");
     return { access, instructions };
   }
 
@@ -1262,7 +1401,7 @@ export class TeamManager {
 
   async #safeCapabilities(adapter: AIProviderAdapter): Promise<ProviderCapabilities | null> {
     try {
-      return await adapter.getCapabilities();
+      return await withTimeout<ProviderCapabilities | null>(adapter.getCapabilities(), 15_000, null);
     } catch {
       return null;
     }
@@ -1451,7 +1590,14 @@ class TeamScopedAdapter implements AIProviderAdapter {
   async #withAccess(config: ProviderSessionConfig): Promise<ProviderSessionConfig> {
     let setup: MemberSetup;
     try {
-      setup = await this.#resolve();
+      // Belt and braces: #memberSetup already bounds each step, but the
+      // session must exist within a minute or the turn hangs with no timer.
+      setup = await withTimeout<MemberSetup | null>(this.#resolve(), 60_000, null).then((result) => {
+        if (!result) {
+          throw new Error("Team tool access timed out");
+        }
+        return result;
+      });
     } catch (error) {
       this.#logger.warn("Team tool access could not be resolved; continuing without it", {
         error: error instanceof Error ? error.message : String(error),
@@ -1485,4 +1631,22 @@ class TeamScopedAdapter implements AIProviderAdapter {
       ...(systemInstructions ? { systemInstructions } : {}),
     };
   }
+}
+
+/**
+ * Races a promise against a timeout. A hanging provider/MCP/skills lookup
+ * must degrade to its fallback instead of freezing a team turn forever with
+ * no silence/hard-cap timer armed.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
 }
