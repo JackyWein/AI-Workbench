@@ -522,6 +522,33 @@ global Obsidian vault.
 **How:** a folder `.workbench/memory` or a sub-folder of the vault per
 workspace, served by the same memory server with a scope.
 
+### I. Shared memory: from notes to a knowledge graph (M)
+
+**Where it stands (0.0.7):**
+- The Obsidian vault is the agents' long-term memory, served by the bundled
+  server with `memory_search`, `memory_read` and `memory_add`.
+- It reaches sessions, terminal agents and team members.
+- The graph view draws `[[links]]`.
+
+**What limits it:**
+- Search is a word scan over the files.
+- Agents can only add notes. They cannot update, merge or link, so
+  duplicates grow and the graph stays sparse.
+- Tools used outside the app do not see it, except Antigravity.
+
+**Next steps:**
+- `memory_update` and `memory_append`, which refuse when the note changed
+  since it was read (mtime check).
+- Links suggested on save: the notes a search finds for the new note's topic
+  are added as `[[links]]`, so the graph grows meaning.
+- A search index kept in SQLite (FTS5), rebuilt from the files. The vault
+  stays the source of truth, and the index only makes search fast and
+  ranked. Embeddings can come later.
+- The secret check (**F**) on `memory_add`.
+- **Use in my tools:** registers the memory server in Claude Code, Codex and
+  Gemini CLI through each tool's own `mcp add`. It is opt-in, and only the
+  application's marked entry is ever changed, as for Antigravity today.
+
 ---
 
 ## Suggested order
@@ -535,4 +562,4 @@ workspace, served by the same memory server with a scope.
 7. **5** — schedules, with **D** alongside.
 8. **6** — voice input.
 9. The further ideas, as they become useful: **A** and **C** directly after
-   2; **B** after 1.
+   2; **B** after 1; **I** whenever the memory is in daily use.
