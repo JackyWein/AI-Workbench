@@ -321,6 +321,12 @@ export const teamRunSchema = z.object({
   id: z.string().min(1),
   teamId: z.string().min(1),
   workspaceId: z.string().min(1),
+  /**
+   * The session the run belongs to. A session only ever shows and continues
+   * its own runs, so a new session starts its team without another one's
+   * history. Null for runs started outside a session (the Teams screen).
+   */
+  sessionId: z.string().nullable().default(null),
   goal: z.string().min(1).max(20_000),
   status: teamRunStatusSchema,
   stopReason: teamRunStopReasonSchema.nullable().default(null),

@@ -68,6 +68,7 @@ function bootService(): { service: TeamService; team: TeamDefinition; events: Te
         id: newRunId(),
         teamId: team.id,
         workspaceId: "ws",
+        sessionId: null,
         goal,
         status: "running",
         stopReason: null,

@@ -28,6 +28,7 @@ function runWith(tasks: Array<{ status: string; title?: string; assignedTo?: str
       id: "run_1",
       teamId: "team_1",
       workspaceId: "ws",
+      sessionId: null,
       goal: "Ship the feature",
       status: "running",
       stopReason: null,

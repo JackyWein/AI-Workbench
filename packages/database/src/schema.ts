@@ -447,6 +447,8 @@ export const teamRuns = sqliteTable("team_runs", {
   workspaceId: text("workspace_id")
     .notNull()
     .references(() => workspaces.id, { onDelete: "cascade" }),
+  /** The session that started the run; null for runs started elsewhere. */
+  sessionId: text("session_id"),
   goal: text("goal").notNull(),
   status: text("status").notNull(),
   stopReason: text("stop_reason"),

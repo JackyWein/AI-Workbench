@@ -746,6 +746,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
         teamId: input.teamId,
         goal: input.goal,
         ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.attachments ? { attachments: input.attachments } : {}),
       }),
     "team.resumeRun": (input) => services.teams.resumeRun(input.runId),
@@ -753,6 +754,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       services.teams.continueRun({
         runId: input.runId,
         goal: input.goal,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
         ...(input.attachments ? { attachments: input.attachments } : {}),
       }),
     "team.pauseRun": (input) => services.teams.pauseRun(input.runId),

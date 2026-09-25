@@ -339,6 +339,43 @@ describe("team runs in the application", () => {
     expect(after.run.outcome).toContain("Second goal");
   });
 
+  it("keeps a run with the session that started it, and never hands it to another", async () => {
+    const { teamId } = await makeTeam();
+    const run = await app.teams.startRun({ teamId, goal: "First goal", sessionId: "session_a" });
+    expect(run.sessionId).toBe("session_a");
+    await settle(app, run.id);
+    const stored = (await app.teams.listRuns(teamId)).find((entry) => entry.id === run.id);
+    expect(stored?.sessionId).toBe("session_a");
+
+    // Continuing hands over the run's whole history: another session never may.
+    await expect(
+      app.teams.continueRun({ runId: run.id, goal: "Not mine", sessionId: "session_b" }),
+    ).rejects.toThrow(/another session/);
+    const continued = await app.teams.continueRun({
+      runId: run.id,
+      goal: "Second goal",
+      sessionId: "session_a",
+    });
+    expect(continued.sessionId).toBe("session_a");
+    await settle(app, run.id);
+
+    // A run from before runs knew their session is claimed by the first
+    // session that continues it, and is then that session's alone.
+    const older = await app.teams.startRun({ teamId, goal: "An older run" });
+    expect(older.sessionId).toBeNull();
+    await settle(app, older.id);
+    const claimed = await app.teams.continueRun({
+      runId: older.id,
+      goal: "Claim it",
+      sessionId: "session_b",
+    });
+    expect(claimed.sessionId).toBe("session_b");
+    await settle(app, older.id);
+    await expect(
+      app.teams.continueRun({ runId: older.id, goal: "Too late", sessionId: "session_a" }),
+    ).rejects.toThrow(/another session/);
+  });
+
   it("refuses a new goal while the run is still going", async () => {
     const { teamId } = await makeTeam();
     const run = await app.teams.startRun({ teamId, goal: "Ship it" });

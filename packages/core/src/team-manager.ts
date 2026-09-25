@@ -477,6 +477,8 @@ export class TeamManager {
     teamId: string;
     goal: string;
     workspaceId?: string;
+    /** The session starting the run; it alone shows and continues it. */
+    sessionId?: string;
     attachments?: readonly Pick<MessageAttachment, "path">[];
   }): Promise<TeamRun> {
     const team = await this.require(input.teamId);
@@ -492,6 +494,7 @@ export class TeamManager {
       id: newRunId(),
       teamId: team.id,
       workspaceId,
+      sessionId: input.sessionId ?? null,
       goal: input.goal,
       status: "pending",
       stopReason: null,
@@ -573,6 +576,8 @@ export class TeamManager {
   async continueRun(input: {
     runId: string;
     goal: string;
+    /** The session continuing it; a run is only ever continued by its own. */
+    sessionId?: string;
     attachments?: readonly Pick<MessageAttachment, "path">[];
   }): Promise<TeamRun> {
     if (this.#active.has(input.runId)) {
@@ -589,6 +594,13 @@ export class TeamManager {
     if (status === "paused") {
       throw new Error("This run is paused; resume it instead of starting a new goal.");
     }
+    // Continuing hands over the run's whole history and its members' provider
+    // sessions, so another session's run is never continued: that session's
+    // context would leak into this one. A run from before runs knew their
+    // session is claimed by the first session that continues it.
+    if (input.sessionId && snapshot.run.sessionId && snapshot.run.sessionId !== input.sessionId) {
+      throw new Error("This run belongs to another session; start a new goal here instead.");
+    }
     const goal = input.goal.trim();
     if (!goal) {
       throw new Error("A goal needs words before the team can continue.");
@@ -602,6 +614,7 @@ export class TeamManager {
     const kept = await this.#keepTeamAttachments(snapshot.run.id, input.attachments ?? []);
     const continued: TeamRun = {
       ...snapshot.run,
+      sessionId: snapshot.run.sessionId ?? input.sessionId ?? null,
       goal,
       status: "pending",
       stopReason: null,

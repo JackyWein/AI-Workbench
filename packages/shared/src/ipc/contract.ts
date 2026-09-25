@@ -655,6 +655,8 @@ export const ipcContract = {
       teamId: z.string().min(1),
       goal: z.string().min(1).max(20_000),
       workspaceId: z.string().min(1).optional(),
+      /** The session starting the run; only it shows and continues the run. */
+      sessionId: z.string().min(1).optional(),
       attachments: z.array(messageAttachmentSchema).max(20).optional(),
     }),
     output: teamRunSchema,
@@ -673,6 +675,8 @@ export const ipcContract = {
     input: z.object({
       runId: z.string().min(1),
       goal: z.string().min(1).max(20_000),
+      /** The session continuing it; another session's run is refused. */
+      sessionId: z.string().min(1).optional(),
       attachments: z.array(messageAttachmentSchema).max(20).optional(),
     }),
     output: teamRunSchema,

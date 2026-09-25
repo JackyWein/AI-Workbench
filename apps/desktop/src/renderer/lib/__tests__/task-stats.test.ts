@@ -150,6 +150,7 @@ function snapshotWithTurns(
       id: "r",
       teamId: "t",
       workspaceId: "w",
+      sessionId: null,
       goal: "goal",
       status: "running",
       stopReason: null,

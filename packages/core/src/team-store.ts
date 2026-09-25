@@ -81,6 +81,7 @@ export class SqlTeamRunStore implements TeamRunStore {
       id: run.id,
       teamId: run.teamId,
       workspaceId: run.workspaceId,
+      sessionId: run.sessionId,
       goal: run.goal,
       status: run.status,
       stopReason: run.stopReason,
@@ -211,6 +212,7 @@ export function toRun(row: TeamRunRow): TeamRun {
     id: row.id,
     teamId: row.teamId,
     workspaceId: row.workspaceId,
+    sessionId: row.sessionId ?? null,
     goal: row.goal,
     status: teamRunStatusSchema.catch("failed").parse(row.status),
     stopReason: row.stopReason

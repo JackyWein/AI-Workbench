@@ -1189,7 +1189,8 @@ export async function runStartupCheck(
        const workspace = (await api.invoke('workspace.list', undefined))
          .find(entry => entry.path === folder)
          ?? await api.invoke('workspace.create', { name: 'Team space', path: folder });
-       const session = (await api.invoke('session.list', { workspaceId: workspace.id }))[0]
+       const session = (await api.invoke('session.list', { workspaceId: workspace.id }))
+         .find(entry => entry.name === 'Team session')
          ?? await api.invoke('session.create', {
            workspaceId: workspace.id, name: 'Team session', type: 'solo', providerId: 'mock',
          });
@@ -1199,6 +1200,9 @@ export async function runStartupCheck(
        if (!row) return 'no sidebar row for the workspace';
        row.click();
        await new Promise(resolve => setTimeout(resolve, 600));
+       [...document.querySelectorAll('.sidebar__scroll .row')]
+         .find(node => node.querySelector('.row__text')?.textContent === 'Team session')?.click();
+       await new Promise(resolve => setTimeout(resolve, 400));
 
        // The model pill offers the team; picking it puts the team in the session.
        const pill = document.querySelector('.composer .popover > .pill');
@@ -1244,6 +1248,82 @@ export async function runStartupCheck(
          .find(node => node.textContent?.includes('Check workspace'))?.click();
        await new Promise(resolve => setTimeout(resolve, 600));
        return true;
+     })()`,
+    40_000,
+  );
+
+  // A second session in the same workspace starts the team fresh: none of the
+  // first session's run shows, and its goal starts a run of its own — the
+  // other session's tasks, messages and provider sessions stay with it.
+  await check(
+    "a new session in the same workspace starts the team without the other session's run",
+    `(async () => {
+       const api = window.workbench;
+       const folder = ${JSON.stringify(teamSpace)};
+       const workspace = (await api.invoke('workspace.list', undefined))
+         .find(entry => entry.path === folder);
+       const firstId = window.__checkTeamSessionId;
+       if (!workspace || !firstId) return 'the team session check did not run';
+       const firstRunId = (await api.invoke('session.list', { workspaceId: workspace.id }))
+         .find(entry => entry.id === firstId)?.uiState.teamRunId;
+       if (!firstRunId) return 'the first session shows no run';
+       const fresh = await api.invoke('session.create', {
+         workspaceId: workspace.id, name: 'Fresh team session', type: 'solo', providerId: 'mock',
+       });
+       const rows = () => [...document.querySelectorAll('.sidebar__scroll .row')];
+       try {
+         rows().find(node => node.textContent?.includes('Team space'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 600));
+         const row = rows().find(node => node.querySelector('.row__text')?.textContent === 'Fresh team session');
+         if (!row) return 'no sidebar row for the new session';
+         row.click();
+         await new Promise(resolve => setTimeout(resolve, 500));
+
+         document.querySelector('.composer .popover > .pill')?.click();
+         await new Promise(resolve => setTimeout(resolve, 400));
+         const option = [...document.querySelectorAll('.popover__panel [role="option"]')]
+           .find(node => node.textContent?.includes('Check team'));
+         if (!option) return 'the picker does not offer the team';
+         option.click();
+         if (!(await ${waitFor("Boolean(document.querySelector('.team-intro'))", 4000)})) {
+           return 'the new session opened on ' + (document.querySelector('.team-run')?.textContent?.slice(0, 80) ?? 'nothing');
+         }
+         const picked = (await api.invoke('session.list', { workspaceId: workspace.id }))
+           .find(entry => entry.id === fresh.id);
+         if (picked?.uiState.teamRunId) return 'the new session took run ' + picked.uiState.teamRunId;
+
+         const goal = 'Check a new session starts fresh ' + Date.now();
+         const box = document.querySelector('.composer__input');
+         const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+         setter.call(box, goal);
+         box.dispatchEvent(new Event('input', { bubbles: true }));
+         box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+         const team = (await api.invoke('team.list', {})).find(entry => entry.name === 'Check team');
+         let runs = [];
+         const deadline = Date.now() + 25000;
+         while (Date.now() < deadline) {
+           await new Promise(resolve => setTimeout(resolve, 300));
+           runs = (await api.invoke('team.listRuns', { teamId: team.id })).filter(run => run.goal === goal);
+           if (runs.length > 0 && runs.every(run => run.status !== 'running' && run.status !== 'pending')) break;
+         }
+         if (runs.length !== 1) return runs.length + ' runs for the new goal';
+         if (runs[0].id === firstRunId) return "the goal continued the other session's run";
+         if (runs[0].sessionId !== fresh.id) return 'the run belongs to ' + runs[0].sessionId;
+         if (runs[0].workspaceId !== workspace.id) return 'the run is not in the session workspace';
+         if (runs[0].status !== 'completed') return 'the run ended ' + runs[0].status;
+         const first = await api.invoke('team.getRun', { runId: firstRunId });
+         if (first.messages.some(message => message.content === goal)) return "the goal reached the other session's run";
+         const own = await api.invoke('team.getRun', { runId: runs[0].id });
+         if (own.messages.some(message => first.messages.some(old => old.id === message.id))) {
+           return "the new run carries the other session's messages";
+         }
+         return true;
+       } finally {
+         await api.invoke('session.delete', { id: fresh.id }).catch(() => {});
+         rows().find(node => node.textContent?.includes('Check workspace'))?.click();
+         await new Promise(resolve => setTimeout(resolve, 600));
+       }
      })()`,
     40_000,
   );
@@ -1299,8 +1379,12 @@ export async function runStartupCheck(
        const state = await window.workbench.invoke('statusIsland.getState', undefined);
        const entry = state.entries.find(item => item.widget === 'completedWork');
        if (!entry) return false;
+       // The run that finished last: a finished run that gets its next goal
+       // keeps its place in the list but finishes again.
        const runs = await window.workbench.invoke('team.listRuns', {});
-       const run = runs.find(item => item.status === 'completed');
+       const run = runs
+         .filter(item => item.status === 'completed' && item.finishedAt)
+         .sort((left, right) => new Date(right.finishedAt).getTime() - new Date(left.finishedAt).getTime())[0];
        if (!run) return false;
        const snapshot = await window.workbench.invoke('team.getRun', { runId: run.id });
        const total = snapshot.tasks.length;

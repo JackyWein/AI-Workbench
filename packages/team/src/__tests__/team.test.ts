@@ -74,6 +74,7 @@ function makeSnapshot(team: TeamDefinition, goal: string): TeamRunSnapshot {
       id: newRunId(),
       teamId: team.id,
       workspaceId: team.workspaceId,
+      sessionId: null,
       goal,
       status: "pending",
       stopReason: null,

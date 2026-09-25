@@ -295,6 +295,10 @@ function RunHeader({
         ) : (
           <span>No folder: open a local workspace</span>
         )}
+        {team.settings.workingDirectory ? (
+          // Not this session's workspace: the team was given a folder of its own.
+          <span className="team-run__fixed">team folder</span>
+        ) : null}
         {run ? (
           <>
             <span className="team-run__dot" aria-hidden="true" />

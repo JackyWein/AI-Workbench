@@ -65,6 +65,7 @@ function snapshotOf(team: TeamDefinition): TeamRunSnapshot {
       id: newRunId(),
       teamId: team.id,
       workspaceId: team.workspaceId,
+      sessionId: null,
       goal: "Work in parallel where it is safe",
       status: "pending",
       stopReason: null,

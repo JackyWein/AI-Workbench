@@ -63,6 +63,7 @@ describe("lead interrupt (verify)", () => {
         id: newRunId(),
         teamId: team.id,
         workspaceId: team.workspaceId,
+        sessionId: null,
         goal: "Do the slow work",
         status: "pending",
         stopReason: null,

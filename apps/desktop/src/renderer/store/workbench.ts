@@ -41,6 +41,7 @@ import type {
 import { defaultAppSettings, providerSummarySchema } from "@ai-workbench/shared";
 import { describeError, invoke } from "../lib/client.js";
 import { needsEffortConfirmation, reasoningEffortsFor } from "../lib/reasoning-effort.js";
+import { ownRunOf } from "../lib/session-team-run.js";
 
 /**
  * Drops malformed provider summaries at the IPC boundary so one bad entry
@@ -432,6 +433,16 @@ function teamGoalName(current: string, goal: string | undefined): string | null 
   }
   const topic = goal.split("\n")[0]?.replace(/\s+/g, " ").trim() ?? "";
   return topic.length > 0 ? topic.slice(0, 48) : null;
+}
+
+/** The session's own run of the team, read fresh; see `ownRunOf`. */
+async function ownTeamRun(
+  session: Session,
+  teamId: string,
+  sessions: readonly Session[],
+): Promise<TeamRun | null> {
+  const runs = await invoke("team.listRuns", { teamId });
+  return ownRunOf(session, teamId, runs, sessions);
 }
 
 function byProviderId(
@@ -870,7 +881,11 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       if (!session) {
         return;
       }
-      let runId: string | null = null;
+      // A session only ever shows and continues its own run of the team. A
+      // run carries its members' whole history and provider sessions, so a
+      // new session — in this workspace or another — starts the team fresh.
+      const own = await ownTeamRun(session, teamId, get().sessions);
+      let runId: string | null = own?.id ?? null;
       const value = goal?.trim();
       if (value) {
         const attachmentArgs =
@@ -879,62 +894,34 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
                 attachments: attachments.map(({ path, name, kind }) => ({ path, name, kind })),
               }
             : {};
-        // A finished run keeps its timeline: the next goal continues the same
-        // run instead of swapping the chat for an empty one. Only a run that
-        // is gone, or belongs to another team, starts fresh.
-        const prevRunId =
-          (session.uiState as Record<string, unknown>)["teamRunId"] ?? null;
-        const prevTeamId =
-          (session.uiState as Record<string, unknown>)["teamId"] ?? null;
-        let prevStatus: string | null = null;
-        if (typeof prevRunId === "string" && prevTeamId === teamId) {
-          try {
-            prevStatus = (await invoke("team.getRun", { runId: prevRunId })).run.status;
-          } catch {
-            prevStatus = null;
-          }
-        }
-        if (
-          typeof prevRunId === "string" &&
-          (prevStatus === "completed" ||
-            prevStatus === "failed" ||
-            prevStatus === "cancelled")
-        ) {
+        const status = own?.status ?? null;
+        if (own && (status === "completed" || status === "failed" || status === "cancelled")) {
+          // A finished run keeps its timeline: the next goal continues the
+          // same run instead of swapping the chat for an empty one.
           const continued = await invoke("team.continueRun", {
-            runId: prevRunId,
+            runId: own.id,
             goal: value,
+            sessionId,
             ...attachmentArgs,
           });
           runId = continued.id;
-        } else if (prevStatus === "paused") {
+        } else if (status === "paused") {
           set({ error: "This run is paused — resume it instead of starting a new goal." });
           return;
-        } else if (prevStatus !== null) {
+        } else if (status !== null) {
           set({ error: "This run is still going — send the team a note instead of a new goal." });
           return;
         } else {
-          // A goal means a new run; otherwise the newest run of the team is
-          // shown, the live one first if there is one.
           // The run works in this session's workspace, wherever the team was made.
           const started = await invoke("team.startRun", {
             teamId,
             goal: value,
             workspaceId: session.workspaceId,
+            sessionId,
             ...attachmentArgs,
           });
           runId = started.id;
         }
-      } else {
-        const runs = await invoke("team.listRuns", { teamId });
-        // A team picked in a session must never inherit a run from another
-        // workspace: its tasks, messages and folder belong to that run's
-        // workspace. Only a run from this session's workspace is shown;
-        // otherwise the session starts fresh and the next goal starts here.
-        const own = runs.filter((run) => run.workspaceId === session.workspaceId);
-        runId =
-          own.find((run) => run.status === "running" || run.status === "paused")?.id ??
-          own[0]?.id ??
-          null;
       }
       // A session that still has its generated name takes the topic of the
       // goal starting its team run, the same way a solo session takes the
