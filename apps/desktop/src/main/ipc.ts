@@ -1,5 +1,5 @@
 import { BrowserWindow, dialog, ipcMain, shell } from "electron";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, stat, unlink, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
@@ -292,6 +292,9 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
       // no path, and any name it carries is display-only, never a path.
       const folder = join(options.userDataPath, "pasted-images");
       await mkdir(folder, { recursive: true });
+      // Sending copies a picture into the session, so a staged one is only
+      // needed while it waits in a draft; old ones are cleared, best effort.
+      void clearStalePastedImages(folder);
       const fileName = `pasted-image-${Date.now()}-${randomUUID().slice(0, 8)}.${extension}`;
       const path = join(folder, fileName);
       await writeFile(path, bytes);
@@ -861,5 +864,26 @@ export function removeIpcHandlers(): void {
   }
   for (const channel of Object.keys(ipcContract) as IpcChannel[]) {
     ipcMain.removeHandler(channel);
+  }
+}
+
+/** How long a pasted picture waits in a draft before its staged copy goes. */
+const PASTED_IMAGE_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function clearStalePastedImages(folder: string): Promise<void> {
+  try {
+    const now = Date.now();
+    for (const name of await readdir(folder)) {
+      if (!name.startsWith("pasted-image-")) {
+        continue;
+      }
+      const path = join(folder, name);
+      const info = await stat(path).catch(() => null);
+      if (info?.isFile() && now - info.mtimeMs > PASTED_IMAGE_KEEP_MS) {
+        await unlink(path).catch(() => undefined);
+      }
+    }
+  } catch {
+    // Nothing to clear, or not now: the next paste tries again.
   }
 }

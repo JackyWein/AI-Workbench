@@ -65,8 +65,11 @@ describe("importing MCP servers from the person's tools", () => {
     const { input, notes } = toSaveInput(roblox, new Set(["roblox-studio"]));
     expect(input.id).toBe("roblox-studio-2");
     expect(input.env).toEqual({ MODE: "studio" });
+    // A secret passed as an argument is left out the same way.
+    expect(input.args).toEqual(["/c", "mcp.bat"]);
     expect(notes).toEqual([
       "ROBLOX_API_KEY holds a secret and was not copied; set it in the server's settings.",
+      "The argument --api-token holds a secret and was not copied; add it in the server's settings.",
     ]);
   });
 

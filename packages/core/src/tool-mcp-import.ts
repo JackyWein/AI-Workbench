@@ -104,13 +104,19 @@ export function toSaveInput(
         env[name] = value;
       }
     }
+    // A secret passed as an argument would be stored and shown as plain
+    // text, like a variable's: it is left out and named instead.
+    const args = withoutSecretArgs(server.args);
+    for (const flag of args.dropped) {
+      notes.push(`The argument ${flag} holds a secret and was not copied; add it in the server's settings.`);
+    }
     return {
       input: {
         id,
         name: server.name,
         transport: "stdio",
         ...(server.command ? { command: server.command } : {}),
-        args: [...server.args],
+        args: args.kept,
         env,
         ...(server.cwd ? { cwd: server.cwd } : {}),
         enabled: true,
@@ -176,6 +182,27 @@ function findingKey(providerId: string, server: ImportableMcpServer): string {
     .update([providerId, server.source, server.name, server.command ?? "", server.url ?? ""].join("\u0000"))
     .digest("hex")
     .slice(0, 24);
+}
+
+/** The arguments without secret flags and their values, and which flags went. */
+function withoutSecretArgs(args: readonly string[]): { kept: string[]; dropped: string[] } {
+  const kept: string[] = [];
+  const dropped: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? "";
+    const inline = /^(--?[\w-]*(?:key|token|secret|password|auth)[\w-]*)=/i.exec(arg);
+    if (inline?.[1]) {
+      dropped.push(inline[1]);
+      continue;
+    }
+    if (SECRET_FLAG.test(arg) && index + 1 < args.length) {
+      dropped.push(arg);
+      index += 1;
+      continue;
+    }
+    kept.push(arg);
+  }
+  return { kept, dropped };
 }
 
 function redactArgs(args: readonly string[]): string[] {

@@ -23,10 +23,10 @@ Weighted contribution = weight x completion.
 
 ## Current focus
 
-**G7 — UX, security, reliability and performance.** As of 2026-09-24
+**G7 — UX, security, reliability and performance.** As of 2026-09-25
 (release 0.0.7) `bun run verify` passes end to end: lockfile, lint,
-typecheck, 942 tests, the build and both startup phases
-(214 checks, none failing). What remains in G6 is the tray,
+typecheck, 1020 tests, the build, the bundled memory server and both
+startup phases (216 checks, none failing). What remains in G6 is the tray,
 multi-monitor handling and the idle-unobtrusiveness judgement; in G5, two
 real providers collaborating. Antigravity (`agy`) could not be installed or
 read about here and stays unverified. No criterion was ticked for the 0.0.5
@@ -63,9 +63,22 @@ Verified here by tests and the startup check:
 - The model picker stays inside the window, scrolls and opens only the
   session's tool; island shadows fit the island window; Swiss keeps square
   corners when opened (startup check, CSS test).
+- A team run belongs to the session that started it. A second session in
+  the same workspace opens the team with no run, and its goal starts a run
+  of its own in that workspace without touching the first session's run
+  (startup check, both phases); a session never shows or continues another
+  session's run, including runs from before this change (unit tests), and
+  the main process refuses to continue another session's run (core test).
+- Closing a terminal on Windows no longer ends a process id node-pty's
+  helper could not confirm (unit test).
+- MCP servers imported from a tool's own configuration leave secrets in
+  arguments out, as they already did for variables (unit test).
 Not verified: the real Antigravity, and real Codex, OpenCode and Gemini
 CLI accounts on the person's Windows machine; a real update installed from
-one published release to the next; a real multi-hour team run.
+one published release to the next; a real multi-hour team run. The crash
+recovery, shared-memory guidance, tool MCP import and window changes that
+came in with the same release are covered by their own tests and startup
+checks as committed; they were not re-verified by hand here.
 
 ### Updates by commit and in the background; signing-ready (2026-09-24)
 

@@ -1,5 +1,23 @@
 AI Workbench 0.0.7
 
+Teams in every workspace, and every session starts fresh
+- A team picked in a session works in that session's workspace, whichever workspace the team was made in.
+- A new session starts its team without context: it shows none of another session's runs, and its first goal starts a run of its own — with its own tasks, messages and provider sessions. Before, a new session picked up the team's last run in the workspace and its next goal continued it.
+- Within one session a finished run keeps its timeline: the next goal continues it, and the previous outcome stays readable.
+- A team given a folder of its own says so next to the path ("team folder") — the one case where it does not work in the session's workspace.
+
+Crashes are caught and recovered
+- A failure in the app is logged and reported instead of taking it down; a window whose view crashed reloads, one broken view no longer blanks the whole window, and a crash report is kept.
+- Team runs that were going when the app stopped come back paused, with Resume, instead of showing "Working" forever.
+
+Memory and tools
+- Agents are told when to use the shared memory — search before non-trivial work, save what the next agent would have to find out again, never secrets — and a team that finishes a goal writes it to the vault.
+- Connectors → Import from your tools offers the MCP servers your installed tools are already configured with. Secrets in their variables and arguments are not copied; the app names them so you can set them.
+- Sessions get their skills as a short list and load one when a task needs it.
+
+The window
+- A titlebar of its own in the theme's colours; chat and composer grow with the window; the window, taskbar and tray icon follow the theme.
+
 Reasoning, shared memory and usage follow-up
 - Pick the reasoning effort beneath the selected model in the chat picker. The list follows the levels that model or tool reports; Max and Ultra ask for confirmation and have different motion. The command palette uses the same choices.
 - Connect a local Obsidian Markdown vault under Connectors → Discover. Agents with tool access can search short excerpts, read a selected note and add a new note to the same vault.
