@@ -30,6 +30,18 @@ const DENSITIES: ReadonlyArray<SegmentOption<AppSettings["density"]>> = [
   { value: "compact", label: "Compact" },
 ];
 
+const LIMIT_ACTIONS: ReadonlyArray<SegmentOption<AppSettings["limitAction"]>> = [
+  { value: "switch", label: "Next account" },
+  { value: "ask", label: "Ask me" },
+  { value: "stop", label: "Stop" },
+];
+
+const LIMIT_DESCRIPTIONS: Record<AppSettings["limitAction"], string> = {
+  switch: "The chat goes on on the tool's next free account, with the whole conversation.",
+  ask: "The chat offers the tool's next free account and waits for you.",
+  stop: "The chat stops and says when the limit resets.",
+};
+
 const CLOSE_BEHAVIOUR: ReadonlyArray<SegmentOption<"quit" | "keep">> = [
   { value: "quit", label: "Quit" },
   { value: "keep", label: "Keep running" },
@@ -92,6 +104,20 @@ export function SettingsView({ settings, appInfo }: SettingsViewProps): JSX.Elem
               value={settings.statusIsland.closeToTray ? "keep" : "quit"}
               options={CLOSE_BEHAVIOUR}
               onChange={(choice) => void setIslandPreferences({ closeToTray: choice === "keep" })}
+            />
+          </SettingRow>
+        </SettingGroup>
+
+        <SettingGroup title="Accounts">
+          <SettingRow
+            label="When an account reaches its limit"
+            description={`${LIMIT_DESCRIPTIONS[settings.limitAction]} Never another tool.`}
+          >
+            <Segmented
+              label="When an account reaches its limit"
+              value={settings.limitAction}
+              options={LIMIT_ACTIONS}
+              onChange={(limitAction) => void updateSettings({ limitAction })}
             />
           </SettingRow>
         </SettingGroup>

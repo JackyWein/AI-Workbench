@@ -113,6 +113,8 @@ export const chatMessages = sqliteTable(
       .default(sql`'[]'`),
     usage: text("usage", { mode: "json" }).$type<unknown>(),
     error: text("error"),
+    /** The application's own line in the chat, like an account switch. */
+    notice: text("notice", { mode: "json" }).$type<unknown>(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },

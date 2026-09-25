@@ -259,6 +259,7 @@ export function registerIpcHandlers(options: RegisterIpcOptions): void {
     }),
     "session.sendMessage": (input) =>
       services.sessions.sendMessage(input.sessionId, input.text, input.attachments ?? []),
+    "session.continueOnAccount": (input) => services.sessions.continueOnAccount(input.sessionId),
     "session.chooseAttachments": async () => {
       const window = findMainWindow();
       const options = { properties: ["openFile", "multiSelections"] as ("openFile" | "multiSelections")[] };

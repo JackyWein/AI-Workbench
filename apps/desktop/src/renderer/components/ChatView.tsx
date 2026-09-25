@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState, type JSX } from "react";
 import type { ChatMessage } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
+import { AccountNoticeLine } from "./AccountNoticeLine.js";
 import { MessageItem } from "./MessageItem.js";
 
 interface ChatViewProps {
@@ -110,14 +111,18 @@ export function ChatView({ messages }: ChatViewProps): JSX.Element {
             </span>
           </button>
         ) : null}
-        {visible.map((message) => (
-          <MemoMessageItem
-            key={message.id}
-            message={message}
-            streaming={message.status === "streaming"}
-            onRetry={() => retry(message)}
-          />
-        ))}
+        {visible.map((message, index) =>
+          message.notice ? (
+            <AccountNoticeLine key={message.id} message={message} latest={index === visible.length - 1} />
+          ) : (
+            <MemoMessageItem
+              key={message.id}
+              message={message}
+              streaming={message.status === "streaming"}
+              onRetry={() => retry(message)}
+            />
+          ),
+        )}
       </div>
     </div>
   );

@@ -178,6 +178,14 @@ export const ipcContract = {
     }),
     output: z.object({ messageId: z.string() }),
   },
+  /**
+   * After an account reached its limit and the chat offered another account
+   * of the same tool: answers the last message there, conversation included.
+   */
+  "session.continueOnAccount": {
+    input: z.object({ sessionId: z.string().min(1) }),
+    output: z.object({ messageId: z.string() }),
+  },
   /** Files to send with a message, chosen in the system's own dialog. */
   "session.chooseAttachments": {
     input: z.void(),

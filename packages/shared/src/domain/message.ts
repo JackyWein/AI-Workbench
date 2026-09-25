@@ -68,6 +68,38 @@ export const messageUsageSchema = z.object({
 });
 export type MessageUsage = z.infer<typeof messageUsageSchema>;
 
+/** One account of a tool, as a notice in the chat names it. */
+const noticeAccountSchema = z.object({
+  providerId: z.string().min(1),
+  label: z.string().min(1),
+});
+
+/**
+ * What happened when an account reached its limit, kept as a line in the
+ * chat. `switched`: the turn went on on `to`. `offered`: the person decides
+ * whether to go on on `to`. `stopped`: switching is off, or every other
+ * account of the tool is at its limit too.
+ */
+export const accountNoticeSchema = z.object({
+  kind: z.literal("account"),
+  state: z.enum(["switched", "offered", "stopped"]),
+  /** The tool's name, e.g. "Claude Code". */
+  tool: z.string().min(1),
+  from: noticeAccountSchema,
+  to: noticeAccountSchema.nullable(),
+  /** The tool's own words about the limit. */
+  reason: z.string(),
+  /** When the limit ends, if the tool said; for `stopped`, the earliest. */
+  resetsAt: z.coerce.date().nullable(),
+  /**
+   * How the conversation went along: the tool's own files moved into the
+   * other account's home, or the application handed it over in the first
+   * message. Null until it went along.
+   */
+  carried: z.enum(["native", "handover"]).nullable(),
+});
+export type AccountNotice = z.infer<typeof accountNoticeSchema>;
+
 export const chatMessageSchema = z.object({
   id: z.string().min(1),
   sessionId: z.string().min(1),
@@ -81,6 +113,8 @@ export const chatMessageSchema = z.object({
   attachments: z.array(messageAttachmentSchema).default([]),
   usage: messageUsageSchema.nullable(),
   error: z.string().nullable(),
+  /** Set on the application's own lines, like an account switch. */
+  notice: accountNoticeSchema.optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });

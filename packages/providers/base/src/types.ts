@@ -92,6 +92,19 @@ export interface ProviderSessionInfo {
   readonly modelId?: string;
 }
 
+/**
+ * The files in an account's configuration home that hold one conversation,
+ * so another account of the same tool can take it over and resume it with
+ * its whole history. Only the tool's own package knows where they are.
+ */
+export interface SessionTranscript {
+  /** The tool family; only an account of the same one can take it. */
+  readonly family: string;
+  readonly providerSessionId: string;
+  /** Each file or folder, by where it is and where it sits inside the home. */
+  readonly entries: readonly { readonly source: string; readonly relative: string }[];
+}
+
 export interface ProviderSessionHandle {
   readonly sessionId: string;
   readonly providerSessionId: string;

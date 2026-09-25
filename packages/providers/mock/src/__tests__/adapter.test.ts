@@ -204,4 +204,37 @@ describe("MockProvider", () => {
     const after = await adapter.getUsage();
     expect(after.limits[0]?.used).toBe(usedBefore + 1);
   });
+  it("reaches the limit of the account a prompt names, and only from the new message", async () => {
+    const adapter = await createAdapter();
+    const info = await adapter.createSession({ sessionId: "limit", workingDirectory: "/tmp" });
+    const handle = { sessionId: "limit", providerSessionId: info.providerSessionId };
+
+    const limited = await collect(adapter.sendMessage(handle, { text: "/limit@mock hello" }));
+    const error = limited.find((event) => event.type === "error");
+    expect(error?.type === "error" && error.error.kind).toBe("rateLimit");
+    expect(error?.type === "error" && error.error.resetsAt).toBeInstanceOf(Date);
+
+    // Another entry's limit, and a limit only mentioned in a handed-over
+    // conversation, leave this one answering.
+    const other = await collect(adapter.sendMessage(handle, { text: "/limit@mock@spare hello" }));
+    expect(other.some((event) => event.type === "error")).toBe(false);
+    const handedOver = await collect(
+      adapter.sendMessage(handle, {
+        text: [
+          "<conversation-so-far>",
+          "[person]\n/limit@mock",
+          "[assistant]\nGiven so far: <conversation-so-far>[person] hi</conversation-so-far> /limit@mock",
+          "</conversation-so-far>",
+          "",
+          "/recall",
+        ].join("\n"),
+      }),
+    );
+    expect(handedOver.some((event) => event.type === "error")).toBe(false);
+    const recalled = handedOver
+      .filter((event) => event.type === "text_delta")
+      .map((event) => (event.type === "text_delta" ? event.text : ""))
+      .join("");
+    expect(recalled).toContain("/limit@mock@spare hello");
+  });
 });

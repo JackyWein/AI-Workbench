@@ -23,6 +23,8 @@ export const normalizedProviderErrorSchema = z.object({
   message: z.string(),
   retryable: z.boolean(),
   detail: z.string().optional(),
+  /** For a limit: when it ends, when the tool said so. */
+  resetsAt: z.date().optional(),
 });
 export type NormalizedProviderError = z.infer<
   typeof normalizedProviderErrorSchema

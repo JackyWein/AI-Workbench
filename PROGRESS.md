@@ -415,12 +415,13 @@ Also: a window can never attach a stored secret to a server by its reference —
 - [x] The model menu lists a tool's accounts with their tightest window (startup check) — each account's heading in the menu carries its tightest reported window in percent, toned at 80 % and 100 %
 
 ### F4 — Switch account at a limit and keep the chat (FutureFeatures 1)
-- [ ] A setting decides what happens at a limit: switch, ask or stop (startup check)
-- [ ] A turn that ends at a limit continues on the next account in the same chat (startup check with two stand-in accounts)
-- [ ] The next account receives the earlier conversation (startup check: it reports what it was given)
-- [ ] The chat marks the switch with both accounts and the reason (startup check)
-- [ ] An account at its limit is never switched into; the last one stops and says when a window resets (unit tests)
-- [ ] Claude Code's conversation file is carried into the new account's home (adapter test)
+- [x] A setting decides what happens at a limit: switch, ask or stop (startup check) — Settings → Accounts, "Next account" / "Ask me" / "Stop"; the startup check picks each there and runs a limit under it
+- [x] A turn that ends at a limit continues on the next account in the same chat (startup check with two stand-in accounts) — the simulated provider's default account and a second one; the person's message is answered again on the second, and is not repeated in the chat
+- [x] The next account receives the earlier conversation (startup check: it reports what it was given) — the second account repeats what it was given, and the earlier message is in it
+- [x] The chat marks the switch with both accounts and the reason (startup check) — a quiet line: "Continued on Check spare — Mock Provider reached its limit", the tool's own words, when the limit resets, and how the conversation went along; with "Ask me" it offers "Continue on …" and waits
+- [x] An account at its limit is never switched into; the last one stops and says when a window resets (unit tests) — core tests for the choice, for reading a used-up window from reported usage, and a chat where both accounts reach their limit
+- [x] Claude Code's conversation file is carried into the new account's home (adapter test) — `projects/<folder>/<session>.jsonl` and its folder move into the other home, nothing else, never outside it; that Claude Code then resumes it there is not yet run against the real tool with two signed-in accounts
+- Not yet: a team member at its limit does not switch; proactive switching before a turn (at 95 %) is not built
 
 ### F5 — Source control and GitHub (FutureFeatures 2 and F)
 - [ ] Source control: stage and unstage files, commit, pull, push, create a branch (startup check against a local remote)

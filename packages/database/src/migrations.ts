@@ -10,6 +10,7 @@ import connectors from "../migrations/0008_connectors.sql?raw";
 import teamTurns from "../migrations/0009_team-turns.sql?raw";
 import teamMessageAttachments from "../migrations/0010_team-message-attachments.sql?raw";
 import teamRunSession from "../migrations/0011_team-run-session.sql?raw";
+import messageNotice from "../migrations/0012_message-notice.sql?raw";
 
 export interface EmbeddedMigration {
   readonly id: string;
@@ -33,4 +34,5 @@ export const migrations: EmbeddedMigration[] = [
   { id: "0009_team_turns", sql: teamTurns },
   { id: "0010_team_message_attachments", sql: teamMessageAttachments },
   { id: "0011_team_run_session", sql: teamRunSession },
+  { id: "0012_message_notice", sql: messageNotice },
 ];

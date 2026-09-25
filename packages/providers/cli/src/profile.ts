@@ -180,6 +180,12 @@ export const cliAccountsSchema = z.object({
   markers: z.array(z.string()).default([]),
   /** Arguments that start the tool's own sign-in for the selected home. */
   loginArgs: z.array(z.string()).default([]),
+  /**
+   * Where the tool keeps one conversation inside a home, so another account
+   * can take it over and resume it: paths relative to the home, `*` for any
+   * one folder, `{session}` for the tool's session id.
+   */
+  transcripts: z.array(z.string().min(1)).default([]),
 });
 export type CliAccounts = z.infer<typeof cliAccountsSchema>;
 

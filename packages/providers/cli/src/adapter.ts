@@ -24,6 +24,7 @@ import {
   type ProviderSessionHandle,
   type ProviderSessionInfo,
   type ProviderToolAccess,
+  type SessionTranscript,
 } from "@ai-workbench/provider-base";
 import { CliTransport, expandPath, type CliRun } from "@ai-workbench/transport-cli";
 import { TimedCache } from "./cache.js";
@@ -44,6 +45,7 @@ import { buildMcpLaunch, mcpServersFor, NO_MCP, type CliMcpLaunch } from "./mcp.
 import { ModelStore, parseModelLines, validModels } from "./models.js";
 import { classifyError, parseWithRules } from "./parse.js";
 import { readPath, type CliAuth, type CliProviderProfile } from "./profile.js";
+import { adoptTranscript, findTranscript } from "./transcripts.js";
 import { UsageStore, parseOpencodeStatsUsage } from "./usage.js";
 
 /**
@@ -391,6 +393,20 @@ export class CliProviderAdapter implements AIProviderAdapter {
       resumable: this.#profile.resumeArgs.length > 0,
       ...(config.modelId ? { modelId: config.modelId } : {}),
     };
+  }
+
+  async exportSession(providerSessionId: string): Promise<SessionTranscript | null> {
+    const home = this.#accountHome();
+    const patterns = this.#profile.accounts?.transcripts ?? [];
+    return home ? findTranscript(this.#profile.id, home, patterns, providerSessionId) : null;
+  }
+
+  async importSession(transcript: SessionTranscript): Promise<boolean> {
+    const home = this.#accountHome();
+    if (!home || (this.#profile.accounts?.transcripts ?? []).length === 0) {
+      return false;
+    }
+    return adoptTranscript(this.#profile.id, home, transcript);
   }
 
   async *sendMessage(

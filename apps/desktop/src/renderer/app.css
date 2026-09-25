@@ -1384,6 +1384,42 @@ ul.md__list .md__list {
   color: var(--danger);
 }
 
+/* The application's own line in a chat, like an account switch: quiet, one
+   line, set apart by a hairline rather than a card. */
+.chat-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.chat-notice__icon {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.chat-notice__text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.chat-notice__detail {
+  color: var(--text-muted);
+}
+
+.chat-notice[data-state="stopped"] .chat-notice__icon {
+  color: var(--danger);
+}
+
+.chat-notice__action {
+  flex: none;
+}
+
 /* Hover actions under a turn: faint until needed, never layout-shifting. */
 .message__actions {
   display: flex;

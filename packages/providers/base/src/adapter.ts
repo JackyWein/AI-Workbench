@@ -19,6 +19,7 @@ import type {
   ProviderSessionConfig,
   ProviderSessionHandle,
   ProviderSessionInfo,
+  SessionTranscript,
 } from "./types.js";
 
 /**
@@ -66,6 +67,17 @@ export interface AIProviderAdapter {
 
   cancel(session: ProviderSessionHandle): Promise<void>;
   destroySession(session: ProviderSessionHandle): Promise<void>;
+
+  /**
+   * The files of a conversation in this account's home, for another account
+   * of the same tool to take over; null when the tool keeps none there.
+   */
+  exportSession?(providerSessionId: string): Promise<SessionTranscript | null>;
+  /**
+   * Takes over a conversation exported by another account of the same tool,
+   * so it resumes here with its whole history. False when it could not.
+   */
+  importSession?(transcript: SessionTranscript): Promise<boolean>;
 
   getUsage?(): Promise<ProviderUsageSnapshot>;
 

@@ -127,6 +127,10 @@ export const claudeCodeProfile: CliProviderProfileInput = {
     // used home has.
     markers: [".credentials.json", ".claude.json"],
     loginArgs: ["auth", "login"],
+    // A conversation is projects/<working folder>/<session>.jsonl, with a
+    // folder of the same name for what its subagents and tools kept; resume
+    // looks it up under the working folder, so both move as they are.
+    transcripts: ["projects/*/{session}.jsonl", "projects/*/{session}"],
   },
   output: {
     format: "json-lines",

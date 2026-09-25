@@ -714,6 +714,106 @@ export async function runStartupCheck(
     30_000,
   );
 
+  // --- an account at its limit (F4) ---------------------------------------
+  await check(
+    "a chat at its account's limit goes on on the next account, with the conversation, and says so",
+    `(async () => {
+       const api = window.workbench;
+       const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+       const spare = await api.invoke('account.add', { family: 'mock', label: 'Check spare' });
+       const spareId = 'mock@' + spare.id;
+       let sessionId = null;
+       // The choice is made where a person makes it: in Settings.
+       const choose = async (label) => {
+         [...document.querySelectorAll('.sidebar__foot .row')].find(row => row.textContent?.includes('Settings'))?.click();
+         await sleep(300);
+         const group = document.querySelector('[role="radiogroup"][aria-label="When an account reaches its limit"]');
+         [...(group?.querySelectorAll('[role="radio"]') ?? [])].find(node => node.textContent === label)?.click();
+         await sleep(300);
+         return (await api.invoke('settings.get', undefined)).limitAction;
+       };
+       const settle = async () => {
+         const deadline = Date.now() + 15000;
+         while (Date.now() < deadline) {
+           await sleep(200);
+           const busy = (await api.invoke('session.getStatus', { sessionId })).busy;
+           const messages = await api.invoke('message.list', { sessionId });
+           if (!busy && messages.every(message => message.status !== 'streaming')) return messages;
+         }
+         return null;
+       };
+       const send = async (text) => {
+         await api.invoke('session.sendMessage', { sessionId, text });
+         return settle();
+       };
+       const openChat = async () => {
+         const rows = () => [...document.querySelectorAll('.sidebar__scroll .row')];
+         rows().find(node => node.textContent?.includes('Check workspace'))?.click();
+         await sleep(500);
+         rows().find(node => node.querySelector('.row__text')?.textContent === 'Limit session')?.click();
+         await sleep(400);
+       };
+       try {
+         if (await choose('Next account') !== 'switch') return 'Settings did not keep "Next account"';
+         const workspace = (await api.invoke('workspace.list', undefined)).find(entry => entry.name === 'Check workspace');
+         if (!workspace) return 'no workspace';
+         const session = await api.invoke('session.create', {
+           workspaceId: workspace.id, name: 'Limit session', type: 'solo', providerId: 'mock',
+         });
+         sessionId = session.id;
+         await send('Remember the word heron.');
+         // The default account reaches its limit; the chat goes on on the spare one.
+         let messages = await send('/limit@mock /recall');
+         if (!messages) return 'the chat never settled after the limit';
+         const switched = messages.find(message => message.notice?.state === 'switched');
+         if (!switched) return 'no switch in the chat: ' + messages.map(message => message.role + ':' + message.content.slice(0, 40)).join(' | ');
+         if (switched.notice.from.providerId !== 'mock' || switched.notice.to?.providerId !== spareId) return 'the switch names the wrong accounts';
+         const answer = messages.at(-1);
+         if (answer.providerId !== spareId || answer.status !== 'complete') return 'the answer did not come from the spare account';
+         if (!answer.content.includes('Remember the word heron.')) return 'the spare account was not given the conversation';
+         await openChat();
+         const line = await ${waitFor("[...document.querySelectorAll('.chat-notice[data-state=\"switched\"]')].some(node => node.textContent?.includes('Continued on Check spare') && node.textContent?.includes('Mock Provider reached its limit') && node.textContent?.includes('Simulated account limit reached') && node.textContent?.includes('The conversation so far went along'))", 4000)};
+         if (!line) return 'the chat does not show the switch';
+
+         // Ask me: the chat offers the other account and waits for the person.
+         if (await choose('Ask me') !== 'ask') return 'Settings did not keep "Ask me"';
+         await sleep(Math.max(0, new Date(switched.notice.resetsAt).getTime() - Date.now()) + 300);
+         messages = await send('/limit@' + spareId + ' /recall');
+         if (messages?.at(-1)?.notice?.state !== 'offered') return 'no offer to go on';
+         await openChat();
+         const offer = await ${waitFor("[...document.querySelectorAll('.chat-notice[data-state=\"offered\"] button')].find(node => node.textContent === 'Continue on Mock Provider')", 4000)};
+         if (!offer) return 'no button to go on on the other account';
+         [...document.querySelectorAll('.chat-notice[data-state="offered"] button')].find(node => node.textContent === 'Continue on Mock Provider')?.click();
+         // The click answers the last message again; wait for that answer.
+         const clicked = Date.now();
+         while (Date.now() - clicked < 15000) {
+           await sleep(200);
+           messages = await api.invoke('message.list', { sessionId });
+           const last = messages.at(-1);
+           if (last?.role === 'assistant' && last.status !== 'streaming') break;
+         }
+         if (messages?.at(-1)?.providerId !== 'mock' || messages.at(-1).status !== 'complete') {
+           return 'the offered account did not answer: ' + messages.map(message => message.role + '/' + (message.providerId ?? '-') + '/' + message.status + ':' + message.content.slice(0, 30)).join(' | ');
+         }
+         if (messages.some(message => message.notice?.state === 'offered')) return 'the offer stayed open after going on';
+
+         // Stop: the chat stops and says when the limit resets.
+         if (await choose('Stop') !== 'stop') return 'Settings did not keep "Stop"';
+         messages = await send('/limit@mock hello');
+         const stopped = messages?.at(-1);
+         if (stopped?.notice?.state !== 'stopped' || !stopped.notice.resetsAt) return 'the chat did not stop with a reset time';
+         await openChat();
+         return await ${waitFor("[...document.querySelectorAll('.chat-notice[data-state=\"stopped\"]')].some(node => node.textContent?.includes('off in Settings') && /Resets /.test(node.textContent ?? ''))", 4000)}
+           || 'the stop is not shown with its reset time';
+       } finally {
+         await choose('Next account').catch(() => {});
+         if (sessionId) await api.invoke('session.delete', { id: sessionId }).catch(() => {});
+         await api.invoke('account.remove', { id: spare.id }).catch(() => {});
+       }
+     })()`,
+    60_000,
+  );
+
   await check(
     "a delete control sits on the row it deletes",
     `(async () => {

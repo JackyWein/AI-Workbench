@@ -80,6 +80,11 @@ export class UsageService {
   invalidate(): void {
     this.#fetchedAt = 0;
   }
+
+  /** The last collected usage, however old, without asking any tool. */
+  latest(): AggregatedUsage | null {
+    return this.#cache;
+  }
 }
 
 function unavailable(providerId: string, note: string): ProviderUsageSnapshot {

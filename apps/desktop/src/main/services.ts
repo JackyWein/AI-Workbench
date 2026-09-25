@@ -36,7 +36,7 @@ import { codexFactory } from "@ai-workbench/provider-codex";
 import { geminiFactory } from "@ai-workbench/provider-gemini";
 import { opencodeFactory } from "@ai-workbench/provider-opencode";
 import { registerCustomProviders } from "@ai-workbench/provider-openai-compatible";
-import { MockProviderAdapter } from "@ai-workbench/provider-mock";
+import { mockProviderFactory } from "@ai-workbench/provider-mock";
 import { resolveInteractiveCommand } from "@ai-workbench/transport-cli";
 import { TerminalManager } from "@ai-workbench/terminal";
 import { StatusAttentionService } from "@ai-workbench/status";
@@ -230,7 +230,9 @@ async function createServicesInner(
   const overridesFor = (providerId: string): Partial<ProviderConfig> =>
     toProviderConfigOverrides(storedConfigs.get(providerId));
 
-  await providers.register(new MockProviderAdapter(), overridesFor("mock"));
+  // A family like any tool, so further simulated accounts can be added to
+  // exercise switching accounts end to end.
+  await providers.registerFactory(mockProviderFactory(), overridesFor("mock"));
 
   // CLI-backed providers are profile data plus, where a tool needs code, the
   // extensions of its own package. Each family registers its default entry
@@ -468,7 +470,11 @@ async function createServicesInner(
     preferences: storedSettings.statusIsland,
   });
 
+  const usage = new UsageService({ providers, events, logger });
+  usageRef = usage;
   const sessions = new SessionManager({
+    usage,
+    settings,
     skillsServerId: SKILLS_SERVER_ID,
     db: database.db,
     events,
@@ -488,8 +494,6 @@ async function createServicesInner(
       () => ({ teamRuns: 0, teamTurns: 0 }),
     )),
   };
-  const usage = new UsageService({ providers, events, logger });
-  usageRef = usage;
 
   // Terminal output is pushed rather than polled, so listeners register here
   // and the IPC layer forwards to whichever windows exist.

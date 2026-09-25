@@ -13,6 +13,8 @@ import {
   ProviderError,
   type AIProviderAdapter,
   type AgentMessage,
+  type ProviderAccountRef,
+  type ProviderFactory,
   type ProviderContext,
   type ProviderSessionConfig,
   type ProviderSessionHandle,
@@ -28,6 +30,8 @@ export interface MockProviderOptions {
   readonly startupDelayMs?: number;
   /** Requests the simulated account may spend per week. */
   readonly weeklyRequestLimit?: number;
+  /** One more simulated account; the entry becomes `mock@<id>`. */
+  readonly account?: ProviderAccountRef;
 }
 
 interface MockSessionState {
@@ -42,6 +46,8 @@ interface MockSessionState {
   toolNames: string[];
   /** Where the session works; a team member's files are written here. */
   workingDirectory: string;
+  /** Every prompt this session was sent, so /recall can say what it was given. */
+  prompts: string[];
   abort: AbortController | null;
 }
 
@@ -80,24 +86,32 @@ const MOCK_MODELS: ModelInfo[] = [
  *   /tool     -> tool call plus tool result
  *   /slow     -> longer thinking time
  *   /context  -> repeats the instructions and tools it was actually given
+ *   /recall   -> repeats every prompt this session was given
+ *   /limit@id -> the entry `id` (like mock or mock@spare) reports that its
+ *                account reached a limit, which resets five seconds later
  */
 export class MockProviderAdapter implements AIProviderAdapter {
-  readonly metadata: ProviderMetadata = {
-    id: MOCK_PROVIDER_ID,
-    displayName: "Mock Provider",
-    description: "Local simulation used for development and tests",
-    adapterVersion: "1.0.0",
-    providerVersion: "simulated",
-    authMethods: ["none"],
-    transportTypes: ["in-process"],
-  };
+  readonly metadata: ProviderMetadata;
 
-  readonly #options: Required<MockProviderOptions>;
+  readonly #options: Required<Omit<MockProviderOptions, "account">>;
   readonly #sessions = new Map<string, MockSessionState>();
   #requestsUsed = 0;
   #initialized = false;
 
   constructor(options: MockProviderOptions = {}) {
+    const account = options.account;
+    this.metadata = {
+      id: account ? `${MOCK_PROVIDER_ID}@${account.id}` : MOCK_PROVIDER_ID,
+      displayName: "Mock Provider",
+      description: "Local simulation used for development and tests",
+      adapterVersion: "1.0.0",
+      providerVersion: "simulated",
+      authMethods: ["none"],
+      transportTypes: ["in-process"],
+      ...(account
+        ? { family: MOCK_PROVIDER_ID, account: { id: account.id, label: account.label, home: account.home } }
+        : {}),
+    };
     this.#options = {
       chunkDelayMs: options.chunkDelayMs ?? 24,
       startupDelayMs: options.startupDelayMs ?? 180,
@@ -162,6 +176,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
       turns: 0,
       contextTokens: 0,
       ...describeGiven(config),
+      prompts: [],
       abort: null,
     });
     return { providerSessionId, resumable: true, modelId };
@@ -193,6 +208,7 @@ export class MockProviderAdapter implements AIProviderAdapter {
       turns: 0,
       contextTokens: 0,
       ...describeGiven(config),
+      prompts: [],
       abort: null,
     });
     return { providerSessionId, resumable: true, modelId };
@@ -217,17 +233,21 @@ export class MockProviderAdapter implements AIProviderAdapter {
 
     const prompt = message.text;
     const modelId = session.modelId ?? state.modelId;
+    state.prompts.push(prompt);
+    // Magic words count in the new message only, never in an earlier
+    // conversation handed over with it.
+    const asked = withoutHandover(prompt);
 
     try {
       yield { type: "session", providerSessionId: session.providerSessionId, resumable: true };
       yield { type: "status", status: "thinking", detail: "Preparing response" };
 
-      const startupDelay = prompt.includes("/slow")
+      const startupDelay = asked.includes("/slow")
         ? this.#options.startupDelayMs * 4
         : this.#options.startupDelayMs;
       await delay(startupDelay, abort.signal);
 
-      if (prompt.includes("/error")) {
+      if (asked.includes("/error")) {
         yield {
           type: "error",
           error: {
@@ -241,7 +261,22 @@ export class MockProviderAdapter implements AIProviderAdapter {
         return;
       }
 
-      if (prompt.includes("/tool")) {
+      if (limitedEntries(asked).includes(this.metadata.id)) {
+        yield {
+          type: "error",
+          error: {
+            kind: "rateLimit",
+            message: "Simulated account limit reached",
+            retryable: false,
+            detail: `Triggered by /limit@${this.metadata.id} in the prompt`,
+            resetsAt: new Date(Date.now() + 5_000),
+          },
+        };
+        yield { type: "completed", reason: "failed" };
+        return;
+      }
+
+      if (asked.includes("/tool")) {
         const toolCall = {
           id: `tool-${state.turns}`,
           name: "filesystem",
@@ -279,9 +314,11 @@ export class MockProviderAdapter implements AIProviderAdapter {
 
       yield { type: "status", status: "streaming" };
 
-      const reply = prompt.includes("/context")
+      const reply = asked.includes("/context")
         ? describeSessionContext(state)
-        : // A team prompt gets a team answer, so Team Mode can be exercised
+        : asked.includes("/recall")
+          ? `Given so far:\n\n${state.prompts.join("\n\n---\n\n")}`
+          : // A team prompt gets a team answer, so Team Mode can be exercised
           // end to end without spending an account (spec §20).
           looksLikeTeamPrompt(prompt)
           ? buildTeamReply(prompt)
@@ -377,6 +414,36 @@ export class MockProviderAdapter implements AIProviderAdapter {
       throw new ProviderError("provider", "Mock provider is not initialized");
     }
   }
+}
+
+/**
+ * A prompt without the earlier conversation the application handed over. It
+ * comes first, and may itself quote an earlier handover, so it runs to the
+ * last closing tag.
+ */
+function withoutHandover(prompt: string): string {
+  return prompt.replace(/^\s*<conversation-so-far>[\s\S]*<\/conversation-so-far>/, "");
+}
+
+/** The entries a prompt tells to hit their limit, from "/limit@<entry id>". */
+function limitedEntries(prompt: string): string[] {
+  return [...prompt.matchAll(/\/limit@(\S+)/g)].map((match) => match[1] ?? "");
+}
+
+/**
+ * The simulated provider as a family: its default entry and further
+ * simulated accounts, so switching accounts can be exercised end to end.
+ */
+export function mockProviderFactory(options: Omit<MockProviderOptions, "account"> = {}): ProviderFactory {
+  return {
+    family: MOCK_PROVIDER_ID,
+    displayName: "Mock Provider",
+    accounts: {
+      detect: async () => [],
+      isDefaultHome: () => false,
+    },
+    create: (account) => new MockProviderAdapter({ ...options, ...(account ? { account } : {}) }),
+  };
 }
 
 function contextWindowOf(modelId: string): number | undefined {

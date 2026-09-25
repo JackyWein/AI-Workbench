@@ -8,6 +8,7 @@ export * from "./provider-config-service.js";
 export * from "./provider-account-service.js";
 export * from "./provider-manager.js";
 export * from "./plugin-service.js";
+export * from "./account-switch.js";
 export * from "./session-manager.js";
 export * from "./skill-service.js";
 export * from "./team-manager.js";

@@ -274,6 +274,8 @@ interface WorkbenchState {
   deleteSession(id: string): Promise<void>;
 
   sendMessage(text: string, attachments?: MessageAttachment[]): Promise<void>;
+  /** Answers the last message on the account the chat offered after a limit. */
+  continueOnAccount(sessionId: string): Promise<void>;
   /** Files picked in the system's dialog; empty when the person cancels. */
   chooseAttachments(): Promise<MessageAttachment[]>;
   cancel(): Promise<void>;
@@ -999,6 +1001,18 @@ export const useWorkbench = create<WorkbenchState>((set, get) => ({
       });
       // Sent means the draft is spent; dropping it keeps a resent box empty.
       get().clearDraft(sessionId);
+    } catch (error) {
+      set((state) => ({
+        error: describeError(error),
+        busy: { ...state.busy, [sessionId]: false },
+      }));
+    }
+  },
+
+  async continueOnAccount(sessionId) {
+    set((state) => ({ busy: { ...state.busy, [sessionId]: true } }));
+    try {
+      await invoke("session.continueOnAccount", { sessionId });
     } catch (error) {
       set((state) => ({
         error: describeError(error),

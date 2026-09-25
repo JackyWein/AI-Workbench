@@ -59,6 +59,9 @@ export function upgradeStoredSettings(value: unknown): unknown {
 }
 
 export const densitySchema = z.enum(["comfortable", "compact"]);
+
+export const limitActionSchema = z.enum(["switch", "ask", "stop"]);
+export type LimitAction = z.infer<typeof limitActionSchema>;
 export type Density = z.infer<typeof densitySchema>;
 
 /**
@@ -79,6 +82,11 @@ export const appSettingsSchema = z.object({
   autoUpdate: z.boolean().default(true),
   /** The floating companion window, off until the user asks for it (spec §95). */
   statusIsland: islandPreferencesSchema,
+  /**
+   * What a chat does when its account reaches a limit: go on on the tool's
+   * next account, ask first, or stop. Never another tool.
+   */
+  limitAction: limitActionSchema.default("switch"),
 });
 export type AppSettings = z.infer<typeof appSettingsSchema>;
 
@@ -90,6 +98,7 @@ export const defaultAppSettings: AppSettings = {
   defaultProviderId: null,
   autoUpdate: true,
   statusIsland: defaultIslandPreferences,
+  limitAction: "switch",
 };
 
 export const updateSettingsInputSchema = appSettingsSchema.partial();

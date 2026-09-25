@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import type { Database } from "@ai-workbench/database";
 import { chatMessages, sessions, type ChatMessageRow, type SessionRow } from "@ai-workbench/database";
 import {
@@ -8,8 +8,10 @@ import {
   type ProviderSessionHandle,
   type ProviderToolAccess,
 } from "@ai-workbench/provider-base";
-import { readSessionRuntimeSettings } from "@ai-workbench/shared";
+import { accountNoticeSchema, readSessionRuntimeSettings } from "@ai-workbench/shared";
 import type {
+  AccountNotice,
+  AppSettings,
   ChatMessage,
   CreateSessionInput,
   MessageAttachment,
@@ -18,12 +20,14 @@ import type {
   MessageStatus,
   MessageUsage,
   NormalizedProviderError,
+  ProviderUsageSnapshot,
   Session,
   SessionStatus,
   ToolCallRecord,
   UpdateSessionInput,
 } from "@ai-workbench/shared";
 import { join } from "node:path";
+import { buildHandover, exhaustedUntil, pickNextAccount, type AccountStanding } from "./account-switch.js";
 import { AttachmentError, forgetAttachments, inspectAttachments, keepAttachments } from "./attachments.js";
 import type { EventBus } from "./event-bus.js";
 import { resolveInsideRoot } from "@ai-workbench/workspace-fs";
@@ -32,6 +36,7 @@ import { withServerGuidance } from "./server-guidance.js";
 import type { ProviderManager } from "./provider-manager.js";
 import type { McpService } from "./mcp-service.js";
 import type { SkillService } from "./skill-service.js";
+import type { UsageService } from "./usage-service.js";
 import type { WorkspaceManager } from "./workspace-manager.js";
 
 export class SessionNotFoundError extends Error {
@@ -84,6 +89,10 @@ export interface SessionManagerOptions {
    * files go to the tool from where the person picked them.
    */
   readonly attachmentsDirectory?: string;
+  /** What tools last reported, to tell an account at its limit from a free one. */
+  readonly usage?: UsageService;
+  /** Where the person chose what happens at a limit; without it a chat stops. */
+  readonly settings?: { get(): Promise<Pick<AppSettings, "limitAction">> };
 }
 
 /**
@@ -101,7 +110,14 @@ export class SessionManager {
   readonly #skillsServerId: string | undefined;
   readonly #mcp: McpService | undefined;
   readonly #attachmentsDirectory: string | undefined;
+  readonly #usage: UsageService | undefined;
+  readonly #settings: SessionManagerOptions["settings"];
   readonly #runs = new Map<string, ActiveRun>();
+  /**
+   * Accounts that reported a limit, and until when if they said. One whose
+   * end is unknown stays limited until a turn on it succeeds again.
+   */
+  readonly #limited = new Map<string, { readonly until: Date | null }>();
 
   constructor(options: SessionManagerOptions) {
     this.#db = options.db;
@@ -113,6 +129,8 @@ export class SessionManager {
     this.#skillsServerId = options.skillsServerId;
     this.#mcp = options.mcp;
     this.#attachmentsDirectory = options.attachmentsDirectory;
+    this.#usage = options.usage;
+    this.#settings = options.settings;
   }
 
   async list(workspaceId?: string): Promise<Session[]> {
@@ -324,7 +342,67 @@ export class SessionManager {
     });
     this.#events.publish({ type: "message.created", message: userMessage });
 
-    let resolved: { handle: ProviderSessionHandle };
+    return this.#startTurn(session, adapter, session.providerId, placeholder, userMessage);
+  }
+
+  /**
+   * Goes on after an account reached its limit and the person chose to
+   * continue on the account the chat offered: the same message is answered
+   * there, with the conversation carried along.
+   */
+  async continueOnAccount(sessionId: string): Promise<{ messageId: string }> {
+    const session = await this.require(sessionId);
+    if (this.#runs.has(sessionId)) {
+      throw new SessionBusyError(sessionId);
+    }
+    const recent = await this.#recentMessages(sessionId, 200);
+    const offer = recent.at(-1);
+    const target = offer?.notice?.state === "offered" ? offer.notice.to : null;
+    const current = session.providerId ? this.#providers.get(session.providerId) : undefined;
+    const next = target ? this.#providers.get(target.providerId) : undefined;
+    const userMessage = [...recent].reverse().find((message) => message.role === "user");
+    if (!offer?.notice || !target || !current || !next || !userMessage || familyOf(current) !== familyOf(next)) {
+      throw new Error("This chat has no other account waiting to go on");
+    }
+
+    const placeholder: ActiveRun = {
+      handle: { sessionId, providerSessionId: session.providerSessionId ?? sessionId },
+      adapter: next,
+      cancelled: false,
+      finished: Promise.resolve(),
+    };
+    this.#runs.set(sessionId, placeholder);
+    try {
+      const moved = await this.#moveToAccount(session, current, next);
+      const notice: AccountNotice = {
+        ...offer.notice,
+        state: "switched",
+        carried: await this.#carriedHow(moved.adopted, userMessage),
+      };
+      await this.#updateNotice(offer, notice);
+      return await this.#startTurn(moved.session, next, target.providerId, placeholder, userMessage);
+    } catch (error) {
+      if (this.#runs.get(sessionId) === placeholder) {
+        this.#runs.delete(sessionId);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Answers a message already in the chat: starts or resumes the provider
+   * session, and — when the tool starts this conversation fresh although the
+   * chat has history — hands the earlier conversation over with it.
+   */
+  async #startTurn(
+    session: Session,
+    adapter: AIProviderAdapter,
+    providerId: string,
+    placeholder: ActiveRun,
+    userMessage: ChatMessage,
+  ): Promise<{ messageId: string }> {
+    const sessionId = session.id;
+    let resolved: { handle: ProviderSessionHandle; fresh: boolean };
     try {
       resolved = await this.#ensureProviderSession(session, adapter);
     } catch (error) {
@@ -336,11 +414,13 @@ export class SessionManager {
         role: "assistant",
         content: message,
         status: "failed",
-        providerId: session.providerId,
+        providerId,
         modelId: session.modelId,
       });
       this.#events.publish({ type: "message.created", message: failed });
-      this.#runs.delete(sessionId);
+      if (this.#runs.get(sessionId) === placeholder) {
+        this.#runs.delete(sessionId);
+      }
       throw error;
     }
     // A cancel that landed while the provider session was starting must win:
@@ -351,19 +431,22 @@ export class SessionManager {
         role: "assistant",
         content: "cancelled",
         status: "failed",
-        providerId: session.providerId,
+        providerId,
         modelId: session.modelId,
       });
       this.#events.publish({ type: "message.created", message: cancelled });
-      this.#runs.delete(sessionId);
+      if (this.#runs.get(sessionId) === placeholder) {
+        this.#runs.delete(sessionId);
+      }
       throw new Error("cancelled");
     }
+    const text = resolved.fresh ? await this.#withHandover(userMessage) : userMessage.content;
     const assistantMessage = await this.#insertMessage({
       sessionId,
       role: "assistant",
       content: "",
       status: "streaming",
-      providerId: session.providerId,
+      providerId,
       modelId: resolved.handle.modelId ?? session.modelId,
     });
     this.#events.publish({ type: "message.created", message: assistantMessage });
@@ -377,15 +460,19 @@ export class SessionManager {
     // The object the stream reads is the one registered: a cancel marks it,
     // and the stream must see that mark (it used to land on a copy, so a turn
     // stopped by the person was saved as complete when the tool finished).
+    const sent = userMessage.attachments;
     const message = {
       text,
       ...(sent.length > 0
         ? { attachments: sent.map(({ kind, path }) => ({ kind, path })) }
         : {}),
     };
-    run.finished = this.#stream(run, session.providerId, assistantMessage, message).finally(
+    run.finished = this.#stream(run, providerId, assistantMessage, message, userMessage).finally(
       () => {
-        this.#runs.delete(sessionId);
+        // A turn that went on on another account has registered its own run.
+        if (this.#runs.get(sessionId) === run) {
+          this.#runs.delete(sessionId);
+        }
       },
     );
     this.#runs.set(sessionId, run);
@@ -502,6 +589,7 @@ export class SessionManager {
     providerId: string,
     message: ChatMessage,
     request: AgentMessage,
+    userMessage: ChatMessage,
   ): Promise<void> {
     const sessionId = message.sessionId;
     let content = "";
@@ -624,7 +712,9 @@ export class SessionManager {
     // first exchange, so past conversations stay findable. Renamed sessions
     // are never touched.
     if (status === "complete") {
-      await this.#nameFromFirstExchange(sessionId, request.text).catch((error: unknown) => {
+      // The account answered, so whatever limit it reported is over.
+      this.#limited.delete(providerId);
+      await this.#nameFromFirstExchange(sessionId, userMessage.content).catch((error: unknown) => {
         this.#logger.debug("Session could not be named from its first turn", {
           sessionId,
           error: error instanceof Error ? error.message : String(error),
@@ -632,10 +722,16 @@ export class SessionManager {
       });
     }
 
+    // A turn that ended at a limit keeps the session claimed while the next
+    // account is chosen, so no other message slips in between.
+    const atLimit = status === "failed" && error?.kind === "rateLimit" && !run.cancelled;
+
     // The run is retired before the terminal events are published, so anything
     // reacting to the finished answer already sees an idle session and may send
     // the next message immediately.
-    this.#runs.delete(sessionId);
+    if (!atLimit && this.#runs.get(sessionId) === run) {
+      this.#runs.delete(sessionId);
+    }
 
     this.#events.publish({ type: "message.updated", message: finalMessage });
     if (error) {
@@ -646,7 +742,248 @@ export class SessionManager {
         error,
       });
     }
+    if (atLimit && error) {
+      const limit = error;
+      const wentOn = await this.#atLimit(run, providerId, userMessage, limit, usage).catch((caught: unknown) => {
+        this.#logger.warn("Going on after a limit failed", {
+          sessionId,
+          error: caught instanceof Error ? caught.message : String(caught),
+        });
+        return false;
+      });
+      if (wentOn) {
+        return;
+      }
+      if (this.#runs.get(sessionId) === run) {
+        this.#runs.delete(sessionId);
+      }
+    }
     this.#publishStatus(sessionId, status === "failed" ? "error" : "idle");
+  }
+
+  /**
+   * An account reached its limit. Depending on the person's choice the chat
+   * goes on on the tool's next free account, offers it, or stops — and says
+   * which in a line of its own. Never another tool, never an account that is
+   * at its limit too. True when the turn went on elsewhere.
+   */
+  async #atLimit(
+    run: ActiveRun,
+    providerId: string,
+    userMessage: ChatMessage,
+    error: NormalizedProviderError,
+    turnUsage: MessageUsage | null,
+  ): Promise<boolean> {
+    const sessionId = userMessage.sessionId;
+    const now = Date.now();
+    const snapshots = this.#snapshots();
+    // When the limit ends, as the tool said it: with the error, in the limits
+    // it reported during this turn, or in its last usage report.
+    const reported = turnUsage
+      ? exhaustedUntil(
+          { providerId, state: "available", limits: turnUsage.limits, updatedAt: new Date(now), source: "provider" },
+          now,
+        )
+      : undefined;
+    const until = error.resetsAt ?? reported ?? exhaustedUntil(snapshots.get(providerId), now) ?? null;
+    this.#limited.set(providerId, { until });
+    this.#usage?.invalidate();
+
+    const current = this.#providers.get(providerId);
+    if (!current) {
+      return false;
+    }
+    const order = await this.#accountOrder(current, snapshots, now);
+    const base = {
+      kind: "account" as const,
+      tool: current.metadata.displayName,
+      from: { providerId, label: accountLabel(current) },
+      reason: error.message,
+    };
+    const action = (await this.#settings?.get().catch(() => null))?.limitAction ?? "stop";
+    if (action === "stop") {
+      await this.#addNotice(
+        sessionId,
+        { ...base, state: "stopped", to: null, resetsAt: until, carried: null },
+        `${base.from.label} reached its limit. Going on with another account is off in Settings.`,
+      );
+      return false;
+    }
+    const { next, earliestReset } = pickNextAccount(order, providerId, now);
+    if (!next) {
+      await this.#addNotice(
+        sessionId,
+        { ...base, state: "stopped", to: null, resetsAt: earliestReset, carried: null },
+        order.length > 1
+          ? `${base.from.label} reached its limit, and so has every other account of ${base.tool}.`
+          : `${base.from.label} reached its limit, and ${base.tool} has no other account here.`,
+      );
+      return false;
+    }
+    const to = { providerId: next.providerId, label: next.label };
+    if (action === "ask" || run.cancelled) {
+      await this.#addNotice(sessionId, { ...base, state: "offered", to, resetsAt: until, carried: null });
+      return false;
+    }
+
+    const nextAdapter = this.#providers.get(next.providerId);
+    const session = await this.get(sessionId);
+    if (!nextAdapter || !session) {
+      return false;
+    }
+    const placeholder: ActiveRun = {
+      handle: { sessionId, providerSessionId: session.providerSessionId ?? sessionId },
+      adapter: nextAdapter,
+      cancelled: false,
+      finished: Promise.resolve(),
+    };
+    this.#runs.set(sessionId, placeholder);
+    try {
+      const moved = await this.#moveToAccount(session, current, nextAdapter);
+      await this.#addNotice(sessionId, {
+        ...base,
+        state: "switched",
+        to,
+        resetsAt: until,
+        carried: await this.#carriedHow(moved.adopted, userMessage),
+      });
+      await this.#startTurn(moved.session, nextAdapter, next.providerId, placeholder, userMessage);
+    } catch (caught) {
+      // The failure is already in the chat as an answer; the session is free.
+      this.#logger.warn("The next account could not take the turn", {
+        sessionId,
+        providerId: next.providerId,
+        error: caught instanceof Error ? caught.message : String(caught),
+      });
+      if (this.#runs.get(sessionId) === placeholder) {
+        this.#runs.delete(sessionId);
+      }
+      this.#publishStatus(sessionId, "error");
+    }
+    return true;
+  }
+
+  /** The tool's accounts in the order they are tried, with their standing. */
+  async #accountOrder(
+    current: AIProviderAdapter,
+    snapshots: ReadonlyMap<string, ProviderUsageSnapshot>,
+    now: number,
+  ): Promise<AccountStanding[]> {
+    const family = familyOf(current);
+    const order: AccountStanding[] = [];
+    for (const adapter of this.#providers.registry.list()) {
+      const id = adapter.metadata.id;
+      if (familyOf(adapter) !== family || !this.#providers.isProviderEnabled(id)) {
+        continue;
+      }
+      if (id !== current.metadata.id && !(await signedIn(adapter))) {
+        continue;
+      }
+      const recorded = this.#limited.get(id);
+      const exhausted = exhaustedUntil(snapshots.get(id), now);
+      const limited =
+        recorded && (recorded.until === null || recorded.until.getTime() > now)
+          ? recorded
+          : exhausted === undefined
+            ? null
+            : { until: exhausted };
+      order.push({ providerId: id, label: accountLabel(adapter), limited });
+    }
+    return order;
+  }
+
+  /** The last usage the tools reported, by provider; never waits on a tool. */
+  #snapshots(): Map<string, ProviderUsageSnapshot> {
+    const usage = this.#usage?.latest();
+    return new Map((usage?.snapshots ?? []).map((snapshot) => [snapshot.providerId, snapshot]));
+  }
+
+  /**
+   * Points the chat at another account of the same tool. Where the tool keeps
+   * its conversation in the account's home, it moves along and resumes
+   * there; otherwise the next turn starts fresh and gets the handover.
+   */
+  async #moveToAccount(
+    session: Session,
+    current: AIProviderAdapter,
+    next: AIProviderAdapter,
+  ): Promise<{ session: Session; adopted: boolean }> {
+    let providerSessionId: string | null = null;
+    if (session.providerSessionId && current.exportSession && next.importSession) {
+      try {
+        const transcript = await current.exportSession(session.providerSessionId);
+        if (transcript && (await next.importSession(transcript))) {
+          providerSessionId = session.providerSessionId;
+        }
+      } catch (error) {
+        this.#logger.warn("The conversation could not move to the other account; it is handed over instead", {
+          sessionId: session.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    const updatedAt = new Date();
+    const moved: Session = { ...session, providerId: next.metadata.id, providerSessionId, updatedAt };
+    await this.#db
+      .update(sessions)
+      .set({ providerId: moved.providerId, providerSessionId, updatedAt })
+      .where(eq(sessions.id, session.id));
+    this.#events.publish({ type: "session.updated", session: moved });
+    return { session: moved, adopted: providerSessionId !== null };
+  }
+
+  async #carriedHow(adopted: boolean, userMessage: ChatMessage): Promise<AccountNotice["carried"]> {
+    if (adopted) {
+      return "native";
+    }
+    return buildHandover(await this.#earlierThan(userMessage)) ? "handover" : null;
+  }
+
+  async #addNotice(sessionId: string, notice: AccountNotice, content = describeNotice(notice)): Promise<void> {
+    const message = await this.#insertMessage({
+      sessionId,
+      role: "system",
+      content,
+      status: "complete",
+      providerId: null,
+      modelId: null,
+      notice,
+    });
+    this.#events.publish({ type: "message.created", message });
+  }
+
+  async #updateNotice(message: ChatMessage, notice: AccountNotice): Promise<void> {
+    const updated: ChatMessage = { ...message, content: describeNotice(notice), notice, updatedAt: new Date() };
+    await this.#db
+      .update(chatMessages)
+      .set({ content: updated.content, notice, updatedAt: updated.updatedAt })
+      .where(eq(chatMessages.id, message.id));
+    this.#events.publish({ type: "message.updated", message: updated });
+  }
+
+  /** The newest messages of a chat, oldest first. */
+  async #recentMessages(sessionId: string, limit: number): Promise<ChatMessage[]> {
+    const rows = await this.#db
+      .select()
+      .from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(desc(chatMessages.createdAt))
+      .limit(limit);
+    return rows.map(toChatMessage).reverse();
+  }
+
+  /** What was said before a message, as far as a handover would carry it. */
+  async #earlierThan(userMessage: ChatMessage): Promise<ChatMessage[]> {
+    const at = userMessage.createdAt.getTime();
+    return (await this.#recentMessages(userMessage.sessionId, 120)).filter(
+      (message) => message.id !== userMessage.id && message.createdAt.getTime() <= at,
+    );
+  }
+
+  /** The message as the tool receives it, with the earlier conversation first. */
+  async #withHandover(userMessage: ChatMessage): Promise<string> {
+    const handover = buildHandover(await this.#earlierThan(userMessage));
+    return handover ? `${handover}\n\n${userMessage.content}` : userMessage.content;
   }
 
   /** Skills that apply to this session, as provider system instructions. */
@@ -759,7 +1096,7 @@ export class SessionManager {
   async #ensureProviderSession(
     session: Session,
     adapter: AIProviderAdapter,
-  ): Promise<{ handle: ProviderSessionHandle }> {
+  ): Promise<{ handle: ProviderSessionHandle; fresh: boolean }> {
     const capabilities = await this.#safeCapabilities(adapter);
     const toolAccess = await this.#buildToolAccess(session, capabilities);
     // Skills, then what the session's servers say about using them — so the
@@ -799,6 +1136,8 @@ export class SessionManager {
         });
       }
     }
+    // A conversation the tool starts now knows nothing of what came before.
+    const fresh = info === null;
     info ??= await adapter.createSession(config);
 
     if (
@@ -827,6 +1166,7 @@ export class SessionManager {
     }
 
     return {
+      fresh,
       handle: {
         sessionId: session.id,
         providerSessionId: info.providerSessionId,
@@ -845,6 +1185,7 @@ export class SessionManager {
     providerId: string | null;
     modelId: string | null;
     attachments?: MessageAttachment[];
+    notice?: AccountNotice;
   }): Promise<ChatMessage> {
     const now = new Date();
     const row: ChatMessageRow = {
@@ -859,6 +1200,7 @@ export class SessionManager {
       attachments: input.attachments ?? [],
       usage: null,
       error: null,
+      notice: input.notice ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -924,6 +1266,7 @@ function toSession(row: SessionRow): Session {
 }
 
 function toChatMessage(row: ChatMessageRow): ChatMessage {
+  const notice = row.notice ? accountNoticeSchema.safeParse(row.notice) : null;
   return {
     id: row.id,
     sessionId: row.sessionId,
@@ -937,9 +1280,44 @@ function toChatMessage(row: ChatMessageRow): ChatMessage {
     attachments: row.attachments as MessageAttachment[],
     usage: (row.usage ?? null) as MessageUsage | null,
     error: row.error,
+    ...(notice?.success ? { notice: notice.data } : {}),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+/** The tool family an entry belongs to; every account of a tool shares it. */
+function familyOf(adapter: AIProviderAdapter): string {
+  return adapter.metadata.family ?? adapter.metadata.id;
+}
+
+/** How a notice names an account: its own label, or the tool for its default one. */
+function accountLabel(adapter: AIProviderAdapter): string {
+  return adapter.metadata.account?.label ?? adapter.metadata.displayName;
+}
+
+/**
+ * Whether an account is signed in as far as the tool says; one that plainly
+ * is not is never switched to. Asking may run the tool, so it is bounded.
+ */
+async function signedIn(adapter: AIProviderAdapter): Promise<boolean> {
+  const status = await Promise.race([
+    adapter.getAuthenticationStatus().catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+  ]);
+  return status?.state !== "authenticationRequired" && status?.state !== "authenticationExpired";
+}
+
+/** The notice in plain words; the reset time is added where it is shown. */
+function describeNotice(notice: AccountNotice): string {
+  switch (notice.state) {
+    case "switched":
+      return `Continued on ${notice.to?.label ?? "another account"} — ${notice.from.label} reached its limit.`;
+    case "offered":
+      return `${notice.from.label} reached its limit. ${notice.to?.label ?? "Another account"} of ${notice.tool} is free to go on.`;
+    case "stopped":
+      return `${notice.from.label} reached its limit.`;
+  }
 }
 
 /** Combines what several usage events of one turn reported. */
