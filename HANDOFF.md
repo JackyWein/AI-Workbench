@@ -8,6 +8,14 @@ you. The long day-by-day history that used to live here is in git
 Everything is on `claude/repo-setup-instructions-8tgcbw`. The design rollout
 branch `design/approved-rollout` is merged into it and can be deleted.
 
+## Where things stand (2026-09-25, 0.0.8 released from CI)
+
+`94c3ed2 Release 0.0.8` pushed to `claude/repo-setup-instructions-8tgcbw`;
+Release workflow started manually (run 36148478009): packages on
+Linux/Windows/macOS, then publishes GitHub release v0.0.8 with the 0.0.8
+notes. Note: the local `release/AI-Workbench-0.0.8-*` exes are gitignored
+previews of the same tree, not the release itself.
+
 ## Where things stand (2026-09-25, 4th teams crash — first on 0.0.8 — under diagnosis)
 
 Continuing a team session killed the app again — hard, no log trail, no
