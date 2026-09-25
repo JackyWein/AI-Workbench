@@ -55,6 +55,10 @@ export async function discoverClaudeImportables(
         );
       }
     }
+  }
+  // The project's shared file is the project's own: it counts whether or not
+  // the person's settings know the project.
+  if (request.workspacePath) {
     const shared = (await readJsonFile(join(request.workspacePath, ".mcp.json"))) as Record<string, unknown> | null;
     mcpServers.push(...readJsonMcpServers(shared?.["mcpServers"], "Claude Code · .mcp.json"));
   }

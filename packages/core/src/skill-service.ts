@@ -261,6 +261,29 @@ export class SkillService {
     return this.#manager.buildInstructions(effective);
   }
 
+  /**
+   * The skills a team member works with: those on for its run's workspace
+   * and session, plus the ones picked for the member itself in the team —
+   * each only when the member's tool can do what the skill needs.
+   */
+  async resolveForMember(input: {
+    sessionId: string | null;
+    workspaceId: string;
+    memberSkillIds: readonly string[];
+    capabilities?: ProviderCapabilities;
+  }): Promise<EffectiveSkill[]> {
+    const effective = await this.resolveForSession({
+      sessionId: input.sessionId ?? "",
+      workspaceId: input.workspaceId,
+    });
+    const have = new Set(effective.map((entry) => entry.skill.id));
+    const own = this.list()
+      .filter((skill) => input.memberSkillIds.includes(skill.id) && !have.has(skill.id))
+      .map((skill) => ({ skill, decidedBy: "session" as const }));
+    const all = [...effective, ...own];
+    return input.capabilities ? this.#manager.filterByCapabilities(all, input.capabilities) : all;
+  }
+
   /** Scope decisions for the UI, so a toggle can show where it comes from. */
   async assignmentsFor(input: {
     sessionId?: string;

@@ -24,6 +24,7 @@ import { TEAM_MCP_AGENT_ENV, TEAM_MCP_RUN_ENV, TEAM_MCP_SERVER_ID } from "@ai-wo
 import { EventBus } from "../event-bus.js";
 import { createNullLogger } from "../logger.js";
 import { McpService } from "../mcp-service.js";
+import { SkillService } from "../skill-service.js";
 import { ProviderManager } from "../provider-manager.js";
 import { TeamManager } from "../team-manager.js";
 import { WorkspaceManager } from "../workspace-manager.js";
@@ -286,6 +287,137 @@ describe("team MCP handover to providers", () => {
     const toolAccess = app.recorder.configs[0]?.toolAccess;
     expect(toolAccess?.kind).toBe("provider-mcp");
     expect(toolAccess?.mcpServers.map((server) => server.id)).toEqual([TEAM_MCP_SERVER_ID]);
+  });
+
+  it("gives a member its workspace's servers, prepared as for a session, and its skills", async () => {
+    const logger = createNullLogger();
+    const database = createDatabase({ file: join(directory, "members.db") });
+    await runMigrations(database.client);
+    const events = new EventBus();
+    const providers = new ProviderManager({ logger, stateDirectory: join(directory, "providers") });
+    const recorder = new RecordingAdapter("recording-mcp", true);
+    await providers.register(recorder);
+    const workspaces = new WorkspaceManager({ db: database.db, events, logger });
+    const manager = new McpManager({ logger });
+    // The echo server stands in for one of the application's own servers.
+    const mcp = new McpService({ db: database.db, logger, manager, trustedServerIds: ["echo"] });
+    const skills = new SkillService({ db: database.db, logger });
+    const teams = new TeamManager({ db: database.db, events, logger, providers, mcp, skills });
+    try {
+      const workspace = await workspaces.create({ name: "Demo", path: directory });
+      // On for this workspace only, not everywhere.
+      await mcp.save({
+        id: "echo",
+        name: "Echo",
+        transport: "stdio",
+        command: process.execPath,
+        args: [echoServer],
+        availability: "workspaces",
+        workspaceIds: [workspace.id],
+      });
+      await mcp.connectEnabled();
+      const skill = (id: string, text: string) => ({
+        schemaVersion: 1 as const,
+        id,
+        name: id,
+        description: `The ${id} skill`,
+        version: "1.0.0",
+        instructions: text,
+        requiredCapabilities: [],
+        tools: [],
+        mcpDependencies: [],
+        metadata: {},
+        source: { kind: "import" as const },
+      });
+      await skills.save(skill("workspace-skill", "Follow the workspace-skill-text."));
+      await skills.save(skill("member-skill", "Follow the member-skill-text."));
+      await skills.save(skill("unused-skill", "Never the unused-skill-text."));
+      await skills.assign({ skillId: "workspace-skill", scope: "workspace", scopeId: workspace.id, enabled: true });
+
+      const team = await teams.create({
+        workspaceId: workspace.id,
+        workingDirectory: workspace.path,
+        name: "Members",
+        agents: [
+          { displayName: "Lead", providerId: "recording-mcp", role: "leads", skills: ["member-skill"] },
+        ],
+      });
+      const run = await teams.startRun({ teamId: team.id, goal: "Use what you were given" });
+      const deadline = Date.now() + 15_000;
+      while (["running", "pending"].includes((await teams.getSnapshot(run.id)).run.status)) {
+        if (Date.now() > deadline) {
+          throw new Error("the run did not settle");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      const config = recorder.configs[0];
+      const echo = config?.toolAccess?.mcpServers.find((server) => server.id === "echo");
+      // Before, a member looked its servers up without a workspace, so one on
+      // for the workspace never reached it, and it got the raw configuration
+      // instead of what a session gets (trusted, signed in through the gateway).
+      expect(echo).toBeDefined();
+      expect(echo?.trusted).toBe(true);
+      // Its skills: the workspace's and the one picked for it, and no other.
+      expect(config?.systemInstructions).toContain("workspace-skill-text");
+      expect(config?.systemInstructions).toContain("member-skill-text");
+      expect(config?.systemInstructions).not.toContain("unused-skill-text");
+    } finally {
+      await teams.shutdown();
+      await providers.dispose();
+      await manager.disconnectAll();
+      database.close();
+    }
+  });
+
+  it("gives a member on a provider without MCP its skills as instructions", async () => {
+    const logger = createNullLogger();
+    const database = createDatabase({ file: join(directory, "plain.db") });
+    await runMigrations(database.client);
+    const events = new EventBus();
+    const providers = new ProviderManager({ logger, stateDirectory: join(directory, "providers") });
+    const recorder = new RecordingAdapter("recording-plain", false);
+    await providers.register(recorder);
+    const workspaces = new WorkspaceManager({ db: database.db, events, logger });
+    const skills = new SkillService({ db: database.db, logger });
+    const teams = new TeamManager({ db: database.db, events, logger, providers, skills });
+    try {
+      const workspace = await workspaces.create({ name: "Demo", path: directory });
+      await skills.save({
+        schemaVersion: 1,
+        id: "everywhere-skill",
+        name: "Everywhere",
+        description: "On for everyone",
+        version: "1.0.0",
+        instructions: "Follow the everywhere-skill-text.",
+        requiredCapabilities: [],
+        tools: [],
+        mcpDependencies: [],
+        metadata: {},
+        source: { kind: "import" },
+      });
+      await skills.assign({ skillId: "everywhere-skill", scope: "global", enabled: true });
+      const team = await teams.create({
+        workspaceId: workspace.id,
+        workingDirectory: workspace.path,
+        name: "Plain",
+        agents: [{ displayName: "Lead", providerId: "recording-plain", role: "leads" }],
+      });
+      const run = await teams.startRun({ teamId: team.id, goal: "Use your skills" });
+      const deadline = Date.now() + 15_000;
+      while (["running", "pending"].includes((await teams.getSnapshot(run.id)).run.status)) {
+        if (Date.now() > deadline) {
+          throw new Error("the run did not settle");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(recorder.configs[0]?.toolAccess).toBeUndefined();
+      expect(recorder.configs[0]?.systemInstructions).toContain("everywhere-skill-text");
+    } finally {
+      await teams.shutdown();
+      await providers.dispose();
+      database.close();
+    }
   });
 
   it("keeps a provider without MCP on action blocks", async () => {

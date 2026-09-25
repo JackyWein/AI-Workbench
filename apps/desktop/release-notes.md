@@ -14,6 +14,9 @@ Memory and tools
 - Agents are told when to use the shared memory — search before non-trivial work, save what the next agent would have to find out again, never secrets — and a team that finishes a goal writes it to the vault.
 - Connectors → Import from your tools offers the MCP servers your installed tools are already configured with. Secrets in their variables and arguments are not copied; the app names them so you can set them.
 - Sessions get their skills as a short list and load one when a task needs it.
+- Team members now get the same servers and skills as a session: also the servers switched on for the run's workspace, signed-in servers with their sign-in, and the skills that are on, plus the ones picked for the member. Before, a member got only servers switched on everywhere, without their sign-in, and skills only if its tool speaks MCP.
+- Gemini CLI, OpenCode and Antigravity now receive the skills and what the connected servers are for. They have no flag for instructions, so these were dropped; they now travel in front of the conversation's first message.
+- Servers in a project's shared .mcp.json are offered for import even when Claude Code's own settings do not know the project.
 
 The window
 - A titlebar of its own in the theme's colours; chat and composer grow with the window; the window, taskbar and tray icon follow the theme.

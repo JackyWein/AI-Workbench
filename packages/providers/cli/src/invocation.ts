@@ -215,6 +215,29 @@ export function promptWithAttachments(
 }
 
 /**
+ * Instructions for a tool that takes none by flag travel in front of the
+ * message instead: with the first message of a conversation, and with every
+ * message when the tool starts each turn afresh. Without this, skills and
+ * what the connected servers are for reached only the tools with a flag for
+ * them and were dropped for the others without a word.
+ */
+export function promptWithInstructions(
+  profile: CliProviderProfile,
+  text: string,
+  instructions: string | undefined,
+  firstTurn: boolean,
+): string {
+  const wanted = instructions?.trim() ?? "";
+  if (wanted.length === 0 || profile.instructionArgs.length > 0) {
+    return text;
+  }
+  if (!firstTurn && profile.capabilities.includes("sessionResume")) {
+    return text;
+  }
+  return `<instructions>\n${wanted}\n</instructions>\n\n${text}`;
+}
+
+/**
  * A path as a mention parser reads it: special characters behind a
  * backslash, or on Windows — where the backslash separates folders — the
  * whole path in double quotes.

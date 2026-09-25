@@ -34,7 +34,12 @@ import type {
   CliParseState,
   CliProviderExtensions,
 } from "./extensions.js";
-import { buildInteractiveArgs, buildTurnArgs, promptWithAttachments } from "./invocation.js";
+import {
+  buildInteractiveArgs,
+  buildTurnArgs,
+  promptWithAttachments,
+  promptWithInstructions,
+} from "./invocation.js";
 import { buildMcpLaunch, mcpServersFor, NO_MCP, type CliMcpLaunch } from "./mcp.js";
 import { ModelStore, parseModelLines, validModels } from "./models.js";
 import { classifyError, parseWithRules } from "./parse.js";
@@ -419,7 +424,12 @@ export class CliProviderAdapter implements AIProviderAdapter {
     }
 
     const attachments = message.attachments ?? [];
-    const prompt = promptWithAttachments(profile, message.text, attachments);
+    const firstTurn = isPendingSessionId(session.providerSessionId);
+    const prompt = promptWithAttachments(
+      profile,
+      promptWithInstructions(profile, message.text, setup.systemInstructions, firstTurn),
+      attachments,
+    );
     const built = buildTurnArgs(profile, {
       prompt,
       attachments,

@@ -441,7 +441,12 @@ export class McpService {
    * available in its workspace, unless the session switched it off, plus any
    * the session switched on for itself.
    */
-  async enabledForSession(sessionId: string): Promise<string[]> {
+  /**
+   * Which servers a session gets. `workspaceId` stands in for a session the
+   * database does not know — a team member's — so the servers switched on
+   * for its run's workspace reach it too.
+   */
+  async enabledForSession(sessionId: string, workspaceId?: string): Promise<string[]> {
     const [session] = await this.#db
       .select({ workspaceId: sessions.workspaceId })
       .from(sessions)
@@ -452,7 +457,7 @@ export class McpService {
       .from(sessionMcpServers)
       .where(eq(sessionMcpServers.sessionId, sessionId));
     const overrides = new Map(rows.map((row) => [row.serverId, row.enabled]));
-    return availableServers(await this.list(), session?.workspaceId ?? null, overrides);
+    return availableServers(await this.list(), session?.workspaceId ?? workspaceId ?? null, overrides);
   }
 
   /** Which servers a terminal agent in this workspace gets. */

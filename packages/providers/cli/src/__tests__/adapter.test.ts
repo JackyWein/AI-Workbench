@@ -701,6 +701,47 @@ describe("argument assembly", () => {
     expect((await without.getCapabilities()).supported).not.toContain("attachments");
     expect((await withThem.getCapabilities()).supported).toContain("attachments");
   });
+
+  /** The arguments of one turn of a session opened with these instructions. */
+  async function argvWithInstructions(
+    profile: CliProviderProfileInput,
+    providerSessionId: string,
+  ): Promise<string[]> {
+    const adapter = await adapterFor(profile, argvCli);
+    await adapter.createSession({
+      sessionId: "s1",
+      workingDirectory: process.cwd(),
+      systemInstructions: "Use the check-skill.",
+    });
+    const events = await collect(
+      adapter.sendMessage({ sessionId: "s1", providerSessionId }, { text: "the prompt" }),
+    );
+    return JSON.parse(textOf(events).trim()) as string[];
+  }
+
+  it("hands instructions to a tool without a flag for them in front of the message", async () => {
+    // Skills and what the servers are for used to be dropped without a word
+    // for every tool that has no instruction flag.
+    const resuming = argvProfile({
+      capabilities: ["chat", "sessionResume"],
+      resumeArgs: ["--resume", "{providerSessionId}"],
+    });
+    const first = await argvWithInstructions(resuming, "pending:s1");
+    expect(first.at(-1)).toBe("<instructions>\nUse the check-skill.\n</instructions>\n\nthe prompt");
+    // A resumed conversation has them already.
+    const later = await argvWithInstructions(resuming, "native-1");
+    expect(later.at(-1)).toBe("the prompt");
+    // A tool that starts every turn afresh gets them every time.
+    const fresh = await argvWithInstructions(argvProfile({}), "native-1");
+    expect(fresh.at(-1)).toContain("Use the check-skill.");
+    // A tool with a flag for them gets the flag, and the message alone.
+    const flagged = await argvWithInstructions(
+      argvProfile({ instructionArgs: ["--system", "{systemInstructions}"] }),
+      "pending:s1",
+    );
+    expect(flagged).toContain("--system");
+    expect(flagged.at(-1)).toBe("the prompt");
+  });
 });
 
 describe("file mentions", () => {

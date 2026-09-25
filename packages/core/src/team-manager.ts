@@ -61,8 +61,8 @@ import type {
 } from "@ai-workbench/provider-base";
 import type { EventBus } from "./event-bus.js";
 import type { McpService } from "./mcp-service.js";
+import type { SkillService } from "./skill-service.js";
 import type { ProviderManager } from "./provider-manager.js";
-import { ToolBridge } from "./tool-bridge.js";
 import { SqlTeamRunStore, toRun } from "./team-store.js";
 import { inspectAttachments, keepAttachments } from "./attachments.js";
 import { createId } from "./ids.js";
@@ -131,6 +131,13 @@ export interface TeamManagerOptions {
   /** Present when team agents may use servers selected for them (spec §38). */
   readonly mcp?: McpService;
   /**
+   * The skills members work with, as a solo session gets them. Without it a
+   * member gets none.
+   */
+  readonly skills?: SkillService;
+  /** The built-in server that serves skills on demand, when there is one. */
+  readonly skillsServerId?: string;
+  /**
    * Where each run keeps copies of the files sent in it, mirroring solo
    * sessions. Without one, files go to the tool from where picked.
    */
@@ -172,7 +179,8 @@ export class TeamManager {
   readonly #teamMcp: TeamMcpStdio | undefined;
   readonly #attachmentsDirectory: string | undefined;
   readonly #recordMemory: TeamManagerOptions["recordMemory"];
-  readonly #toolBridge = new ToolBridge();
+  readonly #skills: SkillService | undefined;
+  readonly #skillsServerId: string | undefined;
   readonly #active = new Map<string, ActiveRun>();
 
   constructor(options: TeamManagerOptions) {
@@ -182,6 +190,8 @@ export class TeamManager {
     this.#providers = options.providers;
     this.#store = new SqlTeamRunStore(options.db);
     this.#mcp = options.mcp;
+    this.#skills = options.skills;
+    this.#skillsServerId = options.skillsServerId;
     this.#teamMcp = options.teamMcp;
     this.#attachmentsDirectory = options.attachmentsDirectory;
     this.#recordMemory = options.recordMemory;
@@ -1048,22 +1058,22 @@ export class TeamManager {
   }
 
   /**
-   * The adapter an agent talks through. A provider that speaks MCP is handed
-   * the team MCP server as one of its own MCP servers, scoped to the agent;
-   * anything else runs exactly as before on action blocks.
+   * The adapter an agent talks through: the member's provider, handed the
+   * member's servers — the team MCP server among them, scoped to the agent —
+   * and its skills, the same way a solo session gets them.
    */
   #adapterForAgent(agent: AgentDefinition, service: TeamService): AIProviderAdapter | null {
     const inner = this.#providers.get(agent.providerId);
     if (!inner) {
       return null;
     }
-    if (!this.#mcp && !this.#teamMcp) {
+    if (!this.#mcp && !this.#teamMcp && !this.#skills) {
       return inner;
     }
     const mcp = this.#mcp;
     return new TeamScopedAdapter(
       inner,
-      () => this.#toolAccessFor(agent, inner, service),
+      () => this.#memberSetup(agent, inner, service),
       this.#logger,
       mcp ? (ids) => mcp.instructionsFor(ids) : undefined,
     );
@@ -1078,34 +1088,46 @@ export class TeamManager {
     return describeTeamMcpServer(scope, launch);
   }
 
-  /**
-   * What a team agent may use: the servers selected for it — its own list
-   * plus the session selection kept by the MCP service — resolved through the
-   * tool bridge, plus its scoped team server. Decided by capability, never by
-   * provider brand. Null when the provider speaks no MCP, so its turns run
-   * exactly as before.
-   */
-  async #toolAccessFor(
+  async #memberSetup(
     agent: AgentDefinition,
     adapter: AIProviderAdapter,
     service: TeamService,
-  ): Promise<ProviderToolAccess | null> {
+  ): Promise<MemberSetup> {
     const capabilities = await this.#safeCapabilities(adapter);
+    const access = await this.#toolAccessFor(agent, capabilities, service);
+    const instructions = await this.#skillsFor(agent, capabilities, service, access);
+    return { access, instructions };
+  }
+
+  /**
+   * What a team agent may use: the servers picked for it, those on for its
+   * run's workspace (or for it by name), and its scoped team server. They are
+   * prepared exactly as for a solo session — a server that signs in goes
+   * through the gateway that holds the sign-in, the application's own servers
+   * are trusted — decided by capability, never by provider brand. Null when
+   * the provider speaks no MCP: a team turn has no host to run tools for it.
+   */
+  async #toolAccessFor(
+    agent: AgentDefinition,
+    capabilities: ProviderCapabilities | null,
+    service: TeamService,
+  ): Promise<ProviderToolAccess | null> {
     if (!capabilities || !capabilities.supported.includes("mcp")) {
       return null;
     }
-    const teamServer = this.#teamMcpServerFor({ runId: service.run.id, agentId: agent.id });
+    const run = service.run;
+    const teamServer = this.#teamMcpServerFor({ runId: run.id, agentId: agent.id });
     const mcp = this.#mcp;
+    let access: ProviderToolAccess | null = null;
     if (mcp) {
       const selected = new Set<string>(agent.mcpServers);
       try {
-        const enabled = await mcp.enabledForSession(`${service.run.id}:${agent.id}`);
-        for (const id of enabled) {
+        for (const id of await mcp.enabledForSession(`${run.id}:${agent.id}`, run.workspaceId)) {
           selected.add(id);
         }
       } catch (error) {
         this.#logger.warn("Team session servers could not be resolved", {
-          runId: service.run.id,
+          runId: run.id,
           agentId: agent.id,
           error: error instanceof Error ? error.message : String(error),
         });
@@ -1115,38 +1137,67 @@ export class TeamManager {
       selected.delete(TEAM_MCP_SERVER_ID);
       if (selected.size > 0) {
         try {
-          const plan = this.#toolBridge.plan({
-            capabilities,
-            enabledServerIds: [...selected],
-            configs: await mcp.list(),
-            statuses: mcp.statuses(),
-            toolsFor: (ids) => mcp.manager.toolsForSession(ids),
-          });
-          for (const entry of plan.unavailable) {
-            this.#logger.warn("Team MCP server is enabled but unusable", {
-              runId: service.run.id,
-              agentId: agent.id,
-              serverId: entry.id,
-              reason: entry.reason,
-            });
-          }
-          if (plan.kind === "provider-mcp") {
-            const servers = [...plan.mcpServers];
-            if (teamServer && !servers.some((server) => server.id === teamServer.id)) {
-              servers.push(teamServer);
-            }
-            return { kind: "provider-mcp", mcpServers: servers, hostTools: [] };
-          }
+          access = await mcp.toolAccess(capabilities, [...selected]);
         } catch (error) {
           this.#logger.warn("Team tool access could not be planned", {
-            runId: service.run.id,
+            runId: run.id,
             agentId: agent.id,
             error: error instanceof Error ? error.message : String(error),
           });
         }
       }
     }
-    return teamServer ? { kind: "provider-mcp", mcpServers: [teamServer], hostTools: [] } : null;
+    if (access && access.kind !== "provider-mcp") {
+      access = null;
+    }
+    if (!teamServer) {
+      return access;
+    }
+    if (!access) {
+      return { kind: "provider-mcp", mcpServers: [teamServer], hostTools: [] };
+    }
+    return {
+      ...access,
+      mcpServers: [...access.mcpServers.filter((server) => server.id !== teamServer.id), teamServer],
+    };
+  }
+
+  /**
+   * The member's skills as instructions: listed one line each when its tool
+   * can load them from the skills server, in full otherwise. Those on for the
+   * run's workspace and session count, and the ones picked for the member.
+   */
+  async #skillsFor(
+    agent: AgentDefinition,
+    capabilities: ProviderCapabilities | null,
+    service: TeamService,
+    access: ProviderToolAccess | null,
+  ): Promise<string> {
+    const skills = this.#skills;
+    if (!skills) {
+      return "";
+    }
+    try {
+      const run = service.run;
+      const effective = await skills.resolveForMember({
+        sessionId: run.sessionId,
+        workspaceId: run.workspaceId,
+        memberSkillIds: agent.skills,
+        ...(capabilities ? { capabilities } : {}),
+      });
+      const serverId = this.#skillsServerId;
+      const onDemand = Boolean(serverId && access?.mcpServers.some((server) => server.id === serverId));
+      return onDemand
+        ? skills.buildListing(effective, await skills.globallyEnabled())
+        : skills.buildInstructions(effective);
+    } catch (error) {
+      // A skill problem must not stop the team.
+      this.#logger.warn("Team member skills could not be resolved", {
+        agentId: agent.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return "";
+    }
   }
 
   async #safeCapabilities(adapter: AIProviderAdapter): Promise<ProviderCapabilities | null> {
@@ -1215,10 +1266,17 @@ function toAgentRow(agent: AgentDefinition, teamId: string): Omit<TeamAgentRow, 
  * scoped team MCP server. A resolution failure keeps the turn running without
  * tool access rather than failing it, exactly like the session path does.
  */
+/** What a team member is handed on top of its provider: tools and skills. */
+interface MemberSetup {
+  readonly access: ProviderToolAccess | null;
+  /** Its skills as instructions; empty when it has none. */
+  readonly instructions: string;
+}
+
 class TeamScopedAdapter implements AIProviderAdapter {
   readonly metadata: ProviderMetadata;
   readonly #inner: AIProviderAdapter;
-  readonly #resolve: () => Promise<ProviderToolAccess | null>;
+  readonly #resolve: () => Promise<MemberSetup>;
   readonly #logger: Logger;
   readonly #lookup: ServerInstructionsLookup | undefined;
 
@@ -1239,7 +1297,7 @@ class TeamScopedAdapter implements AIProviderAdapter {
 
   constructor(
     inner: AIProviderAdapter,
-    resolve: () => Promise<ProviderToolAccess | null>,
+    resolve: () => Promise<MemberSetup>,
     logger: Logger,
     lookup?: ServerInstructionsLookup,
   ) {
@@ -1331,33 +1389,36 @@ class TeamScopedAdapter implements AIProviderAdapter {
   }
 
   async #withAccess(config: ProviderSessionConfig): Promise<ProviderSessionConfig> {
-    let access: ProviderToolAccess | null;
+    let setup: MemberSetup;
     try {
-      access = await this.#resolve();
+      setup = await this.#resolve();
     } catch (error) {
       this.#logger.warn("Team tool access could not be resolved; continuing without it", {
         error: error instanceof Error ? error.message : String(error),
       });
       return config;
     }
+    const { access, instructions } = setup;
+    const base = [config.systemInstructions, instructions]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .join("\n\n");
     if (!access) {
-      return config;
+      return base.length > 0 ? { ...config, systemInstructions: base } : config;
     }
     const existing = config.toolAccess;
     const incoming = new Set(access.mcpServers.map((server) => server.id));
     const toolAccess: ProviderToolAccess = existing
       ? {
-          kind: access.kind,
+          ...access,
           mcpServers: [
             ...access.mcpServers,
             ...existing.mcpServers.filter((server) => !incoming.has(server.id)),
           ],
-          hostTools: access.hostTools,
         }
       : access;
     // A member is told what its servers are for — the shared memory first of
     // all — the same way a solo session is.
-    const systemInstructions = withServerGuidance(config.systemInstructions, toolAccess, this.#lookup);
+    const systemInstructions = withServerGuidance(base.length > 0 ? base : undefined, toolAccess, this.#lookup);
     return {
       ...config,
       toolAccess,

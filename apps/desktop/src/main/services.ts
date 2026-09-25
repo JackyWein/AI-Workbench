@@ -443,6 +443,9 @@ async function createServicesInner(
     logger,
     providers,
     mcp,
+    // Members get their skills the way a solo session does.
+    skills,
+    skillsServerId: SKILLS_SERVER_ID,
     attachmentsDirectory: join(options.userDataPath, "attachments"),
     // A finished goal lands in the shared vault when one is set up, so the
     // next session or team finds it with memory_search.

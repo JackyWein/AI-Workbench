@@ -1018,6 +1018,138 @@ export async function runStartupCheck(
      })()`,
   );
 
+  // A server one of the person's tools is configured with — here Claude
+  // Code's project file — imported once, and from then on everyone's: it
+  // connects, a solo session gets its tools, and so do the built-in skills.
+  // A tiny MCP server over stdio, written out so it needs nothing installed.
+  const toolServer = join(workspaceDirectory, "check-tool-server.cjs");
+  await writeFile(
+    toolServer,
+    `const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+require("node:readline").createInterface({ input: process.stdin }).on("line", (line) => {
+  let message;
+  try { message = JSON.parse(line); } catch { return; }
+  if (message.id === undefined) return;
+  const reply = (result) => send({ jsonrpc: "2.0", id: message.id, result });
+  if (message.method === "initialize") {
+    reply({ protocolVersion: message.params.protocolVersion, capabilities: { tools: {} },
+      serverInfo: { name: "check-tool-server", version: "1.0.0" } });
+  } else if (message.method === "tools/list") {
+    reply({ tools: [{ name: "check_lookup", description: "Looks something up for the startup check",
+      inputSchema: { type: "object", properties: {} } }] });
+  } else if (message.method === "tools/call") {
+    reply({ content: [{ type: "text", text: "looked up" }] });
+  } else {
+    reply({});
+  }
+});
+`,
+  );
+  await writeFile(
+    join(workspaceDirectory, ".mcp.json"),
+    JSON.stringify({
+      mcpServers: {
+        "check-tool-server": {
+          command: process.execPath,
+          args: [toolServer],
+          env: { ELECTRON_RUN_AS_NODE: "1" },
+        },
+      },
+    }),
+  );
+  await check(
+    "a server imported from a tool connects, and sessions get its tools and the skills",
+    `(async () => {
+       const api = window.workbench;
+       const workspaceId = window.__checkWorkspaceId;
+       const found = (await api.invoke('mcp.discover', { workspaceId }))
+         .find(entry => entry.name === 'check-tool-server');
+       if (!found) return "the tool's server is not offered";
+       const result = await api.invoke('mcp.importDiscovered', { keys: [found.key], workspaceId });
+       const server = result.imported[0];
+       if (!server) return 'not imported: ' + JSON.stringify(result.failed);
+       window.__checkImportedServerId = server.id;
+       if (server.availability !== 'everywhere' || !server.enabled) return 'imported for ' + server.availability;
+
+       // It is up, and so is the built-in skills server.
+       const statuses = await api.invoke('mcp.statuses', undefined);
+       const imported = statuses.find(status => status.id === server.id);
+       const skills = statuses.find(status => status.id === 'ai-workbench-skills');
+       if (imported?.state !== 'connected') return 'the imported server is ' + imported?.state + ': ' + imported?.detail;
+       if (skills?.state !== 'connected') return 'the skills server is ' + skills?.state + ': ' + skills?.detail;
+       if (!skills.tools?.some(tool => tool.name === 'skill_read')) return 'the skills server offers no skill_read';
+
+       // A session — a new one, as anyone would open — is handed both.
+       const session = await api.invoke('session.create', {
+         workspaceId, name: 'Tools check session', type: 'solo', providerId: 'mock',
+       });
+       try {
+         await api.invoke('session.sendMessage', { sessionId: session.id, text: '/context' });
+         const deadline = Date.now() + 15000;
+         let reply = '';
+         while (Date.now() < deadline && !reply) {
+           await new Promise(resolve => setTimeout(resolve, 200));
+           const messages = await api.invoke('message.list', { sessionId: session.id });
+           reply = messages.find(message => message.role === 'assistant' && (message.content ?? '').includes('Tools available'))?.content ?? '';
+         }
+         if (!reply.includes('check_lookup')) return 'the session did not get the imported tool: ' + reply.slice(-300);
+         if (!reply.includes('skill_read')) return 'the session did not get the skills: ' + reply.slice(-300);
+         return true;
+       } finally {
+         await api.invoke('session.delete', { id: session.id }).catch(() => {});
+       }
+     })()`,
+    40_000,
+  );
+
+  // A team member gets its skills too — here on a tool without MCP, so they
+  // must come as instructions. The goal asks the stand-in to say what it was
+  // given instead of working; the run is cancelled after its first turn.
+  await check(
+    "a team member gets the skills that are on, whatever its tool",
+    `(async () => {
+       const api = window.workbench;
+       const workspaceId = window.__checkWorkspaceId;
+       const team = (await api.invoke('team.list', { workspaceId })).find(entry => entry.name === 'Skills check team')
+         ?? await api.invoke('team.create', {
+           workspaceId,
+           name: 'Skills check team',
+           agents: [{ displayName: 'Lead', providerId: 'mock', role: 'plans', skills: [], plugins: [], mcpServers: [], settings: {} }],
+         });
+       const run = await api.invoke('team.startRun', { teamId: team.id, goal: 'Say what you were given: /context', workspaceId });
+       try {
+         const deadline = Date.now() + 20000;
+         let output = '';
+         // Read once the first turn is over: while it runs its output is
+         // written in steps and may not be complete yet.
+         while (Date.now() < deadline) {
+           await new Promise(resolve => setTimeout(resolve, 200));
+           const snapshot = await api.invoke('team.getRun', { runId: run.id });
+           const done = snapshot.turns.filter(turn => turn.status !== 'running');
+           output = done.map(turn => turn.output ?? '').join('\\n');
+           if (output.includes('Instructions received')) break;
+         }
+         if (!output.includes('Instructions received')) return 'no turn said what it was given';
+         // "Check commits" is on everywhere (switched on in an earlier check).
+         return output.includes('Write the why, not only the what.')
+           || 'the member did not get the skill: ' + output.slice(0, 300);
+       } finally {
+         await api.invoke('team.cancelRun', { runId: run.id }).catch(() => {});
+       }
+     })()`,
+    30_000,
+  );
+  await check(
+    "the imported server is removed again",
+    `(async () => {
+       const id = window.__checkImportedServerId;
+       if (!id) return true;
+       const { deleted } = await window.workbench.invoke('mcp.delete', { id });
+       return deleted;
+     })()`,
+  );
+  await rm(join(workspaceDirectory, ".mcp.json"), { force: true });
+
   await check(
     "the connector catalog lists services and says how each signs in",
     `(async () => {
