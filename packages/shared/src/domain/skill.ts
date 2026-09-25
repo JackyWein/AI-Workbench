@@ -95,5 +95,7 @@ export const skillDraftSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000),
   instructions: z.string().min(1),
+  /** The model that wrote it, when known. */
+  modelId: z.string().optional(),
 });
 export type SkillDraftResult = z.infer<typeof skillDraftSchema>;

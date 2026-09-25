@@ -394,10 +394,10 @@ weighted spec goals above. What cannot be verified here (a real account, a
 real GitHub App, a microphone) says so and stays unticked. Release 0.0.9
 follows when all goals are done.
 
-### F1 — Model choice when AI drafts something (FutureFeatures 8)
-- [ ] Draft with AI (skills) offers the tool and its models, and the effort where the model has levels, through one shared picker
-- [ ] The draft runs on the chosen model (startup check: the chosen mock model answers)
-- [ ] The last choice is remembered per purpose (startup check)
+### F1 — Model choice when AI drafts something (FutureFeatures 8) — done
+- [x] Draft with AI (skills) offers the tool and its models, and the effort where the model has levels, through one shared picker
+- [x] The draft runs on the chosen model (startup check: the chosen mock model answers)
+- [x] The last choice is remembered per purpose (startup check; unit tests drop a remembered model or effort that no longer exists)
 
 ### F2 — MCP servers from connected apps, secrets kept safe (FutureFeatures 4)
 - [ ] A secret variable of an imported server is kept in the credential store; the database holds a reference and the window never receives the value (startup check)

@@ -455,6 +455,8 @@ export const ipcContract = {
     input: z.object({
       providerId: z.string().min(1),
       modelId: z.string().min(1).optional(),
+      /** A level the chosen model reported; omitted for the tool's default. */
+      reasoningEffort: z.string().trim().min(1).max(40).optional(),
       request: z.string().trim().min(3).max(4000),
     }),
     output: skillDraftSchema,

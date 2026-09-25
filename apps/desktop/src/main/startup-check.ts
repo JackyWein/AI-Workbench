@@ -914,30 +914,48 @@ export async function runStartupCheck(
   );
 
   await check(
-    "a skill is drafted by a provider and shown for review, not saved",
+    "a skill is drafted on the chosen tool and model, shown for review, not saved",
     `(async () => {
        ${typeInto}
        const before = (await window.workbench.invoke('skill.list', undefined)).length;
-       [...document.querySelectorAll('.sidebar__foot .row')]
-         .find(row => row.textContent?.includes('Skills'))?.click();
-       await ${waitFor("[...document.querySelectorAll('.view__title')].some(node => node.textContent === 'Skills')", 2000)};
-       document.querySelector('.connector-panel__close')?.click();
-       await new Promise(resolve => setTimeout(resolve, 100));
-       [...document.querySelectorAll('.connectors__header .ghost-button')]
-         .find(node => node.textContent?.includes('Draft with AI'))?.click();
-       const opened = await ${waitFor("document.querySelector('.connector-panel textarea')", 2000)};
-       if (!opened) return 'the draft panel did not open';
+       const open = async () => {
+         [...document.querySelectorAll('.sidebar__foot .row')]
+           .find(row => row.textContent?.includes('Skills'))?.click();
+         await ${waitFor("[...document.querySelectorAll('.view__title')].some(node => node.textContent === 'Skills')", 2000)};
+         document.querySelector('.connector-panel__close')?.click();
+         await new Promise(resolve => setTimeout(resolve, 100));
+         [...document.querySelectorAll('.connectors__header .ghost-button')]
+           .find(node => node.textContent?.includes('Draft with AI'))?.click();
+         return ${waitFor("document.querySelector('.connector-panel textarea')", 2000)};
+       };
+       if (!(await open())) return 'the draft panel did not open';
        const panel = document.querySelector('.connector-panel');
-       [...panel.querySelectorAll('.provider-choice__item')].find(node => node.textContent?.includes('Mock'))?.click();
+       [...panel.querySelectorAll('.draft-choice .tool-chip')].find(node => node.textContent?.includes('Mock'))?.click();
+       await new Promise(resolve => setTimeout(resolve, 50));
+       // The model, not only the tool.
+       const model = panel.querySelector('.draft-choice select[aria-label="Model"]');
+       if (!model) return 'no model choice';
+       const setSelect = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set;
+       setSelect.call(model, 'mock-fast');
+       model.dispatchEvent(new Event('change', { bubbles: true }));
+       await new Promise(resolve => setTimeout(resolve, 50));
        type(panel.querySelector('textarea'), 'Explain every shell command before running it');
        await new Promise(resolve => setTimeout(resolve, 50));
        [...panel.querySelectorAll('.primary-button')].find(node => node.textContent === 'Draft')?.click();
        const drafted = await ${waitFor("document.querySelector('.connector-panel__publisher')?.textContent?.startsWith('Drafted by')", 15000)};
        if (!drafted) return 'no draft: ' + document.querySelector('.connector-panel')?.textContent;
        const text = document.querySelector('.connector-panel textarea')?.value ?? '';
+       const by = document.querySelector('.connector-panel__publisher')?.textContent ?? '';
        const after = (await window.workbench.invoke('skill.list', undefined)).length;
        document.querySelector('.connector-panel__close')?.click();
-       return text.includes('Mock response') && after === before ? true : 'draft: ' + text.slice(0, 80);
+       if (!text.includes('Mock response from mock-fast')) return 'not written by the chosen model: ' + text.slice(0, 80);
+       if (!by.includes('Mock Fast')) return 'the draft does not name its model: ' + by;
+       if (after !== before) return 'the draft was saved';
+       // The choice is remembered for the next draft.
+       if (!(await open())) return 'the draft panel did not open again';
+       const again = document.querySelector('.connector-panel .draft-choice select[aria-label="Model"]')?.value;
+       document.querySelector('.connector-panel__close')?.click();
+       return again === 'mock-fast' || 'the model was not remembered: ' + again;
      })()`,
     30_000,
   );

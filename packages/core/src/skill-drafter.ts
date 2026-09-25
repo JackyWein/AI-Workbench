@@ -9,11 +9,14 @@ export interface SkillDraft {
   readonly name: string;
   readonly description: string;
   readonly instructions: string;
+  /** The model that wrote it, when the tool said or one was chosen. */
+  readonly modelId?: string;
 }
 
 export interface DraftSkillRequest {
   readonly providerId: string;
   readonly modelId?: string;
+  readonly reasoningEffort?: string;
   /** What the skill should do, in the person's words. */
   readonly request: string;
 }
@@ -49,13 +52,16 @@ export async function draftSkill(
     sessionId,
     workingDirectory: folder,
     ...(request.modelId ? { modelId: request.modelId } : {}),
+    ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
     // Writing a skill needs no tool of the agent's; it only answers.
     permissionMode: "readOnly",
   });
+  const modelId = info.modelId ?? request.modelId;
   const handle = {
     sessionId,
     providerSessionId: info.providerSessionId,
-    ...(info.modelId ?? request.modelId ? { modelId: info.modelId ?? request.modelId } : {}),
+    ...(modelId ? { modelId } : {}),
+    ...(request.reasoningEffort ? { reasoningEffort: request.reasoningEffort } : {}),
     permissionMode: "readOnly" as const,
   };
   let text = "";
@@ -78,7 +84,8 @@ export async function draftSkill(
   if (text.trim() === "") {
     throw new SkillDraftError(failure ?? "The provider did not answer with a skill.");
   }
-  return parseDraft(text, request.request);
+  const draft = parseDraft(text, request.request);
+  return modelId ? { ...draft, modelId } : draft;
 }
 
 /** What the provider is asked for: a SKILL.md and nothing around it. */

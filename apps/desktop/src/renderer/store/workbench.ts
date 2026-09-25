@@ -313,6 +313,7 @@ interface WorkbenchState {
   draftSkill(input: {
     providerId: string;
     modelId?: string;
+    reasoningEffort?: string;
     request: string;
   }): Promise<{ draft: SkillDraftResult } | { error: string }>;
   deleteSkill(id: string): Promise<void>;

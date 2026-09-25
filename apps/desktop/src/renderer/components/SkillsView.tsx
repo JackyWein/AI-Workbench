@@ -2,7 +2,13 @@ import { useEffect, useMemo, useState, type JSX } from "react";
 import { BookOpen, ChevronDown, Download, PenLine, Sparkles, X } from "lucide-react";
 import type { DiscoveredSkill, SkillManifest, SkillScopes } from "@ai-workbench/shared";
 import { useWorkbench } from "../store/workbench.js";
-import { Logo } from "./Logo.js";
+import { DraftChoicePicker } from "./DraftChoicePicker.js";
+import {
+  type DraftChoice,
+  draftingProviders,
+  initialDraftChoice,
+  rememberDraftChoice,
+} from "../lib/draft-choice.js";
 
 type Panel =
   | { kind: "edit"; skill: SkillManifest | null; draftedBy?: string }
@@ -389,23 +395,19 @@ function SkillDrafter({
 }): JSX.Element {
   const providers = useWorkbench((state) => state.providers);
   const draft = useWorkbench((state) => state.draftSkill);
-  const usable = useMemo(
-    () =>
-      providers.filter(
-        (provider) =>
-          provider.enabled &&
-          provider.capabilities.supported.includes("chat") &&
-          provider.installation.state === "installed" &&
-          provider.auth.state !== "authenticationRequired" &&
-          provider.auth.state !== "authenticationExpired",
-      ),
-    [providers],
-  );
-  const [providerId, setProviderId] = useState(usable[0]?.metadata.id ?? "");
+  const usable = useMemo(() => draftingProviders(providers), [providers]);
+  const [choice, setChoice] = useState<DraftChoice>(() => initialDraftChoice("skill", usable));
+  // Providers load after the panel opens; a choice made before they did
+  // starts from the remembered one once they are there.
+  useEffect(() => {
+    if (!usable.some((entry) => entry.metadata.id === choice.providerId)) {
+      setChoice(initialDraftChoice("skill", usable));
+    }
+  }, [usable, choice.providerId]);
+  const provider = usable.find((entry) => entry.metadata.id === choice.providerId);
   const [request, setRequest] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const provider = usable.find((entry) => entry.metadata.id === providerId);
 
   const run = async (): Promise<void> => {
     if (!provider) {
@@ -414,7 +416,13 @@ function SkillDrafter({
     setBusy(true);
     setProblem(null);
     try {
-      const result = await draft({ providerId: provider.metadata.id, request: request.trim() });
+      rememberDraftChoice("skill", choice);
+      const result = await draft({
+        providerId: provider.metadata.id,
+        ...(choice.modelId ? { modelId: choice.modelId } : {}),
+        ...(choice.effort ? { reasoningEffort: choice.effort } : {}),
+        request: request.trim(),
+      });
       if ("error" in result) {
         setProblem(result.error);
         return;
@@ -433,7 +441,11 @@ function SkillDrafter({
           metadata: {},
           source: { kind: "authored" },
         },
-        provider.metadata.displayName,
+        result.draft.modelId
+          ? `${provider.metadata.displayName} · ${
+              provider.models.find((model) => model.id === result.draft.modelId)?.displayName ?? result.draft.modelId
+            }`
+          : provider.metadata.displayName,
       );
     } finally {
       setBusy(false);
@@ -467,20 +479,7 @@ function SkillDrafter({
           {usable.length === 0 ? (
             <p className="setting__description">No provider is ready. Install and sign in to one under Providers.</p>
           ) : (
-            <div className="provider-choice">
-              {usable.map((entry) => (
-                <button
-                  type="button"
-                  key={entry.metadata.id}
-                  className="provider-choice__item"
-                  aria-pressed={entry.metadata.id === providerId}
-                  onClick={() => setProviderId(entry.metadata.id)}
-                >
-                  <Logo name={entry.metadata.icon ?? entry.metadata.id} label={entry.metadata.displayName} size={14} />
-                  {entry.metadata.displayName}
-                </button>
-              ))}
-            </div>
+            <DraftChoicePicker usable={usable} value={choice} onChange={setChoice} label="Written by" />
           )}
         </div>
         <p className="setting__description">
